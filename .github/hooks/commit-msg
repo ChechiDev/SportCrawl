@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Enforce conventional commits via commitizen.
+# Install: git config core.hooksPath .github/hooks
+uv run cz check --commit-msg-file "$1"

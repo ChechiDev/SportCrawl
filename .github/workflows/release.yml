@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    name: Auto-bump version and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v3
+
+      - run: uv sync --frozen
+
+      - name: Configure git for commitizen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version and create tag
+        id: bump
+        run: |
+          uv run cz bump --yes 2>&1
+          echo "new_tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Push tag
+        if: steps.bump.outcome == 'success'
+        run: git push origin --tags
+
+      - name: Create GitHub release
+        if: steps.bump.outcome == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.new_tag }}
+          generate_release_notes: true
