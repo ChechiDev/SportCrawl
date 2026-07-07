@@ -106,9 +106,22 @@ class TestSettings:
         monkeypatch.setenv("DB__NAME", "testdb")
         monkeypatch.setenv("DB__USER", "testuser")
         monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("DB__SSL_MODE", "require")
         monkeypatch.setenv("ENV", "prod")
         settings = Settings()
         assert settings.env == "prod"
+
+    def test_prod_without_ssl_mode_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("ENV", "prod")
+        monkeypatch.delenv("DB__SSL_MODE", raising=False)
+        with pytest.raises(ValidationError):
+            Settings()
 
     def test_log_level_defaults_to_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DB__HOST", "localhost")

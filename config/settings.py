@@ -10,7 +10,7 @@ Usage:
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,8 @@ class DatabaseSettings(BaseModel):
     pool_size: int = 5
     max_overflow: int = 10
     pool_timeout: int = 30
+    pool_recycle: int = 1800
+    ssl_mode: Literal["require", "disable"] | None = None
 
 
 class ScrapingSettings(BaseModel):
@@ -57,3 +59,12 @@ class Settings(BaseSettings):
     scraping: ScrapingSettings = ScrapingSettings()
     env: Literal["dev", "prod"] = "dev"
     log_level: str = "INFO"
+
+    @model_validator(mode="after")
+    def enforce_prod_ssl(self) -> "Settings":
+        """Require SSL in prod unless explicitly disabled."""
+        if self.env == "prod" and self.db.ssl_mode is None:
+            raise ValueError(
+                "DB__SSL_MODE must be set to 'require' or 'disable' in prod"
+            )
+        return self
