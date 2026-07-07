@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB__NAME:-fbrefly}
+      POSTGRES_USER: ${DB__USER:-fbrefly}
+      POSTGRES_PASSWORD: ${DB__PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB__USER:-fbrefly} -d ${DB__NAME:-fbrefly}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  work_server:
+    image: python:3.12-alpine
+    command: >
+      python -c "
+      print('work server stub');
+      import time;
+      time.sleep(999)
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
