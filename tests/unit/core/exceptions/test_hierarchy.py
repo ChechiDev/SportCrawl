@@ -105,6 +105,15 @@ class TestServiceErrorHierarchy:
         err = ServiceError("operation failed")
         assert str(err) == "operation failed"
 
+    def test_service_error_stores_cause(self) -> None:
+        original = RuntimeError("underlying failure")
+        err = ServiceError("service failed", cause=original)
+        assert err.cause is original
+
+    def test_service_error_cause_defaults_to_none(self) -> None:
+        err = ServiceError("bare error")
+        assert err.cause is None
+
     def test_scraper_error_is_not_service_error(self) -> None:
         """ServiceError and ScraperError are independent hierarchies."""
         err = ScraperError("scraper issue")
@@ -114,3 +123,13 @@ class TestServiceErrorHierarchy:
         """ServiceError and RepositoryError are independent hierarchies."""
         err = RepositoryError("repo issue")
         assert not isinstance(err, ServiceError)
+
+    def test_scraper_error_is_not_repository_error(self) -> None:
+        """ScraperError and RepositoryError hierarchies are fully independent."""
+        err = ScraperError("scraper issue")
+        assert not isinstance(err, RepositoryError)
+
+    def test_repository_error_is_not_scraper_error(self) -> None:
+        """RepositoryError and ScraperError hierarchies are fully independent."""
+        err = RepositoryError("repo issue")
+        assert not isinstance(err, ScraperError)

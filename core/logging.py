@@ -8,21 +8,29 @@ No print() statements anywhere in the codebase.
 """
 
 import logging
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import structlog
 from structlog.types import FilteringBoundLogger
 
+_VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
-def configure_logging(env: str, log_level: str) -> None:
+
+def configure_logging(env: Literal["dev", "prod"], log_level: str) -> None:
     """Configure structlog and stdlib logging for the given environment.
 
     Args:
         env: "dev" for colored console output, "prod" for JSON output.
         log_level: One of "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL".
     """
-    level = getattr(logging, log_level.upper(), logging.INFO)
+    if log_level.upper() not in _VALID_LOG_LEVELS:
+        raise ValueError(
+            f"Invalid log_level: {log_level!r}. Must be one of {sorted(_VALID_LOG_LEVELS)}"
+        )
+    level = getattr(logging, log_level.upper())
 
+    # list[Any] is required: structlog processors implement different protocols
+    # (Processor, WrappedLogger) with no shared public base type in structlog stubs.
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
@@ -75,6 +83,8 @@ def bind_context(domain: str, operation: str) -> FilteringBoundLogger:
     Returns:
         A structlog bound logger with domain and operation fields set.
     """
+    # cast required: structlog.get_logger().bind() returns BoundLoggerLazyProxy at
+    # runtime, which conforms to FilteringBoundLogger but is not typed as such in stubs.
     return cast(
         FilteringBoundLogger,
         structlog.get_logger().bind(domain=domain, operation=operation),
