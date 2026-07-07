@@ -1,3 +1,11 @@
+## v0.3.0 (2026-07-07)
+
+### Feat
+
+- **infra/browser**: add ScrapingEngine ABC
+- **core/base**: add base repository, scraper and service abstractions
+- **config**: add settings with pydantic-settings and nested env support
+
 ## v0.2.0 (2026-07-07)
 
 ### Feat
