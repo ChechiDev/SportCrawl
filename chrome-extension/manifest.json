@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "FBrefly",
+  "version": "0.1.0",
+  "description": "FBrefly Chrome extension placeholder",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": []
+}
