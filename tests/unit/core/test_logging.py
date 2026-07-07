@@ -44,7 +44,7 @@ class TestConfigureLogging:
                 assert kwargs.get("level") == logging.INFO
 
     def test_configure_logging_invalid_level_raises(self) -> None:
-        """An unrecognised log level raises ValueError instead of silently falling back."""
+        """Unrecognised log level raises ValueError instead of silently falling back."""
         with pytest.raises(ValueError, match="Invalid log_level"):
             configure_logging(env="dev", log_level="VERBOSE")
 

@@ -24,9 +24,8 @@ def configure_logging(env: Literal["dev", "prod"], log_level: str) -> None:
         log_level: One of "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL".
     """
     if log_level.upper() not in _VALID_LOG_LEVELS:
-        raise ValueError(
-            f"Invalid log_level: {log_level!r}. Must be one of {sorted(_VALID_LOG_LEVELS)}"
-        )
+        valid = sorted(_VALID_LOG_LEVELS)
+        raise ValueError(f"Invalid log_level: {log_level!r}. Must be one of {valid}")
     level = getattr(logging, log_level.upper())
 
     # list[Any] is required: structlog processors implement different protocols
