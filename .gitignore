@@ -1,0 +1,18 @@
+# AI Tools
+.claude
+.gga
+.atl/
+
+# Personal documentation (Obsidian) — not committed to git
+.doc/
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv

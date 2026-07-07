@@ -1,0 +1,56 @@
+[project]
+name = "fbrefly"
+version = "0.1.0"
+description = "Football data scraping infrastructure"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "pydantic-settings>=2.0",
+    "pydantic>=2.0",
+    "structlog>=24.0",
+    "pydoll-python>=2.0",
+    "typer>=0.12",
+]
+
+[dependency-groups]
+dev = [
+    "flake8>=7.3.0",
+    "mypy>=2.1.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.15.20",
+    "pip-audit>=2.7",
+    "testcontainers[postgres]>=4.0",
+    "commitizen>=3.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = ["pyproject.toml:version"]
+tag_format = "v$version"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.commitizen.customize]
+bump_map = { "feat" = "MINOR", "fix" = "PATCH", "refactor" = "PATCH", "perf" = "PATCH" }
+bump_pattern = "^(feat|fix|refactor|perf)(\\(.+\\))?(!)?:"
