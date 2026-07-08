@@ -79,8 +79,8 @@ class PydollEngine(ScrapingEngine):
         logger.debug("Fetching URL: %s", url)
 
         try:
-            await tab.go_to(url)  # type: ignore[union-attr]
-            return await tab.page_source  # type: ignore[misc]  # pydoll declares page_source as @property async; stubs lack Awaitable annotation
+            await tab.go_to(url)
+            return await tab.page_source  # type: ignore[no-any-return]  # pydoll page_source stubs lack Awaitable annotation
         except PydollException as exc:
             logger.debug("Fetch failed for %s: %s", url, exc)
             try:
@@ -103,6 +103,6 @@ class PydollEngine(ScrapingEngine):
         """
         if self._browser is not None:
             logger.debug("Stopping Chrome browser")
-            await self._browser.stop()
+            await self._browser.stop()  # type: ignore[no-untyped-call]
             self._browser = None
             self._tab = None
