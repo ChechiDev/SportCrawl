@@ -62,9 +62,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def enforce_prod_ssl(self) -> "Settings":
-        """Require SSL in prod unless explicitly disabled."""
-        if self.env == "prod" and self.db.ssl_mode is None:
+        """Require explicit SSL in prod — both None and 'disable' are rejected."""
+        if self.env == "prod" and self.db.ssl_mode != "require":
             raise ValueError(
-                "DB__SSL_MODE must be set to 'require' or 'disable' in prod"
+                "DB__SSL_MODE must be 'require' in prod. "
+                "Got: %r" % self.db.ssl_mode
             )
         return self
