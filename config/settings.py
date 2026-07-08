@@ -36,6 +36,8 @@ class ScrapingSettings(BaseModel):
     base_delay: float = 1.0
     max_delay: float = 60.0
     request_timeout: int = 30
+    work_server_url: str = "http://localhost:9731"
+    work_server_token: str = ""
 
 
 class Settings(BaseSettings):
@@ -65,7 +67,21 @@ class Settings(BaseSettings):
         """Require explicit SSL in prod — both None and 'disable' are rejected."""
         if self.env == "prod" and self.db.ssl_mode != "require":
             raise ValueError(
-                "DB__SSL_MODE must be 'require' in prod. "
-                "Got: %r" % self.db.ssl_mode
+                f"DB__SSL_MODE must be 'require' in prod. Got: {self.db.ssl_mode!r}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def enforce_prod_work_server(self) -> "Settings":
+        """Require non-empty token and HTTPS work_server_url in prod."""
+        if self.env == "prod":
+            if not self.scraping.work_server_token:
+                raise ValueError(
+                    "SCRAPING__WORK_SERVER_TOKEN must be set in prod."
+                )
+            if not self.scraping.work_server_url.startswith("https://"):
+                raise ValueError(
+                    f"SCRAPING__WORK_SERVER_URL must use HTTPS in prod. "
+                    f"Got: {self.scraping.work_server_url!r}"
+                )
         return self
