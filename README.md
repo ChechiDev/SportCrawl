@@ -21,7 +21,7 @@ fbrefly/
 
 **core/base/** (introduced in Phase 2) holds generic base classes — `BaseRepository[T]`, `BaseScraper`, `BaseService` — that domains extend without modifying.
 
-**infrastructure/** contains technology-specific implementations: the CDP browser engine, the async SQLAlchemy session factory, and Alembic migrations. It depends on `core/` but never on `domains/`.
+**infrastructure/** contains technology-specific implementations: the CDP browser engine (`PydollEngine` — concrete Chrome/CDP adapter wrapping pydoll-python), the async SQLAlchemy session factory, and Alembic migrations. It depends on `core/` but never on `domains/`.
 
 **domains/** is the only place that knows about football concepts. Each domain extends core/base/ generics and wires them through infrastructure. No cross-domain imports.
 
