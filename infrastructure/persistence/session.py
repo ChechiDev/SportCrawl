@@ -71,7 +71,7 @@ async def get_session(
     session: AsyncSession = factory()
     try:
         yield session
-    except Exception:
+    except BaseException:  # BaseException ensures rollback on CancelledError too
         await session.rollback()
         raise
     finally:

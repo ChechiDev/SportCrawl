@@ -80,7 +80,7 @@ class PydollEngine(ScrapingEngine):
             logger.debug("Fetch failed for %s: %s", url, exc)
             try:
                 await self._browser.stop()  # type: ignore[union-attr]
-            except Exception:
+            except PydollException:
                 logger.debug("browser.stop() raised during error cleanup; ignoring")
             finally:
                 self._browser = None

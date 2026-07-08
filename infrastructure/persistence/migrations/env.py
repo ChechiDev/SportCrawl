@@ -15,6 +15,7 @@ import logging
 from logging.config import fileConfig
 
 from alembic import context
+from pydantic import ValidationError
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine.url import URL
@@ -59,7 +60,7 @@ try:
         port=_s.db.port,
         database=_s.db.name,
     )
-except Exception:  # noqa: BLE001 — intentional broad catch; any failure falls back to ini
+except (ImportError, ValidationError):
     logger.debug("Settings not available — falling back to alembic.ini sqlalchemy.url")
 
 
