@@ -43,12 +43,7 @@ class PydollEngine(ScrapingEngine):
     async def __aenter__(self) -> PydollEngine:
         return self
 
-    async def __aexit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_val: BaseException | None,
-        _exc_tb: object,
-    ) -> None:
+    async def __aexit__(self, *_: object) -> None:
         await self.close()
 
     async def _ensure_browser(self) -> None:
