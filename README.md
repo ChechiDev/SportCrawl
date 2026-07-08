@@ -33,13 +33,30 @@ See `.doc/` for per-folder design documentation.
 uv run pytest
 ```
 
-Integration tests that need PostgreSQL use testcontainers and spin up a real container automatically. No manual database setup required.
+Tests are organized in two layers:
+
+**Unit tests** (`tests/unit/`) test core abstractions and base classes with mocks. No database required.
+
+**Integration tests** (`tests/integration/`) test ORM models and PostgreSQL-specific behavior (upsert semantics, native enums, constraints). These require Docker — `testcontainers` spins up a real PostgreSQL 16 container automatically. No manual database setup required.
+
+```bash
+# Unit tests only:
+uv run pytest tests/unit/
+
+# Integration tests only (Docker must be running):
+uv run pytest tests/integration/
+
+# All tests:
+uv run pytest
+```
 
 Coverage gate is enforced at 80%. Run with coverage explicitly:
 
 ```bash
 uv run pytest --cov=. --cov-fail-under=80
 ```
+
+See `.doc/infrastructure/persistence.md` for the integration test architecture, known gotchas (asyncpg cross-loop, URL password masking, `create_all` vs Alembic), and how to add new integration tests.
 
 ## Adding a new domain
 
