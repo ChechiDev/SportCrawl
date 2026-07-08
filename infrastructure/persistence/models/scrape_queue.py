@@ -8,7 +8,7 @@ Satisfies R8: 9 explicit columns, native enum, composite index (domain, status).
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, UniqueConstraint, func, text
+from sqlalchemy import DateTime, Index, Text, UniqueConstraint, func, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,8 +49,8 @@ class ScrapeQueue(Base):
     __tablename__ = "scrape_queue"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    url: Mapped[str]
-    domain: Mapped[str]
+    url: Mapped[str] = mapped_column(Text())
+    domain: Mapped[str] = mapped_column(Text())
     # DB stores enum label names (PENDING, not "pending"); .value is Python-side only.
     status: Mapped[ScrapeStatus] = mapped_column(
         SAEnum(ScrapeStatus, native_enum=True, name="scrapestatus"),

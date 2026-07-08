@@ -77,4 +77,4 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS update_updated_at_column()")
     op.drop_index('ix_scrape_queue_domain_status', table_name='scrape_queue')
     op.drop_table('scrape_queue')
-    _scrapestatus.drop(op.get_bind(), checkfirst=True)
+    op.execute(sa.text("DROP TYPE IF EXISTS scrapestatus"))
