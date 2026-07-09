@@ -1,4 +1,4 @@
-"""Structured logging configuration for fbrefly.
+"""Structured logging configuration for SportCrawl.
 
 Call configure_logging(env, log_level) once at application startup.
 Use bind_context(domain, operation) to get a logger with contextual fields.

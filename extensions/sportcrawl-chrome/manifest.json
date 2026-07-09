@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "fbrefly",
+  "name": "SportCrawl",
   "version": "1.0.0",
-  "description": "fbrefly Chrome extension: CF clearance capture and fetch task execution for fbref.com.",
+  "description": "SportCrawl Chrome extension: CF clearance capture and fetch task execution for fbref.com.",
   "background": {
     "service_worker": "background.js"
   },
