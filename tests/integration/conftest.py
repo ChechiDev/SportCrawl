@@ -27,6 +27,7 @@ from sqlalchemy.engine.url import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+import infrastructure.persistence.models.provenance  # noqa: F401
 import infrastructure.persistence.models.scrape_queue  # noqa: F401
 from infrastructure.persistence.models.base import Base
 
