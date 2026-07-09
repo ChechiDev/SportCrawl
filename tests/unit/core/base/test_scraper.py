@@ -19,7 +19,7 @@ from core.exceptions.scraper import (
     ScraperError,
 )
 from ports.browser import ScrapingEngine
-from ports.scraper import BaseScraper, BaseMultiTableScraper
+from ports.scraper import BaseMultiTableScraper, BaseScraper
 
 # ---------------------------------------------------------------------------
 # Test doubles
