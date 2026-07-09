@@ -53,7 +53,7 @@ class ScrapeQueue(Base):
     domain: Mapped[str] = mapped_column(Text())
     # DB stores enum label names (PENDING, not "pending"); .value is Python-side only.
     status: Mapped[ScrapeStatus] = mapped_column(
-        SAEnum(ScrapeStatus, native_enum=True, name="scrapestatus"),
+        SAEnum(ScrapeStatus, native_enum=True, name="scrapestatus", schema="sch_infra"),
         server_default=text("'PENDING'"),
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -71,6 +71,7 @@ class ScrapeQueue(Base):
     __table_args__ = (
         UniqueConstraint("url", name="uq_scrape_queue_url"),
         Index("ix_scrape_queue_domain_status", "domain", "status"),
+        {"schema": "sch_infra"},
     )
 
     @classmethod

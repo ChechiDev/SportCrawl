@@ -18,6 +18,7 @@ from collections.abc import AsyncGenerator, Generator
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.engine.url import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
@@ -67,6 +68,9 @@ def migrate_db(_integration_db_url: URL) -> None:
         engine = create_async_engine(_integration_db_url, echo=False)
         try:
             async with engine.begin() as conn:
+                # sch_infra must exist before create_all — SQLAlchemy emits
+                # CREATE TABLE sch_infra.scrape_queue but never creates the schema.
+                await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
                 await conn.run_sync(Base.metadata.create_all)
         finally:
             await engine.dispose()
