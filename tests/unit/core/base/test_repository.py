@@ -10,8 +10,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from core.base.repository import BaseRepository
 from core.exceptions.repository import DuplicateError, RepositoryError
+from ports.repository import BaseRepository
 
 # ---------------------------------------------------------------------------
 # Minimal in-file ORM model (no real DB needed — session is fully mocked)
