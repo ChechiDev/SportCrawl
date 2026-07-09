@@ -10,7 +10,7 @@ Usage:
 
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,8 +40,8 @@ class ScrapingSettings(BaseModel):
     work_server_token: str = ""
     allowed_hosts: list[str] = ["fbref.com"]
     max_concurrent_requests: int = 3
-    crawl_delay_ms: int = 1000
-    jitter_factor: float = 0.5
+    request_delay_min: float = Field(default=3.0, ge=0.0)
+    request_delay_max: float = Field(default=10.0, ge=0.0)
     max_queue_retries: int = 5
 
 

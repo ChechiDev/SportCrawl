@@ -177,17 +177,25 @@ class TestScrapingSettingsNewFields:
         settings = ScrapingSettings()
         assert settings.max_concurrent_requests == 3
 
-    def test_crawl_delay_ms_default(self) -> None:
+    def test_request_delay_min_default(self) -> None:
         settings = ScrapingSettings()
-        assert settings.crawl_delay_ms == 1000
+        assert settings.request_delay_min == 3.0
 
-    def test_jitter_factor_default(self) -> None:
+    def test_request_delay_max_default(self) -> None:
         settings = ScrapingSettings()
-        assert settings.jitter_factor == 0.5
+        assert settings.request_delay_max == 10.0
 
     def test_max_queue_retries_default(self) -> None:
         settings = ScrapingSettings()
         assert settings.max_queue_retries == 5
+
+    def test_request_delay_min_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError):
+            ScrapingSettings(request_delay_min=-1.0)
+
+    def test_request_delay_max_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError):
+            ScrapingSettings(request_delay_max=-0.1)
 
     def test_allowed_hosts_overridden_by_env(
         self, monkeypatch: pytest.MonkeyPatch
