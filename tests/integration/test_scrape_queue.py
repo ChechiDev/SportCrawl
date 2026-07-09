@@ -27,7 +27,9 @@ class TestScrapeQueueCreate:
 
     async def test_create_row_persists(self, async_session: AsyncSession) -> None:
         """A new ScrapeQueue row inserted via ORM is readable in the same session."""
-        row = ScrapeQueue.from_url(domain="example.com", url="https://example.com/page1")
+        row = ScrapeQueue.from_url(
+            domain="example.com", url="https://example.com/page1"
+        )
         async_session.add(row)
         await async_session.flush()
 
@@ -39,7 +41,9 @@ class TestScrapeQueueCreate:
 
     async def test_created_at_is_set(self, async_session: AsyncSession) -> None:
         """created_at is populated by the server default on insert."""
-        row = ScrapeQueue.from_url(domain="example.com", url="https://example.com/page2")
+        row = ScrapeQueue.from_url(
+            domain="example.com", url="https://example.com/page2"
+        )
         async_session.add(row)
         await async_session.flush()
         await async_session.refresh(row)
@@ -85,7 +89,9 @@ class TestScrapeQueueList:
 
     async def test_list_by_status(self, async_session: AsyncSession) -> None:
         """SELECT filtered by status returns only matching rows."""
-        pending = ScrapeQueue.from_url(domain="list.com", url="https://list.com/pending")
+        pending = ScrapeQueue.from_url(
+            domain="list.com", url="https://list.com/pending"
+        )
         async_session.add(pending)
         await async_session.flush()
 

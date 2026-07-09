@@ -75,7 +75,8 @@ class PydollEngine(ScrapingEngine):
 
         try:
             await tab.go_to(url)
-            return await tab.page_source  # type: ignore[no-any-return]  # pydoll page_source stubs lack Awaitable annotation
+            # pydoll page_source stubs lack Awaitable annotation
+            return await tab.page_source  # type: ignore[no-any-return]
         except PydollException as exc:
             logger.debug("Fetch failed for %s: %s", url, exc)
             try:

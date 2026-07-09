@@ -44,7 +44,9 @@ class BaseRepository[T: DeclarativeBase](ABC):
     async def get(self, id: int) -> T | None:
         """Fetch entity by primary key. Returns None if absent."""
         try:
-            return await self._session.get(self._model_class, id)  # type: ignore[arg-type]
+            return await self._session.get(  # type: ignore[arg-type]
+                self._model_class, id
+            )
         except SQLAlchemyError as exc:
             raise RepositoryError("get failed", operation="get", cause=exc) from exc
 
