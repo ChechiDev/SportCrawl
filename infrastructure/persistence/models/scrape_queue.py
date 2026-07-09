@@ -5,8 +5,14 @@ or in-progress scraping, together with their status lifecycle.
 Satisfies R8: 9 explicit columns, native enum, composite index (domain, status).
 """
 
+from __future__ import annotations
+
 import enum
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config.settings import ScrapingSettings
 
 from sqlalchemy import DateTime, Index, Text, UniqueConstraint, func, text
 from sqlalchemy import Enum as SAEnum
@@ -75,6 +81,17 @@ class ScrapeQueue(Base):
     )
 
     @classmethod
-    def from_url(cls, domain: str, url: str) -> "ScrapeQueue":
-        """Factory: create a new ScrapeQueue row with status=PENDING."""
+    def from_url(
+        cls, url: str, *, settings: ScrapingSettings | None = None
+    ) -> ScrapeQueue:
+        """Factory: create a new ScrapeQueue row from a URL with SSRF validation.
+
+        Derives domain via validate_scrape_url. Raises SSRFError if the URL
+        fails scheme, allowlist, or private-IP checks.
+        """
+        from config.settings import ScrapingSettings as _ScrapingSettings
+        from core.security.url_validator import validate_scrape_url
+
+        cfg = settings or _ScrapingSettings()
+        domain = validate_scrape_url(url, cfg.allowed_hosts)
         return cls(domain=domain, url=url, status=ScrapeStatus.PENDING)

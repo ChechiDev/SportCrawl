@@ -24,7 +24,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.engine.url import URL, make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 import infrastructure.persistence.models.scrape_queue  # noqa: F401
@@ -101,11 +101,11 @@ async def async_session(
     during the test never persists to subsequent tests.
     """
     engine = create_async_engine(_integration_db_url, echo=False)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    session = session_factory()
     try:
-        yield session
+        async with engine.connect() as conn:
+            await conn.begin()
+            async with AsyncSession(bind=conn, expire_on_commit=False) as session:
+                yield session
+            await conn.rollback()
     finally:
-        await session.rollback()
-        await session.close()
         await engine.dispose()

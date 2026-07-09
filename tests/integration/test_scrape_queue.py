@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.scraper import SSRFError
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 
 # ---------------------------------------------------------------------------
@@ -27,9 +28,7 @@ class TestScrapeQueueCreate:
 
     async def test_create_row_persists(self, async_session: AsyncSession) -> None:
         """A new ScrapeQueue row inserted via ORM is readable in the same session."""
-        row = ScrapeQueue.from_url(
-            domain="example.com", url="https://example.com/page1"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/page1")
         async_session.add(row)
         await async_session.flush()
 
@@ -41,9 +40,7 @@ class TestScrapeQueueCreate:
 
     async def test_created_at_is_set(self, async_session: AsyncSession) -> None:
         """created_at is populated by the server default on insert."""
-        row = ScrapeQueue.from_url(
-            domain="example.com", url="https://example.com/page2"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/page2")
         async_session.add(row)
         await async_session.flush()
         await async_session.refresh(row)
@@ -62,14 +59,14 @@ class TestScrapeQueueGet:
 
     async def test_get_by_primary_key(self, async_session: AsyncSession) -> None:
         """A flushed row is retrievable via session.get()."""
-        row = ScrapeQueue.from_url(domain="example.com", url="https://example.com/get1")
+        row = ScrapeQueue.from_url(url="https://fbref.com/get1")
         async_session.add(row)
         await async_session.flush()
 
         fetched = await async_session.get(ScrapeQueue, row.id)
         assert fetched is not None
-        assert fetched.url == "https://example.com/get1"
-        assert fetched.domain == "example.com"
+        assert fetched.url == "https://fbref.com/get1"
+        assert fetched.domain == "fbref.com"
 
     async def test_get_nonexistent_returns_none(
         self, async_session: AsyncSession
@@ -89,9 +86,7 @@ class TestScrapeQueueList:
 
     async def test_list_by_status(self, async_session: AsyncSession) -> None:
         """SELECT filtered by status returns only matching rows."""
-        pending = ScrapeQueue.from_url(
-            domain="list.com", url="https://list.com/pending"
-        )
+        pending = ScrapeQueue.from_url(url="https://fbref.com/pending")
         async_session.add(pending)
         await async_session.flush()
 
@@ -104,18 +99,16 @@ class TestScrapeQueueList:
 
     async def test_list_by_domain(self, async_session: AsyncSession) -> None:
         """SELECT filtered by domain returns only matching rows."""
-        row = ScrapeQueue.from_url(
-            domain="specific-domain.io", url="https://specific-domain.io/path"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/specific-path")
         async_session.add(row)
         await async_session.flush()
 
-        stmt = select(ScrapeQueue).where(ScrapeQueue.domain == "specific-domain.io")
+        stmt = select(ScrapeQueue).where(ScrapeQueue.domain == "fbref.com")
         result = await async_session.execute(stmt)
         rows = result.scalars().all()
 
         assert len(rows) == 1
-        assert all(r.domain == "specific-domain.io" for r in rows)
+        assert all(r.domain == "fbref.com" for r in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +121,7 @@ class TestScrapeQueueDelete:
 
     async def test_delete_row(self, async_session: AsyncSession) -> None:
         """A flushed row deleted via session.delete() is no longer retrievable."""
-        row = ScrapeQueue.from_url(domain="del.com", url="https://del.com/remove")
+        row = ScrapeQueue.from_url(url="https://fbref.com/remove")
         async_session.add(row)
         await async_session.flush()
         row_id = row.id
@@ -211,9 +204,9 @@ class TestScrapeQueueUpsert:
         self, async_session: AsyncSession
     ) -> None:
         """Plain INSERT of a duplicate URL raises IntegrityError (no ON CONFLICT)."""
-        url = "https://upsert.com/plain-dup"
-        row1 = ScrapeQueue.from_url(domain="upsert.com", url=url)
-        row2 = ScrapeQueue.from_url(domain="upsert.com", url=url)
+        url = "https://fbref.com/plain-dup"
+        row1 = ScrapeQueue.from_url(url=url)
+        row2 = ScrapeQueue.from_url(url=url)
 
         async_session.add(row1)
         await async_session.flush()
@@ -239,9 +232,7 @@ class TestScrapeQueueStatusTransitions:
 
     async def test_pending_to_in_progress(self, async_session: AsyncSession) -> None:
         """A row can transition from PENDING to IN_PROGRESS."""
-        row = ScrapeQueue.from_url(
-            domain="transitions.com", url="https://transitions.com/t1"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/t1")
         async_session.add(row)
         await async_session.flush()
         assert row.status == ScrapeStatus.PENDING
@@ -254,9 +245,7 @@ class TestScrapeQueueStatusTransitions:
 
     async def test_in_progress_to_done(self, async_session: AsyncSession) -> None:
         """A row can transition from IN_PROGRESS to DONE."""
-        row = ScrapeQueue.from_url(
-            domain="transitions.com", url="https://transitions.com/t2"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/t2")
         async_session.add(row)
         await async_session.flush()
         row.status = ScrapeStatus.IN_PROGRESS
@@ -272,9 +261,7 @@ class TestScrapeQueueStatusTransitions:
 
     async def test_in_progress_to_failed(self, async_session: AsyncSession) -> None:
         """A row can transition from IN_PROGRESS to FAILED with an error message."""
-        row = ScrapeQueue.from_url(
-            domain="transitions.com", url="https://transitions.com/t3"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/t3")
         async_session.add(row)
         await async_session.flush()
         row.status = ScrapeStatus.IN_PROGRESS
@@ -293,9 +280,7 @@ class TestScrapeQueueStatusTransitions:
         self, async_session: AsyncSession
     ) -> None:
         """A FAILED row can re-enter the queue as PENDING via the retry path (R9)."""
-        row = ScrapeQueue.from_url(
-            domain="transitions.com", url="https://transitions.com/t4"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/t4")
         async_session.add(row)
         await async_session.flush()
         row.status = ScrapeStatus.IN_PROGRESS
@@ -319,9 +304,7 @@ class TestScrapeQueueStatusTransitions:
         self, async_session: AsyncSession
     ) -> None:
         """After the retry path, the row is returned by a PENDING status query."""
-        row = ScrapeQueue.from_url(
-            domain="transitions.com", url="https://transitions.com/t5"
-        )
+        row = ScrapeQueue.from_url(url="https://fbref.com/t5")
         async_session.add(row)
         await async_session.flush()
         row.status = ScrapeStatus.FAILED
@@ -333,7 +316,7 @@ class TestScrapeQueueStatusTransitions:
         await async_session.flush()
 
         stmt = select(ScrapeQueue).where(
-            ScrapeQueue.url == "https://transitions.com/t5",
+            ScrapeQueue.url == "https://fbref.com/t5",
             ScrapeQueue.status == ScrapeStatus.PENDING,
         )
         result = await async_session.execute(stmt)
@@ -341,3 +324,40 @@ class TestScrapeQueueStatusTransitions:
 
         assert fetched is not None
         assert fetched.status == ScrapeStatus.PENDING
+
+
+# ---------------------------------------------------------------------------
+# from_url SSRF Validation Tests (Phase 3b)
+# ---------------------------------------------------------------------------
+
+
+class TestFromUrlSsrfValidation:
+    """Verify that from_url() enforces SSRF rules and derives domain correctly."""
+
+    async def test_valid_https_fbref_url_is_accepted(
+        self, async_session: AsyncSession
+    ) -> None:
+        """Valid fbref HTTPS URL creates a row with domain='fbref.com'."""
+        row = ScrapeQueue.from_url(url="https://fbref.com/en/squads/")
+        async_session.add(row)
+        await async_session.flush()
+        assert row.domain == "fbref.com"
+        assert row.url == "https://fbref.com/en/squads/"
+
+    def test_http_scheme_raises_ssrf_error(self) -> None:
+        """HTTP URL is rejected with reason='scheme must be https'."""
+        with pytest.raises(SSRFError) as exc_info:
+            ScrapeQueue.from_url(url="http://fbref.com/")
+        assert exc_info.value.reason == "scheme must be https"
+
+    def test_non_allowlisted_host_raises_ssrf_error(self) -> None:
+        """Non-allowlisted host is rejected with reason='host not in allowed_hosts'."""
+        with pytest.raises(SSRFError) as exc_info:
+            ScrapeQueue.from_url(url="https://evil.com/")
+        assert exc_info.value.reason == "host not in allowed_hosts"
+
+    def test_private_ip_raises_ssrf_error(self) -> None:
+        """Private IP literal is rejected with reason='private IP not allowed'."""
+        with pytest.raises(SSRFError) as exc_info:
+            ScrapeQueue.from_url(url="https://192.168.1.1/")
+        assert exc_info.value.reason == "private IP not allowed"

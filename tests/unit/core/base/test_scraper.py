@@ -7,6 +7,7 @@ asyncio.sleep is patched to avoid real waits.
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import pandas as pd
 import pytest
 from pydantic import BaseModel
 
@@ -18,7 +19,7 @@ from core.exceptions.scraper import (
     ScraperError,
 )
 from ports.browser import ScrapingEngine
-from ports.scraper import BaseScraper
+from ports.scraper import BaseScraper, BaseMultiTableScraper
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -39,11 +40,31 @@ class _ParseResult(BaseModel):
     content: str
 
 
-class ConcreteScraper(BaseScraper):
+class ConcreteScraper(BaseScraper[_ParseResult]):
     """Minimal concrete scraper — parse returns a _ParseResult."""
 
     async def parse(self, html: str) -> _ParseResult:
         return _ParseResult(content=html)
+
+
+# Generic test doubles
+class MyModel(BaseModel):
+    text: str
+
+
+class MyScraper(BaseScraper[MyModel]):
+    async def parse(self, html: str) -> MyModel:
+        return MyModel(text=html)
+
+
+# BaseMultiTableScraper test doubles
+class TableResult(BaseModel):
+    table_ids: list[str]
+
+
+class ConcreteMultiScraper(BaseMultiTableScraper[TableResult]):
+    async def parse_tables(self, tables: dict[str, pd.DataFrame]) -> TableResult:
+        return TableResult(table_ids=list(tables.keys()))
 
 
 def _settings(**overrides: Any) -> ScrapingSettings:
@@ -72,6 +93,27 @@ class TestInstantiation:
     def test_concrete_subclass_can_be_instantiated(self) -> None:
         scraper = ConcreteScraper(MockEngine(), _settings())
         assert isinstance(scraper, BaseScraper)
+
+
+# ---------------------------------------------------------------------------
+# Generic[T_co] constraint
+# ---------------------------------------------------------------------------
+
+
+class TestGenericConstraint:
+    async def test_typed_scraper_returns_t_co_instance(self) -> None:
+        """fetch_and_parse returns the concrete T_co, not bare BaseModel."""
+        engine = AsyncMock(spec=ScrapingEngine)
+        engine.fetch.return_value = "<html>hello</html>"
+
+        scraper = MyScraper(engine, _settings())
+        result = await scraper.fetch_and_parse("https://fbref.com/")
+
+        assert isinstance(result, MyModel)
+        assert result.text == "<html>hello</html>"
+
+    def test_typed_scraper_is_base_scraper_subtype(self) -> None:
+        assert issubclass(MyScraper, BaseScraper)
 
 
 # ---------------------------------------------------------------------------
@@ -210,3 +252,78 @@ class TestErrorPropagation:
 
         # Only 1 fetch; ParsingError is not retried.
         assert engine.fetch.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# BaseMultiTableScraper
+# ---------------------------------------------------------------------------
+
+HTML_TWO_ID_TABLES = """
+<html><body>
+<table id="stats_standard"><tr><th>A</th></tr><tr><td>1</td></tr></table>
+<table id="stats_shooting"><tr><th>B</th></tr><tr><td>2</td></tr></table>
+</body></html>
+"""
+
+HTML_ONE_ID_ONE_NO_ID = """
+<html><body>
+<table id="stats_standard"><tr><th>A</th></tr><tr><td>1</td></tr></table>
+<table><tr><th>B</th></tr><tr><td>2</td></tr></table>
+</body></html>
+"""
+
+HTML_NO_ID_TABLE = """
+<html><body>
+<table><tr><th>C</th></tr><tr><td>3</td></tr></table>
+</body></html>
+"""
+
+HTML_NO_TABLES = "<html><body><p>no tables here</p></body></html>"
+
+
+class TestBaseMultiTableScraper:
+    async def test_two_id_tables_are_keyed_by_id(self) -> None:
+        """parse() returns a dict keyed by each table's HTML id attribute."""
+        engine = AsyncMock(spec=ScrapingEngine)
+        engine.fetch.return_value = HTML_TWO_ID_TABLES
+
+        scraper = ConcreteMultiScraper(engine, _settings())
+        result = await scraper.fetch_and_parse("https://fbref.com/")
+
+        assert isinstance(result, TableResult)
+        assert "stats_standard" in result.table_ids
+        assert "stats_shooting" in result.table_ids
+        assert len(result.table_ids) == 2
+
+    async def test_table_without_id_is_skipped(self) -> None:
+        """Tables missing the id attribute are not included in the dict."""
+        engine = AsyncMock(spec=ScrapingEngine)
+        engine.fetch.return_value = HTML_ONE_ID_ONE_NO_ID
+
+        scraper = ConcreteMultiScraper(engine, _settings())
+        result = await scraper.fetch_and_parse("https://fbref.com/")
+
+        assert result.table_ids == ["stats_standard"]
+
+    async def test_no_id_table_raises_scraper_error(self) -> None:
+        """A page with tables but none having id raises ScraperError, not ValueError."""
+        engine = AsyncMock(spec=ScrapingEngine)
+        engine.fetch.return_value = HTML_NO_ID_TABLE
+
+        scraper = ConcreteMultiScraper(engine, _settings())
+        with pytest.raises(ScraperError, match="no tables with id attribute found"):
+            await scraper.fetch_and_parse("https://fbref.com/")
+
+    async def test_page_with_no_tables_raises_scraper_error(self) -> None:
+        """A page with no <table> elements at all raises ScraperError."""
+        engine = AsyncMock(spec=ScrapingEngine)
+        engine.fetch.return_value = HTML_NO_TABLES
+
+        scraper = ConcreteMultiScraper(engine, _settings())
+        with pytest.raises(ScraperError):
+            await scraper.fetch_and_parse("https://fbref.com/")
+
+    def test_base_multi_table_scraper_is_abstract(self) -> None:
+        """Cannot instantiate BaseMultiTableScraper without parse_tables."""
+        with pytest.raises(TypeError):
+            BaseMultiTableScraper(MockEngine(), _settings())  # type: ignore[abstract]

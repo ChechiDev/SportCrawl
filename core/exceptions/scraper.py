@@ -30,3 +30,11 @@ class ParsingError(ScraperError):
 
 class RateLimitError(ScraperError):
     """Raised when the target site enforces a rate limit (429 or equivalent)."""
+
+
+class SSRFError(ScraperError):
+    """Raised when a URL is rejected by SSRF validation rules."""
+
+    def __init__(self, *, url: str, reason: str) -> None:
+        super().__init__(f"SSRF rejected: {reason}", url=url)
+        self.reason = reason
