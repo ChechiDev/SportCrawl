@@ -92,38 +92,3 @@ uv run pytest --cov=. --cov-fail-under=80
 1. Open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked** and select `extensions/sportcrawl-chrome/`.
 3. Click the SportCrawl icon → set **Work server URL** and **Work server token** → Save.
-
-## Contributing
-
-**Branches**
-
-```
-feat/<short-description>
-fix/<short-description>
-chore/<short-description>
-```
-
-**Commits** — [Conventional Commits](https://www.conventionalcommits.org/) enforced via commitizen. Valid types: `feat`, `fix`, `refactor`, `perf`, `chore`, `test`, `docs`. `feat` bumps MINOR, `fix`/`refactor`/`perf` bump PATCH.
-
-**Code style** — Ruff (line length 88), mypy strict, import-linter. Run before committing:
-
-```bash
-uv run ruff check .
-uv run mypy .
-uv run lint-imports
-```
-
-**Testing** — Strict TDD. Write the failing test first, then the implementation. Coverage gate: 80%. Integration tests require Docker.
-
-**Architecture rules**
-
-- `domains/` must not import from `infrastructure/` — use ports.
-- `ports/` must not import from `config/`, `infrastructure/`, or `domains/`.
-- `core/` must not import from `ports/` or `infrastructure/`.
-- Infrastructure adapters (`browser`, `persistence`, `work_server`, `jobs`) must not import each other.
-
-These contracts are enforced by import-linter on every test run. A PR that breaks them will not be merged.
-
-**Adding a new domain**
-
-Create five files under `domains/<name>/`: `models.py`, `interfaces.py`, `scraper.py`, `repository.py`, `service.py`. No existing file outside `domains/` should need to change.
