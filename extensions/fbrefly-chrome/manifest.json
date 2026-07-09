@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "fbrefly",
+  "version": "1.0.0",
+  "description": "fbrefly Chrome extension: CF clearance capture and fetch task execution for fbref.com.",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["cookies", "storage", "alarms"],
+  "host_permissions": [
+    "https://fbref.com/*",
+    "https://*.fbref.com/*",
+    "http://localhost:9731/*"
+  ]
+}

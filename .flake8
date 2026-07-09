@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 88
+extend-ignore =
+    # E203: whitespace before ':' — conflicts with black/ruff slice formatting
+    E203,
+    # W503: line break before binary operator — conflicts with black/ruff style
+    W503
+exclude =
+    .venv,
+    .git,
+    __pycache__,
+    .mypy_cache,
+    .ruff_cache,
+    .pytest_cache,
+    build,
+    dist,
+    *.egg-info
