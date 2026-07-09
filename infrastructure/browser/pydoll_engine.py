@@ -23,7 +23,7 @@ from pydoll.browser.chromium.chrome import Chrome
 from pydoll.exceptions import PydollException
 
 from core.exceptions.scraper import PageLoadError
-from infrastructure.browser.engine import ScrapingEngine
+from ports.browser import ScrapingEngine
 
 logger = logging.getLogger(__name__)
 

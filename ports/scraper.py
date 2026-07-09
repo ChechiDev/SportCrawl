@@ -13,14 +13,26 @@ Usage:
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from typing import Protocol
 
 from pydantic import BaseModel
 
-from config.settings import ScrapingSettings
 from core.exceptions.scraper import PageLoadError, RateLimitError, ScraperError
-from infrastructure.browser.engine import ScrapingEngine
+from ports.browser import ScrapingEngine
 
 logger = logging.getLogger(__name__)
+
+
+class ScraperConfig(Protocol):
+    """Minimal config contract required by BaseScraper.
+
+    Any object with these three attributes satisfies the protocol —
+    ScrapingSettings from config.settings does so structurally.
+    """
+
+    max_retries: int
+    base_delay: float
+    max_delay: float
 
 
 class BaseScraper(ABC):
@@ -31,7 +43,7 @@ class BaseScraper(ABC):
     immediately. Never raises bare Exception.
     """
 
-    def __init__(self, engine: ScrapingEngine, settings: ScrapingSettings) -> None:
+    def __init__(self, engine: ScrapingEngine, settings: ScraperConfig) -> None:
         self._engine = engine
         self._settings = settings
 
