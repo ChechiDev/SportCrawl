@@ -4,13 +4,17 @@ Provides isolated integration test infrastructure that avoids asyncpg
 cross-event-loop issues.
 
 Design:
-- ``_integration_postgres``: one Postgres container per test session (sync, session-scoped).
-- ``_integration_db_url``: derives the asyncpg URL object from the container (sync, session-scoped).
-  NOTE: must remain a SQLAlchemy URL object, NOT a str — str() masks the password.
-- ``migrate_db``: creates the schema once using ``asyncio.run()`` in a dedicated
-  loop, completely outside pytest-asyncio's loop management (sync, session-scoped, autouse).
-- ``async_session``: yields a fresh ``AsyncSession`` per test function, creating a
-  new engine inside the test's own event loop to avoid cross-loop asyncpg errors.
+- ``_integration_postgres``: one Postgres container per test session
+  (sync, session-scoped).
+- ``_integration_db_url``: derives the asyncpg URL object from the container
+  (sync, session-scoped). NOTE: must remain a SQLAlchemy URL object, NOT a
+  str — str() masks the password.
+- ``migrate_db``: creates the schema once using ``asyncio.run()`` in a
+  dedicated loop, outside pytest-asyncio's loop management
+  (sync, session-scoped, autouse).
+- ``async_session``: yields a fresh ``AsyncSession`` per test function,
+  creating a new engine inside the test's own event loop to avoid
+  cross-loop asyncpg errors.
 """
 
 import asyncio
@@ -25,7 +29,6 @@ from testcontainers.postgres import PostgresContainer
 
 import infrastructure.persistence.models.scrape_queue  # noqa: F401
 from infrastructure.persistence.models.base import Base
-
 
 # ---------------------------------------------------------------------------
 # Container fixture

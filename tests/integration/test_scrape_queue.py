@@ -7,7 +7,7 @@ Schema is created once per session via the autouse ``migrate_db`` fixture in
 ``async_session`` (function-scoped, rolled back after each test).
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
@@ -16,7 +16,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
-
 
 # ---------------------------------------------------------------------------
 # CRUD Tests
@@ -68,7 +67,9 @@ class TestScrapeQueueGet:
         assert fetched.url == "https://example.com/get1"
         assert fetched.domain == "example.com"
 
-    async def test_get_nonexistent_returns_none(self, async_session: AsyncSession) -> None:
+    async def test_get_nonexistent_returns_none(
+        self, async_session: AsyncSession
+    ) -> None:
         """session.get() returns None for a primary key that does not exist."""
         result = await async_session.get(ScrapeQueue, 999_999)
         assert result is None
@@ -256,7 +257,7 @@ class TestScrapeQueueStatusTransitions:
         await async_session.flush()
 
         row.status = ScrapeStatus.DONE
-        row.completed_at = datetime.now(tz=timezone.utc)
+        row.completed_at = datetime.now(tz=UTC)
         await async_session.flush()
         await async_session.refresh(row)
 
@@ -275,7 +276,7 @@ class TestScrapeQueueStatusTransitions:
 
         row.status = ScrapeStatus.FAILED
         row.error_message = "Connection timeout"
-        row.completed_at = datetime.now(tz=timezone.utc)
+        row.completed_at = datetime.now(tz=UTC)
         await async_session.flush()
         await async_session.refresh(row)
 

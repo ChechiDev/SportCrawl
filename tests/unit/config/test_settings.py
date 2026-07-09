@@ -129,7 +129,8 @@ class TestScrapingSettingsWorkServer:
     def test_work_server_token_overridden_by_env_var(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """SCRAPING__WORK_SERVER_TOKEN env var sets settings.scraping.work_server_token."""
+        """SCRAPING__WORK_SERVER_TOKEN env var sets
+        settings.scraping.work_server_token."""
         monkeypatch.setenv("DB__HOST", "localhost")
         monkeypatch.setenv("DB__NAME", "testdb")
         monkeypatch.setenv("DB__USER", "testuser")
@@ -138,7 +139,9 @@ class TestScrapingSettingsWorkServer:
         settings = Settings()
         assert settings.scraping.work_server_token == "mysecrettoken"
 
-    def test_prod_with_empty_token_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_prod_with_empty_token_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("DB__HOST", "localhost")
         monkeypatch.setenv("DB__NAME", "testdb")
         monkeypatch.setenv("DB__USER", "testuser")
@@ -150,7 +153,9 @@ class TestScrapingSettingsWorkServer:
         with pytest.raises(ValidationError):
             Settings()  # type: ignore[call-arg]
 
-    def test_prod_with_http_work_server_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_prod_with_http_work_server_url_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("DB__HOST", "localhost")
         monkeypatch.setenv("DB__NAME", "testdb")
         monkeypatch.setenv("DB__USER", "testuser")

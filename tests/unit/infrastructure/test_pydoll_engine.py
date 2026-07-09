@@ -17,7 +17,6 @@ import pytest
 
 from infrastructure.browser.engine import ScrapingEngine
 
-
 # ---------------------------------------------------------------------------
 # Contract: PydollEngine is a concrete ScrapingEngine
 # ---------------------------------------------------------------------------
@@ -45,7 +44,8 @@ class TestPydollEngineIsScrapingEngine:
 
 
 async def _html_coroutine(html: str) -> str:
-    """Return *html* as a coroutine — mirrors pydoll's ``@property async def page_source``."""
+    """Return *html* as a coroutine — mirrors pydoll's ``@property async def
+    page_source``."""
     return html
 
 
