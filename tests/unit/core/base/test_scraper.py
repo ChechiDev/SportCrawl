@@ -29,7 +29,7 @@ from ports.scraper import BaseMultiTableScraper, BaseScraper
 class MockEngine(ScrapingEngine):
     """Minimal concrete engine for tests — returns a fixed HTML string."""
 
-    async def fetch(self, url: str) -> str:
+    async def fetch(self, url: str) -> str:  # noqa: ARG002
         return "<html>ok</html>"
 
     async def close(self) -> None:
@@ -74,6 +74,8 @@ def _settings(**overrides: Any) -> ScrapingSettings:
         "base_delay": 1.0,
         "max_delay": 60.0,
         "request_timeout": 30,
+        "request_delay_min": 0.0,
+        "request_delay_max": 0.0,
     }
     base.update(overrides)
     return ScrapingSettings(**base)
@@ -229,6 +231,39 @@ class TestExponentialBackoff:
 
         delays = [c.args[0] for c in mock_sleep.call_args_list]
         assert all(d <= 5.0 for d in delays)
+
+
+# ---------------------------------------------------------------------------
+# Inter-request delay
+# ---------------------------------------------------------------------------
+
+
+class TestInterRequestDelay:
+    async def test_inter_request_delay_fires_before_fetch(self) -> None:
+        """With request_delay_min > 0, asyncio.sleep fires once before fetch."""
+        engine = AsyncMock(spec=ScrapingEngine)
+        engine.fetch.return_value = "<html>ok</html>"
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            scraper = ConcreteScraper(
+                engine,
+                _settings(request_delay_min=5.0, request_delay_max=5.0),
+            )
+            await scraper.fetch_and_parse("https://fbref.com/")
+
+        mock_sleep.assert_called_once_with(5.0)
+        engine.fetch.assert_called_once()
+
+    async def test_inter_request_delay_skipped_when_zero(self) -> None:
+        """When both delay bounds are 0.0, no pre-fetch sleep is issued."""
+        engine = AsyncMock(spec=ScrapingEngine)
+        engine.fetch.return_value = "<html>ok</html>"
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            scraper = ConcreteScraper(engine, _settings())
+            await scraper.fetch_and_parse("https://fbref.com/")
+
+        mock_sleep.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
