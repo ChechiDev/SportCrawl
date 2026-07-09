@@ -168,6 +168,42 @@ class TestScrapingSettingsWorkServer:
             Settings()  # type: ignore[call-arg]
 
 
+class TestScrapingSettingsNewFields:
+    def test_allowed_hosts_default(self) -> None:
+        settings = ScrapingSettings()
+        assert settings.allowed_hosts == ["fbref.com"]
+
+    def test_max_concurrent_requests_default(self) -> None:
+        settings = ScrapingSettings()
+        assert settings.max_concurrent_requests == 3
+
+    def test_crawl_delay_ms_default(self) -> None:
+        settings = ScrapingSettings()
+        assert settings.crawl_delay_ms == 1000
+
+    def test_jitter_factor_default(self) -> None:
+        settings = ScrapingSettings()
+        assert settings.jitter_factor == 0.5
+
+    def test_max_queue_retries_default(self) -> None:
+        settings = ScrapingSettings()
+        assert settings.max_queue_retries == 5
+
+    def test_allowed_hosts_overridden_by_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SCRAPING__ALLOWED_HOSTS env var overrides the default via Settings."""
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv(
+            "SCRAPING__ALLOWED_HOSTS", '["fbref.com","stathead.com"]'
+        )
+        settings = Settings()
+        assert settings.scraping.allowed_hosts == ["fbref.com", "stathead.com"]
+
+
 class TestSettings:
     def test_env_defaults_to_dev(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DB__HOST", "localhost")

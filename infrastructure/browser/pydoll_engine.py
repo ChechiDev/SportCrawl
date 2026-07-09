@@ -22,7 +22,7 @@ from typing import Any
 from pydoll.browser.chromium.chrome import Chrome
 from pydoll.exceptions import PydollException
 
-from core.exceptions.scraper import PageLoadError
+from core.exceptions.scraper import PageLoadError, RateLimitError
 from ports.browser import ScrapingEngine
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,15 @@ class PydollEngine(ScrapingEngine):
         try:
             await tab.go_to(url)
             # pydoll page_source stubs lack Awaitable annotation
-            return await tab.page_source  # type: ignore[no-any-return]
+            content: str = await tab.page_source
+            if (
+                "too many requests" in content.lower()
+                or "rate limit" in content.lower()
+            ):
+                # TODO(phase-5): replace with CDP Network.responseReceived
+                # when pydoll event API stabilizes
+                raise RateLimitError(f"Rate limit detected at {url}", url=url)
+            return content
         except PydollException as exc:
             logger.debug("Fetch failed for %s: %s", url, exc)
             try:
