@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 # Import Base and all models so their metadata is registered.
+import infrastructure.persistence.models.provenance  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
 import infrastructure.persistence.models.scrape_queue  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
 from infrastructure.persistence.models.base import Base
 
