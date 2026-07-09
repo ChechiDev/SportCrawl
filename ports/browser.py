@@ -2,8 +2,6 @@
 
 Concrete implementations (e.g. PydollEngine) wrap a real browser/CDP client.
 Tests use in-file mock subclasses — no real browser required at unit-test time.
-
-Note: PydollEngine is deferred to Phase 3 (PR 3) after the pydoll-python API spike.
 """
 
 from abc import ABC, abstractmethod
