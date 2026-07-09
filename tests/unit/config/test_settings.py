@@ -91,6 +91,83 @@ class TestScrapingSettings:
         assert settings.scraping.max_retries == 5
 
 
+class TestScrapingSettingsWorkServer:
+    def test_work_server_url_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """work_server_url defaults to http://localhost:9731 when env var is absent."""
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_URL", raising=False)
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.scraping.work_server_url == "http://localhost:9731"
+
+    def test_work_server_token_default_is_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """work_server_token defaults to empty string when env var is absent."""
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.scraping.work_server_token == ""
+
+    def test_work_server_url_overridden_by_env_var(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SCRAPING__WORK_SERVER_URL env var sets settings.scraping.work_server_url."""
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_URL", "http://example.com:9731")
+        settings = Settings()
+        assert settings.scraping.work_server_url == "http://example.com:9731"
+
+    def test_work_server_token_overridden_by_env_var(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SCRAPING__WORK_SERVER_TOKEN env var sets
+        settings.scraping.work_server_token."""
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "mysecrettoken")
+        settings = Settings()
+        assert settings.scraping.work_server_token == "mysecrettoken"
+
+    def test_prod_with_empty_token_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("DB__SSL_MODE", "require")
+        monkeypatch.setenv("ENV", "prod")
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_URL", "https://example.com:9731")
+        with pytest.raises(ValidationError):
+            Settings()  # type: ignore[call-arg]
+
+    def test_prod_with_http_work_server_url_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("DB__SSL_MODE", "require")
+        monkeypatch.setenv("ENV", "prod")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "mytoken")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_URL", "http://example.com:9731")
+        with pytest.raises(ValidationError):
+            Settings()  # type: ignore[call-arg]
+
+
 class TestSettings:
     def test_env_defaults_to_dev(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DB__HOST", "localhost")
@@ -106,9 +183,24 @@ class TestSettings:
         monkeypatch.setenv("DB__NAME", "testdb")
         monkeypatch.setenv("DB__USER", "testuser")
         monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("DB__SSL_MODE", "require")
         monkeypatch.setenv("ENV", "prod")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "prodtoken")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_URL", "https://example.com:9731")
         settings = Settings()
         assert settings.env == "prod"
+
+    def test_prod_without_ssl_mode_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("ENV", "prod")
+        monkeypatch.delenv("DB__SSL_MODE", raising=False)
+        with pytest.raises(ValidationError):
+            Settings()
 
     def test_log_level_defaults_to_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DB__HOST", "localhost")

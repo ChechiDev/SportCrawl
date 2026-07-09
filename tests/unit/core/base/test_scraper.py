@@ -201,7 +201,9 @@ class TestErrorPropagation:
         engine.fetch.return_value = "<html>bad</html>"
 
         scraper = ConcreteScraper(engine, _settings(max_retries=3))
-        scraper.parse = AsyncMock(side_effect=ParsingError("parse failed"))  # type: ignore[method-assign]
+        scraper.parse = AsyncMock(  # type: ignore[method-assign]
+            side_effect=ParsingError("parse failed")
+        )
 
         with pytest.raises(ParsingError):
             await scraper.fetch_and_parse("https://example.com")
