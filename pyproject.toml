@@ -1,7 +1,7 @@
 [project]
-name = "fbrefly"
-version = "0.5.0"
-description = "Football data scraping infrastructure"
+name = "sportcrawl"
+version = "0.7.0"
+description = "Multi-sport data scraping infrastructure"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
