@@ -6,7 +6,7 @@ the first domain is implemented.
 
 import pytest
 
-from core.base.service import BaseService
+from ports.service import BaseService
 
 # ---------------------------------------------------------------------------
 # Concrete test subclass (defined here, not imported from production code)

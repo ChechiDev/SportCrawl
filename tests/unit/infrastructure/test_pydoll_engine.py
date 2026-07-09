@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from infrastructure.browser.engine import ScrapingEngine
+from ports.browser import ScrapingEngine
 
 # ---------------------------------------------------------------------------
 # Contract: PydollEngine is a concrete ScrapingEngine

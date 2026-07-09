@@ -11,14 +11,14 @@ import pytest
 from pydantic import BaseModel
 
 from config.settings import ScrapingSettings
-from core.base.scraper import BaseScraper
 from core.exceptions.scraper import (
     PageLoadError,
     ParsingError,
     RateLimitError,
     ScraperError,
 )
-from infrastructure.browser.engine import ScrapingEngine
+from ports.browser import ScrapingEngine
+from ports.scraper import BaseScraper
 
 # ---------------------------------------------------------------------------
 # Test doubles

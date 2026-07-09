@@ -26,6 +26,7 @@ dev = [
     "pip-audit>=2.7",
     "testcontainers[postgres]>=4.0",
     "commitizen>=3.0",
+    "import-linter>=2.13",
 ]
 
 [tool.ruff]
@@ -49,6 +50,40 @@ venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
 extraPaths = ["."]
+
+[tool.importlinter]
+# tests is included so cross-boundary imports in the test tree are also enforced.
+root_packages = ["ports", "domains", "infrastructure", "core", "config", "cli", "tests"]
+
+[[tool.importlinter.contracts]]
+name = "domains cannot import from infrastructure"
+type = "forbidden"
+source_modules = ["domains"]
+forbidden_modules = ["infrastructure"]
+
+[[tool.importlinter.contracts]]
+# ports may import from core (shared domain kernel — exceptions, types, logging)
+# but must never depend on application wiring (config) or adapters (infrastructure/domains).
+name = "ports cannot import from config, infrastructure, or domains"
+type = "forbidden"
+source_modules = ["ports"]
+forbidden_modules = ["config", "infrastructure", "domains"]
+
+[[tool.importlinter.contracts]]
+# core is the innermost layer — it must not depend on ports or adapters.
+name = "core cannot import from ports or infrastructure"
+type = "forbidden"
+source_modules = ["core"]
+forbidden_modules = ["ports", "infrastructure"]
+
+[[tool.importlinter.contracts]]
+name = "infrastructure adapters do not import each other"
+type = "independence"
+modules = [
+    "infrastructure.browser",
+    "infrastructure.persistence",
+    "infrastructure.work_server",
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
