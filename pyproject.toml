@@ -86,6 +86,7 @@ modules = [
     "infrastructure.browser",
     "infrastructure.persistence",
     "infrastructure.work_server",
+    "infrastructure.jobs",
 ]
 
 [tool.commitizen]

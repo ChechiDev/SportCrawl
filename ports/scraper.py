@@ -14,6 +14,7 @@ import asyncio
 import io
 import logging
 from abc import ABC, abstractmethod
+from random import uniform
 from typing import Protocol, TypeVar
 
 import pandas as pd  # type: ignore[import-untyped]
@@ -31,13 +32,16 @@ T_co = TypeVar("T_co", bound=BaseModel, covariant=True)
 class ScraperConfig(Protocol):
     """Minimal config contract required by BaseScraper.
 
-    Any object with these three attributes satisfies the protocol —
+    Any object with these attributes satisfies the protocol —
     ScrapingSettings from config.settings does so structurally.
+    Set request_delay_min=0.0 / request_delay_max=0.0 in tests to skip sleeping.
     """
 
     max_retries: int
     base_delay: float
     max_delay: float
+    request_delay_min: float
+    request_delay_max: float
 
 
 class BaseScraper[T_co](ABC):
@@ -46,11 +50,29 @@ class BaseScraper[T_co](ABC):
     Subclasses must implement parse(html). fetch_and_parse() retries on
     PageLoadError and RateLimitError; other ScraperError subtypes propagate
     immediately. Never raises bare Exception.
+
+    After each successful engine.fetch(), the raw HTML is stored and accessible
+    via the last_html property. Accessing last_html before the first successful
+    fetch raises AttributeError.
     """
 
     def __init__(self, engine: ScrapingEngine, settings: ScraperConfig) -> None:
         self._engine = engine
         self._settings = settings
+        self._last_html: str | None = None
+
+    @property
+    def last_html(self) -> str:
+        """Return the raw HTML string from the most recent successful fetch.
+
+        Raises:
+            AttributeError: if fetch_and_parse has never been called successfully.
+        """
+        if self._last_html is None:
+            raise AttributeError(
+                "last_html is not available before the first successful fetch"
+            )
+        return self._last_html
 
     @abstractmethod
     async def parse(self, html: str) -> T_co:
@@ -60,10 +82,19 @@ class BaseScraper[T_co](ABC):
     async def fetch_and_parse(self, url: str) -> T_co:
         """Fetch url and parse, retrying on transient errors with exponential backoff.
 
-        Retries on PageLoadError or RateLimitError up to settings.max_retries times.
-        Any other ScraperError propagates immediately.
+        Applies a randomized inter-request delay before issuing the first fetch attempt
+        to avoid bot-detection patterns. Retries on PageLoadError or RateLimitError up
+        to settings.max_retries times. Any other ScraperError propagates immediately.
         Raises the last ScraperError after all retries are exhausted.
+        After a successful fetch, the raw HTML is stored in last_html.
         """
+        delay = uniform(
+            self._settings.request_delay_min, self._settings.request_delay_max
+        )
+        if delay > 0:
+            logger.debug("Inter-request delay", extra={"delay": delay, "url": url})
+            await asyncio.sleep(delay)
+
         last_error: ScraperError | None = None
 
         for attempt in range(1, self._settings.max_retries + 1):
@@ -73,6 +104,7 @@ class BaseScraper[T_co](ABC):
                     extra={"url": url, "attempt": attempt},
                 )
                 html = await self._engine.fetch(url)
+                self._last_html = html
                 return await self.parse(html)
             except (PageLoadError, RateLimitError) as exc:
                 last_error = exc

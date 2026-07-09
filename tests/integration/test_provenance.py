@@ -19,7 +19,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy.exc import DataError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.persistence.models.provenance import Provenance, ProvenanceOutcome
@@ -81,7 +81,7 @@ class TestProvenanceCreate:
         """Inserting an invalid outcome value raises a DB-level error."""
         from sqlalchemy import text
 
-        with pytest.raises(DataError):
+        with pytest.raises(DBAPIError):
             await async_session.execute(
                 text(
                     "INSERT INTO sch_infra.provenance (url, outcome) "
