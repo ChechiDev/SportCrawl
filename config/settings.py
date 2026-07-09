@@ -38,6 +38,11 @@ class ScrapingSettings(BaseModel):
     request_timeout: int = 30
     work_server_url: str = "http://localhost:9731"
     work_server_token: str = ""
+    allowed_hosts: list[str] = ["fbref.com"]
+    max_concurrent_requests: int = 3
+    crawl_delay_ms: int = 1000
+    jitter_factor: float = 0.5
+    max_queue_retries: int = 5
 
 
 class Settings(BaseSettings):
