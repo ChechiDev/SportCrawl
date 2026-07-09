@@ -35,21 +35,6 @@ extensions/      Chrome extension — Cloudflare clearance capture + task fetch
 
 The Python `work_server` is the orchestrator. The Chrome extension is a dumb HTTP client: it captures `cf_clearance` cookies from fbref.com and fetches URLs on demand. This inverted architecture is what makes Cloudflare Bot Management evasion reliable — a real, resident Chrome session rather than headless simulation.
 
-## Current scope
-
-**v0.7.0 — active development**
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Core abstractions, generics, structured logging | ✅ Complete |
-| 2 | PydollEngine — async Chrome/CDP browser adapter | ✅ Complete |
-| 3 | CLI (Typer), scraper port contracts | ✅ Complete |
-| 4 | Provenance audit log — per-job run tracking | ✅ Complete |
-| 5 | ScrapeQueue orchestration — concurrent job loop | 🔄 In progress |
-| — | Football domain scrapers (player, club, competition, match) | 📋 Planned |
-
-The project is designed from the start to support multiple sports. All sports share a single PostgreSQL instance partitioned by schema (`sch_infra` for the shared task queue, `sch_football` for football-specific tables, future schemas for other sports).
-
 ## Installation
 
 **Prerequisites**
