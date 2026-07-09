@@ -240,7 +240,7 @@ class TestExponentialBackoff:
 
 class TestInterRequestDelay:
     async def test_inter_request_delay_fires_before_fetch(self) -> None:
-        """When request_delay_min > 0, asyncio.sleep is called once before the first fetch."""
+        """With request_delay_min > 0, asyncio.sleep fires once before fetch."""
         engine = AsyncMock(spec=ScrapingEngine)
         engine.fetch.return_value = "<html>ok</html>"
 
