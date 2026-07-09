@@ -1,141 +1,129 @@
-# fbrefly
+<div align="center">
 
-fbrefly is a football data scraping infrastructure that extracts match, player, club, and competition data from public football statistics sites. The problem it solves is not the scraping itself but the plumbing around it: anti-bot evasion (Cloudflare), structured persistence, domain isolation, and reproducible local development — so that adding a new data domain never requires touching shared infrastructure code.
+# SportCrawl
+
+<p>
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/Typer-CLI-009688?style=flat-square&logo=python&logoColor=white" alt="Typer CLI" />
+  <img src="https://img.shields.io/badge/JavaScript-Chrome_Extension-F7DF1E?style=flat-square&logo=javascript&logoColor=black" alt="JavaScript" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/SQLAlchemy-2.0_async-D71F00?style=flat-square&logo=sqlalchemy&logoColor=white" alt="SQLAlchemy" />
+  <img src="https://img.shields.io/badge/Pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white" alt="Pydantic v2" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?style=flat-square&logo=githubactions&logoColor=white" alt="GitHub Actions" />
+  <img src="https://img.shields.io/badge/status-work_in_progress-orange?style=flat-square" alt="Work in Progress" />
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License" />
+</p>
+
+</div>
+
+Async scraping infrastructure for football data from [fbref.com](https://fbref.com). SportCrawl extracts match, player, club, and competition statistics and persists them in PostgreSQL, with built-in anti-bot evasion via a real Chrome browser session.
+
+The architecture follows hexagonal / domain-driven design with strict layer contracts enforced by import-linter. The scraping core, persistence layer, and domain scrapers are fully decoupled — adding a new data domain or a new sport requires no changes to shared infrastructure.
 
 ## Architecture
 
-The project uses a domain-centric layout inspired by Screaming Architecture. The top-level folders tell you what the system *does*, not which framework it uses.
-
 ```
-fbrefly/
-  core/          Shared abstractions: generics, logging, exceptions
-  config/        Pydantic-settings environment configuration
-  infrastructure/  Browser engine (CDP via pydoll), database sessions, migrations
-  domains/       One subfolder per data domain (player, club, competition, ...)
-  cli/           Typer CLI entry points (Phase 3)
-  chrome-extension/  Cloudflare bypass browser extension
-  tests/         Mirrors the source tree
+ports/           Abstract interfaces — BaseScraper, BaseRepository (no concrete deps)
+core/            Shared kernel — logging, exceptions, generics
+config/          Pydantic-settings environment configuration
+infrastructure/  Adapters — PydollEngine (CDP), SQLAlchemy sessions, Alembic, job loop
+domains/         Football domain scrapers, models, and repositories
+cli/             Typer entry points
+extensions/      Chrome extension — Cloudflare clearance capture + task fetch
 ```
 
-**core/** owns nothing domain-specific. It defines the TypeVars, logging setup, and exception hierarchies that every other layer depends on.
+The Python `work_server` is the orchestrator. The Chrome extension is a dumb HTTP client: it captures `cf_clearance` cookies from fbref.com and fetches URLs on demand. This inverted architecture is what makes Cloudflare Bot Management evasion reliable — a real, resident Chrome session rather than headless simulation.
 
-**core/base/** (introduced in Phase 2) holds generic base classes — `BaseRepository[T]`, `BaseScraper`, `BaseService` — that domains extend without modifying.
+## Current scope
 
-**infrastructure/** contains technology-specific implementations: the CDP browser engine (`PydollEngine` — concrete Chrome/CDP adapter wrapping pydoll-python), the async SQLAlchemy session factory, and Alembic migrations. It depends on `core/` but never on `domains/`.
+**v0.7.0 — active development**
 
-**domains/** is the only place that knows about football concepts. Each domain extends core/base/ generics and wires them through infrastructure. No cross-domain imports.
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Core abstractions, generics, structured logging | ✅ Complete |
+| 2 | PydollEngine — async Chrome/CDP browser adapter | ✅ Complete |
+| 3 | CLI (Typer), scraper port contracts | ✅ Complete |
+| 4 | Provenance audit log — per-job run tracking | ✅ Complete |
+| 5 | ScrapeQueue orchestration — concurrent job loop | 🔄 In progress |
+| — | Football domain scrapers (player, club, competition, match) | 📋 Planned |
 
-See `.doc/` for per-folder design documentation.
+The project is designed from the start to support multiple sports. All sports share a single PostgreSQL instance partitioned by schema (`sch_infra` for the shared task queue, `sch_football` for football-specific tables, future schemas for other sports).
 
-## Running tests locally
+## Installation
+
+**Prerequisites**
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (package manager)
+- Docker (for PostgreSQL via Compose)
+- Google Chrome (for the scraping extension)
+
+**Setup**
 
 ```bash
+git clone https://github.com/ChechiDev/sportcrawl.git
+cd sportcrawl
+uv sync
+```
+
+**Start the database**
+
+```bash
+docker compose up -d
+uv run alembic upgrade head
+```
+
+**Run tests**
+
+```bash
+# Full suite (requires Docker for integration tests)
 uv run pytest
-```
 
-Tests are organized in two layers:
-
-**Unit tests** (`tests/unit/`) test core abstractions and base classes with mocks. No database required.
-
-**Integration tests** (`tests/integration/`) test ORM models and PostgreSQL-specific behavior (upsert semantics, native enums, constraints). These require Docker — `testcontainers` spins up a real PostgreSQL 16 container automatically. No manual database setup required.
-
-```bash
-# Unit tests only:
+# Unit tests only (no Docker required)
 uv run pytest tests/unit/
 
-# Integration tests only (Docker must be running):
-uv run pytest tests/integration/
-
-# All tests:
-uv run pytest
-```
-
-Coverage gate is enforced at 80%. Run with coverage explicitly:
-
-```bash
+# With coverage report
 uv run pytest --cov=. --cov-fail-under=80
 ```
 
-See `.doc/infrastructure/persistence.md` for the integration test architecture, known gotchas (asyncpg cross-loop, URL password masking, `create_all` vs Alembic), and how to add new integration tests.
+**Chrome extension**
 
-## Adding a new domain
+1. Open `chrome://extensions` and enable **Developer mode**.
+2. Click **Load unpacked** and select `extensions/sportcrawl-chrome/`.
+3. Click the SportCrawl icon → set **Work server URL** and **Work server token** → Save.
 
-Create five files. Do not modify any existing file outside `domains/`.
+## Contributing
 
-```
-domains/<name>/
-  models.py       SQLAlchemy entity (extends DeclarativeBase)
-  interfaces.py   Pydantic DTOs: RawData and DomainModel
-  scraper.py      Extends BaseScraper — implements fetch() and parse()
-  repository.py   Extends BaseRepository[YourEntity]
-  service.py      Extends BaseService — orchestrates scraper + repository
-```
-
-That is the complete extension point. Core, infrastructure, and other domains stay untouched.
-
-## Branch naming and commit format
-
-Branches follow the pattern `<type>/<short-description>`:
+**Branches**
 
 ```
-feat/player-scraper
-fix/rate-limit-retry
-chore/update-deps
+feat/<short-description>
+fix/<short-description>
+chore/<short-description>
 ```
 
-Commits use [Conventional Commits](https://www.conventionalcommits.org/):
+**Commits** — [Conventional Commits](https://www.conventionalcommits.org/) enforced via commitizen. Valid types: `feat`, `fix`, `refactor`, `perf`, `chore`, `test`, `docs`. `feat` bumps MINOR, `fix`/`refactor`/`perf` bump PATCH.
 
+**Code style** — Ruff (line length 88), mypy strict, import-linter. Run before committing:
+
+```bash
+uv run ruff check .
+uv run mypy .
+uv run lint-imports
 ```
-feat(player): add scraper for FBref player pages
-fix(repository): handle ON CONFLICT on upsert
-chore: bump sqlalchemy to 2.0.40
-```
 
-Valid types: `feat`, `fix`, `refactor`, `perf`, `chore`, `test`, `docs`.
+**Testing** — Strict TDD. Write the failing test first, then the implementation. Coverage gate: 80%. Integration tests require Docker.
 
-Versioning is automated via commitizen. `feat` bumps MINOR, `fix`/`refactor`/`perf` bump PATCH.
+**Architecture rules**
 
-## Chrome Extension
+- `domains/` must not import from `infrastructure/` — use ports.
+- `ports/` must not import from `config/`, `infrastructure/`, or `domains/`.
+- `core/` must not import from `ports/` or `infrastructure/`.
+- Infrastructure adapters (`browser`, `persistence`, `work_server`, `jobs`) must not import each other.
 
-The Chrome Extension (`extensions/fbrefly-chrome/`) is the scraping client of fbrefly, not merely a Cloudflare bypass tool. The architecture is inverted: the Python `work_server` is the orchestrator; the extension is a dumb HTTP client that fetches URLs on demand.
+These contracts are enforced by import-linter on every test run. A PR that breaks them will not be merged.
 
-**Why a real Chrome browser instead of headless / httpx?**
-Cloudflare Bot Management fingerprints TLS handshake, HTTP/2 SETTINGS frames, and browser APIs. A real Chrome session with a residential IP is the only reliable way to obtain a `cf_clearance` cookie that unlocks fbref.com without triggering JS challenges on every request.
+**Adding a new domain**
 
-### How to install
-
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked** and select `extensions/fbrefly-chrome/`.
-4. Click the fbrefly icon → set **Work server URL** and **Work server token** → Save.
-
-### What it does
-
-- Listens for `cf_clearance` cookie changes on `fbref.com` via `chrome.cookies.onChanged`. When a new clearance is issued, it POSTs the value to `POST /api/clearance` on the `work_server`.
-- Polls `GET /api/tasks/next` every ~60 seconds (minimum enforced by `chrome.alarms` in MV3). When a task arrives, it fetches the URL with `credentials: "include"` (so CF cookies are sent automatically), then POSTs the raw HTML to `POST /api/tasks/{id}/result`.
-- Exponential backoff on 5xx/network errors. Fatal stop on 401/403 — the service worker records the stop in `chrome.storage.local` so it survives eviction and restarts.
-
-See `.doc/chrome-extension.md` for the full API contract, design decisions, and production deployment notes.
-
-## PostgreSQL schema layout
-
-The project uses PostgreSQL schemas as the primary isolation boundary. All sports share one database instance — a constraint imposed by Oracle Cloud Free Tier (two Autonomous DB instances maximum; separate DBs per sport would exhaust the quota at sport #2).
-
-| Schema | Contents | Who writes to it |
-|---|---|---|
-| `sch_infra` | Cross-sport infrastructure tables: `scrape_queue`, `scrapestatus` enum | `infrastructure/` layer |
-| `sch_football` | Football domain tables: players, countries, clubs, competitions, matches | `domains/football/` |
-| `sch_shared` _(future)_ | Truly shared domain entities across sports (e.g., `countries` if fbref reuses the same list) | TBD |
-| `public` | `alembic_version` only | Alembic |
-
-`alembic_version` stays in `public` intentionally: Alembic holds a live handle to that table during every migration run, so moving it into another schema mid-transaction causes a self-referential failure.
-
-`scrape_queue` belongs in `sch_infra` — not `sch_football` — because it is a general-purpose task queue. Future sports (basketball, hockey) will submit URLs to the same queue without any schema changes to football tables.
-
-Alembic autogenerate must see all schemas. Both `run_migrations_offline()` and `do_run_migrations()` in `infrastructure/persistence/migrations/env.py` pass `include_schemas=True` to `context.configure()`. Without it, Alembic ignores non-`public` objects and autogenerate produces empty migration files.
-
-See `.doc/infrastructure/persistence-schema-strategy.md` for the full design decision: options evaluated, tradeoffs, and what goes where and why.
-
-## Design documentation
-
-`.doc/` contains per-folder design documentation: purpose, file-by-file breakdown, design decisions with alternatives considered, and extension guides. This folder is personal (Obsidian-based) and is excluded from git via `.gitignore`.
+Create five files under `domains/<name>/`: `models.py`, `interfaces.py`, `scraper.py`, `repository.py`, `service.py`. No existing file outside `domains/` should need to change.

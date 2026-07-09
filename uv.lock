@@ -559,7 +559,7 @@ wheels = [
 ]
 
 [[package]]
-name = "fbrefly"
+name = "sportcrawl"
 version = "0.5.0"
 source = { virtual = "." }
 dependencies = [
