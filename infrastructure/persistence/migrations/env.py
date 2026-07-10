@@ -61,7 +61,7 @@ else:
         from config.settings import Settings
 
         # pydantic-settings resolves required fields from env vars at runtime;
-        # Pyright cannot observe this dynamic loading, so the call-arg suppression is safe.
+        # Pyright cannot observe this dynamic loading — the call-arg suppression is safe.
         _s = Settings()  # type: ignore[call-arg]
         _app_url = URL.create(
             drivername="postgresql+asyncpg",
@@ -78,7 +78,7 @@ else:
         )
     except Exception:
         logger.warning(
-            "Unexpected error loading Settings — falling back to alembic.ini sqlalchemy.url",
+            "Unexpected error loading Settings — falling back to alembic.ini",
             exc_info=True,
         )
 
