@@ -66,12 +66,15 @@ class ScrapeQueue(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        # auto-updated by DB trigger trg_scrape_queue_updated_at
+        # (migration 134f2e68682a); no ORM onupdate
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    error_message: Mapped[str | None]
+    error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
     retry_count: Mapped[int] = mapped_column(server_default=text("0"))
 
     __table_args__ = (
