@@ -35,6 +35,8 @@ extensions/      Chrome extension — Cloudflare clearance capture + task fetch
 
 The Python `work_server` is the orchestrator. The Chrome extension is a dumb HTTP client: it captures `cf_clearance` cookies from fbref.com and fetches URLs on demand. This inverted architecture is what makes Cloudflare Bot Management evasion reliable — a real, resident Chrome session rather than headless simulation.
 
+For deeper design documentation — architecture decisions, migration patterns, repository contracts, and test fixture design — see the `.doc/` folder (gitignored, for local Obsidian use).
+
 ## Installation
 
 **Prerequisites**
@@ -62,7 +64,7 @@ uv run alembic upgrade head
 **Run tests**
 
 ```bash
-# Full suite (requires Docker for integration tests)
+# Full suite (requires Docker — integration tests spin up a PostgreSQL 16 container)
 uv run pytest
 
 # Unit tests only (no Docker required)
@@ -71,6 +73,8 @@ uv run pytest tests/unit/
 # With coverage report
 uv run pytest --cov=. --cov-fail-under=80
 ```
+
+Integration tests use [testcontainers](https://testcontainers-python.readthedocs.io/) to start an ephemeral `postgres:16-alpine` instance and run `alembic upgrade head` against it before any test executes. This means the full migration chain — including DB triggers — is exercised on every CI run. See `.doc/testing/integration.md` for the fixture design.
 
 **Chrome extension**
 
