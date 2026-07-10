@@ -29,9 +29,8 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol
 
-from sqlalchemy.exc import SQLAlchemyError
-
 from config.settings import ScrapingSettings
+from core.exceptions.repository import RepositoryError
 from core.exceptions.scraper import ScraperError
 from ports.scraper import BaseScraper
 
@@ -50,20 +49,35 @@ class _Session(Protocol):
     async def rollback(self) -> None: ...
 
 
+class ScrapeQueueRowProtocol(Protocol):
+    """Minimal structural contract for a scrape-queue row.
+
+    JobLoop only accesses these fields — no ORM model is imported directly.
+    """
+
+    id: int
+    url: str
+    retry_count: int
+
+
 class _QueueRepo(Protocol):
     """Protocol for ScrapeQueueRepository methods used by JobLoop."""
 
-    async def get(self, id: int) -> Any | None: ...  # noqa: A002
+    async def get(self, id: int) -> ScrapeQueueRowProtocol | None: ...  # noqa: A002
 
-    async def list_pending(self, limit: int) -> list[Any]: ...
+    async def list_pending(self, limit: int) -> list[ScrapeQueueRowProtocol]: ...
 
-    async def mark_in_progress(self, row: Any) -> Any: ...
+    async def mark_in_progress(
+        self, row: ScrapeQueueRowProtocol
+    ) -> ScrapeQueueRowProtocol: ...
 
-    async def mark_done(self, row: Any) -> Any: ...
+    async def mark_done(
+        self, row: ScrapeQueueRowProtocol
+    ) -> ScrapeQueueRowProtocol: ...
 
     async def mark_failed(
         self,
-        row: Any,
+        row: ScrapeQueueRowProtocol,
         error: str,
         max_queue_retries: int,
     ) -> Any: ...
@@ -204,7 +218,7 @@ class JobLoop:
                         extra={"url": url, "run_id": str(run_id)},
                     )
 
-                except (ScraperError, SQLAlchemyError) as exc:
+                except (ScraperError, RepositoryError) as exc:
                     logger.warning(
                         "Job failed",
                         extra={"url": url, "error": str(exc)},

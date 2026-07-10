@@ -1,5 +1,5 @@
 /**
- * background.js — fbrefly MV3 service worker
+ * background.js — SportCrawl MV3 service worker
  *
  * Responsibilities:
  *   1. CF clearance capture: listen for cf_clearance cookie on fbref.com, POST to work_server.
@@ -88,7 +88,7 @@ chrome.cookies.onChanged.addListener((details) => {
   }
 
   if (!_config.work_server_url || !_config.work_server_token) {
-    console.warn("[fbrefly] cf_clearance captured but work_server not configured — skipping POST.");
+    console.warn("[SportCrawl] cf_clearance captured but work_server not configured — skipping POST.");
     return;
   }
 
@@ -106,15 +106,15 @@ chrome.cookies.onChanged.addListener((details) => {
   })
     .then((res) => {
       if (!res.ok) {
-        console.error(`[fbrefly] /api/clearance POST failed: HTTP ${res.status}`);
+        console.error(`[SportCrawl] /api/clearance POST failed: HTTP ${res.status}`);
         persistStatus("err");
       } else {
-        console.log("[fbrefly] cf_clearance delivered to work_server.");
+        console.log("[SportCrawl] cf_clearance delivered to work_server.");
         persistStatus("ok");
       }
     })
     .catch((err) => {
-      console.error("[fbrefly] /api/clearance POST error:", err);
+      console.error("[SportCrawl] /api/clearance POST error:", err);
       persistStatus("err");
     });
 });
@@ -128,7 +128,7 @@ async function pollNextTask() {
 
   const configReady = await loadConfig();
   if (!configReady) {
-    console.warn("[fbrefly] Poll skipped — work_server_url or work_server_token not set.");
+    console.warn("[SportCrawl] Poll skipped — work_server_url or work_server_token not set.");
     return;
   }
 
@@ -139,14 +139,14 @@ async function pollNextTask() {
     });
   } catch (err) {
     const nextBackoff = Math.min(_backoffMs * 2, BACKOFF_CAP_MS);
-    console.warn(`[fbrefly] /api/tasks/next network error (backoff ${_backoffMs}ms):`, err);
+    console.warn(`[SportCrawl] /api/tasks/next network error (backoff ${_backoffMs}ms):`, err);
     _backoffMs = nextBackoff;
     persistStatus("err");
     return;
   }
 
   if (tasksRes.status === 401 || tasksRes.status === 403) {
-    console.error(`[fbrefly] Fatal auth error on /api/tasks/next: HTTP ${tasksRes.status}. Stopping poll loop.`);
+    console.error(`[SportCrawl] Fatal auth error on /api/tasks/next: HTTP ${tasksRes.status}. Stopping poll loop.`);
     await setFatalStop();
     return;
   }
@@ -160,14 +160,14 @@ async function pollNextTask() {
 
   if (tasksRes.status >= 500) {
     const nextBackoff = Math.min(_backoffMs * 2, BACKOFF_CAP_MS);
-    console.warn(`[fbrefly] /api/tasks/next server error HTTP ${tasksRes.status} (backoff ${_backoffMs}ms).`);
+    console.warn(`[SportCrawl] /api/tasks/next server error HTTP ${tasksRes.status} (backoff ${_backoffMs}ms).`);
     _backoffMs = nextBackoff;
     persistStatus("err");
     return;
   }
 
   if (!tasksRes.ok) {
-    console.warn(`[fbrefly] /api/tasks/next unexpected status: ${tasksRes.status}`);
+    console.warn(`[SportCrawl] /api/tasks/next unexpected status: ${tasksRes.status}`);
     _backoffMs = BACKOFF_BASE_MS;
     return;
   }
@@ -180,13 +180,13 @@ async function pollNextTask() {
   try {
     task = await tasksRes.json();
   } catch (err) {
-    console.error("[fbrefly] Failed to parse task JSON:", err);
+    console.error("[SportCrawl] Failed to parse task JSON:", err);
     return;
   }
 
   const { id, url } = task;
   if (!id || !url) {
-    console.error("[fbrefly] Task missing id or url:", task);
+    console.error("[SportCrawl] Task missing id or url:", task);
     return;
   }
 
@@ -213,7 +213,7 @@ async function executeFetchTask(taskId, taskUrl) {
 
     html = await pageRes.text();
   } catch (err) {
-    console.warn(`[fbrefly] fetch(${taskUrl}) failed:`, err);
+    console.warn(`[SportCrawl] fetch(${taskUrl}) failed:`, err);
     await postTaskResult(taskId, {
       html: null,
       status: null,
@@ -237,10 +237,10 @@ async function postTaskResult(taskId, payload) {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      console.error(`[fbrefly] /api/tasks/${taskId}/result POST failed: HTTP ${res.status}`);
+      console.error(`[SportCrawl] /api/tasks/${taskId}/result POST failed: HTTP ${res.status}`);
     }
   } catch (err) {
-    console.error(`[fbrefly] /api/tasks/${taskId}/result POST error:`, err);
+    console.error(`[SportCrawl] /api/tasks/${taskId}/result POST error:`, err);
   }
 }
 
@@ -252,14 +252,14 @@ async function startAlarmIfNeeded() {
   const existing = await chrome.alarms.get(ALARM_NAME);
   if (!existing) {
     chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MINUTES });
-    console.log(`[fbrefly] Alarm "${ALARM_NAME}" created (period: ${ALARM_PERIOD_MINUTES} min).`);
+    console.log(`[SportCrawl] Alarm "${ALARM_NAME}" created (period: ${ALARM_PERIOD_MINUTES} min).`);
   }
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) {
     pollNextTask().catch((err) => {
-      console.error("[fbrefly] Unhandled error in pollNextTask:", err);
+      console.error("[SportCrawl] Unhandled error in pollNextTask:", err);
       persistStatus("error");
     });
   }
@@ -270,13 +270,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log("[fbrefly] Extension installed/updated.");
+  console.log("[SportCrawl] Extension installed/updated.");
   await loadConfig();
   await startAlarmIfNeeded();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  console.log("[fbrefly] Browser startup — ensuring alarm is active.");
+  console.log("[SportCrawl] Browser startup — ensuring alarm is active.");
   await loadConfig();
   await startAlarmIfNeeded();
 });
