@@ -53,6 +53,7 @@ venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
 extraPaths = ["."]
+reportUnusedParameter = "none"
 
 [tool.importlinter]
 # tests is included so cross-boundary imports in the test tree are also enforced.
