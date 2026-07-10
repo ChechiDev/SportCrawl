@@ -12,7 +12,7 @@ from infrastructure.persistence.models.scrape_queue import ScrapeQueue
 
 
 class TestErrorMessageColumn:
-    """REQ-6.4: error_message must be declared as mapped_column(Text(), nullable=True)."""
+    """REQ-6.4: error_message must be mapped_column(Text(), nullable=True)."""
 
     def test_error_message_column_type_is_text(self) -> None:
         """Column type must be Text, not a SQLAlchemy-inferred VARCHAR."""
