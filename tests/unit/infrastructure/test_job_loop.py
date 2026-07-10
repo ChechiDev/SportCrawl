@@ -44,7 +44,7 @@ def _provenance_factory(
         url=url,
         outcome=outcome,
         content_hash=content_hash,
-        run_id=run_id,  # type: ignore[arg-type]
+        run_id=run_id,
     )
 
 # ---------------------------------------------------------------------------
@@ -97,6 +97,7 @@ def _make_queue_repo(
 ) -> Any:
     repo = AsyncMock()
     repo.list_pending = AsyncMock(return_value=rows)
+    repo.get = AsyncMock(return_value=rows[0] if rows else MagicMock(spec=ScrapeQueue))
     repo.mark_in_progress = AsyncMock(side_effect=lambda r: r)
     repo.mark_done = AsyncMock(side_effect=lambda r: r)
     repo.mark_failed = AsyncMock(return_value=mark_failed_returns)
@@ -252,6 +253,19 @@ class TestFailurePath:
         await loop.run(limit=10)
         queue_repo.mark_done.assert_not_called()
 
+    async def test_row_vanished_before_processing_skips_job(self) -> None:
+        """If repo.get returns None after list_pending, the job is silently skipped."""
+        row = _make_row()
+        loop, queue_repo, prov_repo = _build_job_loop(rows=[row])
+        # Simulate the row disappearing between list_pending and _process
+        queue_repo.get = AsyncMock(return_value=None)
+
+        await loop.run(limit=10)
+
+        queue_repo.mark_in_progress.assert_not_called()
+        queue_repo.mark_done.assert_not_called()
+        prov_repo.create.assert_not_called()
+
     async def test_failed_job_does_not_prevent_siblings(self) -> None:
         """One failing job must not abort sibling jobs (return_exceptions=True)."""
         rows = [
@@ -286,8 +300,8 @@ class TestFailurePath:
         loop = JobLoop(
             session_factory=_make_session_factory(session),
             scraper_factory=_scraper_factory,
-            queue_repo_factory=lambda s: queue_repo,
-            provenance_repo_factory=lambda s: prov_repo,
+            queue_repo_factory=lambda _: queue_repo,
+            provenance_repo_factory=lambda _: prov_repo,
             provenance_factory=_provenance_factory,
             settings=_make_settings(),
         )
@@ -313,14 +327,14 @@ class TestSemaphoreCap:
         concurrent_peak = 0
         currently_running = 0
 
-        async def _slow_fetch(url: str) -> None:
+        async def _slow_fetch(_url: str) -> None:
             nonlocal concurrent_peak, currently_running
             currently_running += 1
             concurrent_peak = max(concurrent_peak, currently_running)
             await asyncio.sleep(0)  # yield control
             currently_running -= 1
 
-        def _scraper_factory(url: str) -> Any:
+        def _scraper_factory(_url: str) -> Any:
             scraper = AsyncMock()
             scraper.last_html = "<html>ok</html>"
             scraper.fetch_and_parse = AsyncMock(side_effect=_slow_fetch)
@@ -337,8 +351,8 @@ class TestSemaphoreCap:
         loop = JobLoop(
             session_factory=_make_session_factory(session),
             scraper_factory=_scraper_factory,
-            queue_repo_factory=lambda s: queue_repo,
-            provenance_repo_factory=lambda s: prov_repo,
+            queue_repo_factory=lambda _: queue_repo,
+            provenance_repo_factory=lambda _: prov_repo,
             provenance_factory=_provenance_factory,
             settings=settings,
         )

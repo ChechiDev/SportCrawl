@@ -39,9 +39,9 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: fbrefly
-          POSTGRES_PASSWORD: fbrefly
-          POSTGRES_DB: fbrefly_test
+          POSTGRES_USER: sportcrawl
+          POSTGRES_PASSWORD: sportcrawl
+          POSTGRES_DB: sportcrawl_test
         ports:
           - 5432:5432
         options: >-
@@ -52,9 +52,9 @@ jobs:
     env:
       DB__HOST: localhost
       DB__PORT: 5432
-      DB__NAME: fbrefly_test
-      DB__USER: fbrefly
-      DB__PASSWORD: fbrefly
+      DB__NAME: sportcrawl_test
+      DB__USER: sportcrawl
+      DB__PASSWORD: sportcrawl
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
