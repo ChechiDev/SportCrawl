@@ -51,7 +51,7 @@ class TestInstantiation:
         """__init_subclass__ guard fires at class definition time."""
         with pytest.raises(TypeError, match="_model_class"):
 
-            class _BadRepository(BaseRepository[FakeModel]):  # type: ignore[type-arg]
+            class _BadRepository(BaseRepository[FakeModel]):  # type: ignore[type-arg]  # pyright: ignore[reportUnusedClass]
                 pass  # deliberately no _model_class
 
 
@@ -223,3 +223,106 @@ class TestList:
         repo = ConcreteTestRepository(session)
         with pytest.raises(RepositoryError):
             await repo.list()
+
+
+# ---------------------------------------------------------------------------
+# list — pagination
+# ---------------------------------------------------------------------------
+
+
+class TestListPagination:
+    """REQ-6.2: list() must accept limit and offset for pagination."""
+
+    def _make_repo_and_session(self) -> tuple[ConcreteTestRepository, AsyncMock]:
+        session = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        session.execute.return_value = result_mock
+        repo = ConcreteTestRepository(session)
+        return repo, session
+
+    async def test_list_with_limit_applies_limit_clause(self) -> None:
+        """list(limit=3) must generate a statement with .limit(3)."""
+        repo, session = self._make_repo_and_session()
+
+        await repo.list(limit=3)
+
+        session.execute.assert_called_once()
+        stmt = session.execute.call_args[0][0]
+        # The compiled statement must include LIMIT
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "LIMIT 3" in compiled.upper(), (
+            f"Expected LIMIT clause in compiled SQL, got: {compiled!r}"
+        )
+
+    async def test_list_with_offset_applies_offset_clause(self) -> None:
+        """list(offset=5) must generate a statement with .offset(5)."""
+        repo, session = self._make_repo_and_session()
+
+        await repo.list(offset=5)
+
+        session.execute.assert_called_once()
+        stmt = session.execute.call_args[0][0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "OFFSET 5" in compiled.upper() or "offset" in compiled.lower(), (
+            f"Expected OFFSET clause in compiled SQL, got: {compiled!r}"
+        )
+
+    async def test_list_with_limit_and_offset_applies_both(self) -> None:
+        """list(limit=3, offset=5) must generate a statement with both clauses."""
+        repo, session = self._make_repo_and_session()
+
+        await repo.list(limit=3, offset=5)
+
+        session.execute.assert_called_once()
+        stmt = session.execute.call_args[0][0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        compiled_upper = compiled.upper()
+        assert "LIMIT 3" in compiled_upper or "limit" in compiled.lower(), (
+            f"Expected LIMIT in compiled SQL, got: {compiled!r}"
+        )
+        assert "OFFSET 5" in compiled_upper, (
+            f"Expected OFFSET in compiled SQL, got: {compiled!r}"
+        )
+
+    async def test_list_no_args_is_backwards_compatible(self) -> None:
+        """list() with no pagination args must not break existing behaviour."""
+        session = AsyncMock()
+        entity1, entity2 = FakeModel(), FakeModel()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [entity1, entity2]
+        session.execute.return_value = result_mock
+
+        repo = ConcreteTestRepository(session)
+        result = await repo.list()
+
+        # Still returns all rows and calls execute exactly once.
+        session.execute.assert_called_once()
+        assert result == [entity1, entity2]
+
+    async def test_list_limit_zero_returns_empty_list(self) -> None:
+        """list(limit=0) must return an empty list without hitting the database."""
+        repo, session = self._make_repo_and_session()
+
+        result = await repo.list(limit=0)
+
+        assert result == []
+        session.execute.assert_not_called()
+
+    async def test_list_negative_limit_raises_value_error(self) -> None:
+        """list(limit=-1) must raise ValueError before touching the database."""
+        repo, session = self._make_repo_and_session()
+
+        with pytest.raises(ValueError, match="limit must be >= 0"):
+            await repo.list(limit=-1)
+
+        session.execute.assert_not_called()
+
+    async def test_list_negative_offset_raises_value_error(self) -> None:
+        """list(offset=-1) must raise ValueError before touching the database."""
+        repo, session = self._make_repo_and_session()
+
+        with pytest.raises(ValueError, match="offset must be >= 0"):
+            await repo.list(offset=-1)
+
+        session.execute.assert_not_called()
