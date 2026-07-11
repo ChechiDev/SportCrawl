@@ -98,7 +98,6 @@ ignore_imports = [
     "infrastructure.work_server.runtime -> infrastructure.jobs.job_loop",
     "infrastructure.work_server.runtime -> infrastructure.persistence.adapters.work_queue",
     "infrastructure.work_server.runtime -> infrastructure.persistence.models.provenance",
-    "infrastructure.work_server.runtime -> infrastructure.persistence.models.scrape_queue",
     "infrastructure.work_server.runtime -> infrastructure.persistence.repositories.provenance",
     "infrastructure.work_server.runtime -> infrastructure.persistence.repositories.scrape_queue",
     "infrastructure.work_server.runtime -> infrastructure.persistence.session",

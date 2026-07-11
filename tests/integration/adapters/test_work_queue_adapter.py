@@ -22,13 +22,12 @@ import uuid
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.engine.url import URL
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from core.exceptions.repository import DuplicateError
 from infrastructure.persistence.adapters.work_queue import ScrapeQueueWorkAdapter
 from ports.work_queue import JobRecordProtocol
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

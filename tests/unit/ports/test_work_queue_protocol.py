@@ -10,10 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from ports.work_queue import JobRecordProtocol, WorkQueuePort
-
 
 # ---------------------------------------------------------------------------
 # Minimal fake adapter that satisfies the full protocol contract
