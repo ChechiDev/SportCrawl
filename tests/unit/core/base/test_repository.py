@@ -51,7 +51,9 @@ class TestInstantiation:
         """__init_subclass__ guard fires at class definition time."""
         with pytest.raises(TypeError, match="_model_class"):
 
-            class _BadRepository(BaseRepository[FakeModel]):  # type: ignore[type-arg]  # pyright: ignore[reportUnusedClass]
+            class _BadRepository(  # type: ignore[type-arg]  # pyright: ignore
+                BaseRepository[FakeModel]
+            ):
                 pass  # deliberately no _model_class
 
 

@@ -399,7 +399,8 @@ class TestUpdatedAtTrigger:
 
         assert row.updated_at is not None
         assert row.updated_at >= created_at_snapshot, (
-            f"updated_at ({row.updated_at}) must be >= created_at ({created_at_snapshot}). "
+            f"updated_at ({row.updated_at}) must be >= "
+            f"created_at ({created_at_snapshot}). "
             "Trigger trg_scrape_queue_updated_at may not be installed."
         )
 
