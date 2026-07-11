@@ -15,6 +15,50 @@ from structlog.types import FilteringBoundLogger
 
 _VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
+# Keys whose values must be redacted before any log output.
+# Substring matching on the lowercased key name: "password" matches "db_password",
+# "clearance" matches "cf_clearance", etc.
+_SENSITIVE_SUBSTRINGS: frozenset[str] = frozenset(
+    {"password", "token", "secret", "clearance"}
+)
+_REDACTED = "[REDACTED]"
+
+
+def _redact_sensitive(
+    _logger: Any, _name: Any, event_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """Structlog processor that redacts sensitive values from the event dict.
+
+    Recursively scrubs any key whose lowercased name contains a sensitive
+    substring (password, token, secret, clearance). Lists are traversed so
+    dicts nested inside lists are also scrubbed.
+
+    Args:
+        _logger: Unused — present to match the structlog processor signature.
+        _name: Unused — present to match the structlog processor signature.
+        event_dict: The current structlog event dictionary to scrub.
+
+    Returns:
+        The event dict with sensitive values replaced by ``[REDACTED]``.
+    """
+
+    def scrub(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {
+                k: (
+                    _REDACTED
+                    if any(s in k.lower() for s in _SENSITIVE_SUBSTRINGS)
+                    else scrub(v)
+                )
+                for k, v in obj.items()
+            }
+        if isinstance(obj, list):
+            return [scrub(item) for item in obj]
+        return obj
+
+    result: dict[str, Any] = scrub(event_dict)
+    return result
+
 
 def configure_logging(env: Literal["dev", "prod"], log_level: str) -> None:
     """Configure structlog and stdlib logging for the given environment.
@@ -31,6 +75,7 @@ def configure_logging(env: Literal["dev", "prod"], log_level: str) -> None:
     # list[Any] is required: structlog processors implement different protocols
     # (Processor, WrappedLogger) with no shared public base type in structlog stubs.
     shared_processors: list[Any] = [
+        _redact_sensitive,
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,

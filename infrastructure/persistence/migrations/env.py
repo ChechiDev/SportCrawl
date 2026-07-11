@@ -73,15 +73,16 @@ else:
             database=_s.db.name,
         )
     except (ImportError, ValidationError):
-        logger.debug(
+        logger.warning(
             "Settings not available or env vars missing — "
             "falling back to alembic.ini sqlalchemy.url"
         )
     except Exception:
-        logger.warning(
-            "Unexpected error loading Settings — falling back to alembic.ini",
+        logger.error(
+            "Unexpected error loading Settings — cannot continue",
             exc_info=True,
         )
+        raise
 
 
 # ---------------------------------------------------------------------------
