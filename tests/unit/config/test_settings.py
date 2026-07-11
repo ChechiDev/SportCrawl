@@ -63,7 +63,6 @@ class TestDatabaseSettings:
         settings = Settings()  # type: ignore[call-arg]
         assert settings.db.pool_size == 10
 
-
     def test_password_not_exposed_in_repr(self) -> None:
         """DatabaseSettings repr must not leak the password value."""
         db = DatabaseSettings(
@@ -212,7 +211,6 @@ class TestScrapingSettingsWorkServer:
         monkeypatch.setenv("SCRAPING__WORK_SERVER_URL", "http://example.com:9731")
         with pytest.raises(ValidationError):
             Settings()  # type: ignore[call-arg]
-
 
     def test_work_server_token_not_exposed_in_repr(
         self, monkeypatch: pytest.MonkeyPatch

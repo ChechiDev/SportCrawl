@@ -125,7 +125,7 @@ async def serve(settings: Any) -> None:
     job_loop = JobLoop(
         session_factory=lambda: get_session(factory),
         scraper_factory=_noop_scraper_factory,
-        queue_repo_factory=lambda session: ScrapeQueueRepository(  # type: ignore[arg-type, return-value]
+        queue_repo_factory=lambda session: ScrapeQueueRepository(  # type: ignore
             cast(AsyncSession, session)
         ),
         provenance_repo_factory=lambda session: ProvenanceRepository(
