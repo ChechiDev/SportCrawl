@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import (
 # Import Base and all models so their metadata is registered.
 import infrastructure.persistence.models.provenance  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
 import infrastructure.persistence.models.scrape_queue  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+from infrastructure.persistence.migrations._filters import include_name
 from infrastructure.persistence.models.base import Base
 
 target_metadata = Base.metadata
@@ -99,6 +100,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
+        include_name=include_name,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -115,6 +117,7 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         include_schemas=True,
+        include_name=include_name,
     )
     with context.begin_transaction():
         context.run_migrations()

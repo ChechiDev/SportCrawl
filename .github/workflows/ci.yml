@@ -40,7 +40,7 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: sportcrawl
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          POSTGRES_PASSWORD: ci_test_password
           POSTGRES_DB: sportcrawl_test
         ports:
           - 5432:5432
@@ -54,8 +54,8 @@ jobs:
       DB__PORT: 5432
       DB__NAME: sportcrawl_test
       DB__USER: sportcrawl
-      DB__PASSWORD: ${{ secrets.DB_PASSWORD }}
-      SCRAPING__WORK_SERVER_TOKEN: ${{ secrets.WORK_SERVER_TOKEN }}
+      DB__PASSWORD: ci_test_password
+      SCRAPING__WORK_SERVER_TOKEN: dev-token-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
