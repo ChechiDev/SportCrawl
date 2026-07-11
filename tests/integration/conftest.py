@@ -9,27 +9,25 @@ Design:
 - ``_integration_db_url``: derives the asyncpg URL object from the container
   (sync, session-scoped). NOTE: must remain a SQLAlchemy URL object, NOT a
   str — str() masks the password.
-- ``migrate_db``: creates the schema once using ``asyncio.run()`` in a
-  dedicated loop, outside pytest-asyncio's loop management
+- ``migrate_db``: runs ``alembic upgrade head`` programmatically against the
+  testcontainer, injecting the URL via ``config.attributes["inject_url"]``.
+  This installs the full migration chain including DB triggers.
   (sync, session-scoped, autouse).
 - ``async_session``: yields a fresh ``AsyncSession`` per test function,
   creating a new engine inside the test's own event loop to avoid
   cross-loop asyncpg errors.
 """
 
-import asyncio
+import os
 from collections.abc import AsyncGenerator, Generator
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
 from sqlalchemy.engine.url import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
-
-import infrastructure.persistence.models.provenance  # noqa: F401
-import infrastructure.persistence.models.scrape_queue  # noqa: F401
-from infrastructure.persistence.models.base import Base
 
 # ---------------------------------------------------------------------------
 # Container fixture
@@ -56,30 +54,33 @@ def _integration_db_url(_integration_postgres: PostgresContainer) -> URL:
 
 
 # ---------------------------------------------------------------------------
-# Schema creation (sync fixture using asyncio.run — avoids pytest-asyncio loops)
+# Schema migration (runs alembic upgrade head — installs triggers + full DDL)
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session", autouse=True)
 def migrate_db(_integration_db_url: URL) -> None:
-    """Create all tables once for the integration test session.
+    """Run ``alembic upgrade head`` once for the integration test session.
 
-    Runs ``Base.metadata.create_all`` via a dedicated ``asyncio.run()`` call
-    so it is completely independent of pytest-asyncio's loop management.
+    Injects the testcontainer URL via ``alembic_config.attributes["inject_url"]``
+    so ``env.py`` uses it instead of application Settings or alembic.ini.
+
+    Using ``alembic upgrade head`` (instead of ``Base.metadata.create_all``)
+    ensures the full migration chain runs, including:
+    - ``CREATE SCHEMA IF NOT EXISTS sch_infra`` (migration a3f8c1d29e5b)
+    - The ``trg_scrape_queue_updated_at`` trigger (migration 134f2e68682a)
     """
+    ini_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "alembic.ini"
+    )
+    ini_path = os.path.normpath(ini_path)
 
-    async def _create_all() -> None:
-        engine = create_async_engine(_integration_db_url, echo=False)
-        try:
-            async with engine.begin() as conn:
-                # sch_infra must exist before create_all — SQLAlchemy emits
-                # CREATE TABLE sch_infra.scrape_queue but never creates the schema.
-                await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
-                await conn.run_sync(Base.metadata.create_all)
-        finally:
-            await engine.dispose()
+    cfg = AlembicConfig(ini_path)
+    # Inject the asyncpg URL into env.py via config.attributes so that
+    # env.py's _build_engine() uses it rather than loading Settings or alembic.ini.
+    cfg.attributes["inject_url"] = _integration_db_url
 
-    asyncio.run(_create_all())
+    alembic_command.upgrade(cfg, "head")
 
 
 # ---------------------------------------------------------------------------

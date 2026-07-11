@@ -15,6 +15,7 @@ import logging
 from logging.config import fileConfig
 
 from alembic import context
+from pydantic import ValidationError
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine.url import URL
@@ -46,22 +47,41 @@ logger = logging.getLogger(__name__)
 
 _app_url: URL | None = None
 
-try:
-    from config.settings import Settings
+# Priority 1: URL injected by the caller via config.attributes["inject_url"].
+# Used by integration test fixtures that pass the testcontainer URL at runtime
+# without going through application Settings or alembic.ini.
+_injected: URL | None = alembic_config.attributes.get("inject_url")
+if _injected is not None:
+    _app_url = _injected
+else:
+    # Priority 2: Application Settings resolved from env vars.
+    # ImportError → Settings module not installed (offline tooling).
+    # Exception  → env vars missing or invalid (e.g. in test environments).
+    try:
+        from config.settings import Settings
 
-    # pydantic-settings resolves required fields from env vars at runtime;
-    # Pyright cannot observe this dynamic loading, so the call-arg suppression is safe.
-    _s = Settings()  # type: ignore[call-arg]
-    _app_url = URL.create(
-        drivername="postgresql+asyncpg",
-        username=_s.db.user,
-        password=_s.db.password,
-        host=_s.db.host,
-        port=_s.db.port,
-        database=_s.db.name,
-    )
-except ImportError:
-    logger.debug("Settings not available — falling back to alembic.ini sqlalchemy.url")
+        # pydantic-settings resolves required fields from env vars at runtime;
+        # Pyright cannot observe this dynamic loading —
+        # the call-arg suppression is safe.
+        _s = Settings()  # type: ignore[call-arg]
+        _app_url = URL.create(
+            drivername="postgresql+asyncpg",
+            username=_s.db.user,
+            password=_s.db.password,
+            host=_s.db.host,
+            port=_s.db.port,
+            database=_s.db.name,
+        )
+    except (ImportError, ValidationError):
+        logger.debug(
+            "Settings not available or env vars missing — "
+            "falling back to alembic.ini sqlalchemy.url"
+        )
+    except Exception:
+        logger.warning(
+            "Unexpected error loading Settings — falling back to alembic.ini",
+            exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------
