@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ${DB__NAME:-sportcrawl}
       POSTGRES_USER: ${DB__USER:-sportcrawl}
-      POSTGRES_PASSWORD: ${DB__PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${DB__PASSWORD:?DB__PASSWORD required}
     ports:
       - "5432:5432"
     volumes:
