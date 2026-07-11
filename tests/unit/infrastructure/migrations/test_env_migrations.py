@@ -138,7 +138,6 @@ class TestEnvMigrationsUnexpectedException:
                 raise RuntimeError("Simulated unexpected failure")
 
         fake_settings_module.Settings = _BrokenSettings  # type: ignore[attr-defined]
-        # type: ignore — dynamically patching module attribute
         fake_settings_module.ValidationError = ValidationError  # type: ignore[attr-defined]  # noqa: E501
 
         patches = _base_module_patches(
@@ -167,7 +166,6 @@ class TestEnvMigrationsUnexpectedException:
                 raise RuntimeError("Simulated unexpected failure")
 
         fake_settings_module.Settings = _BrokenSettings  # type: ignore[attr-defined]
-        # type: ignore — dynamically patching module attribute
         fake_settings_module.ValidationError = ValidationError  # type: ignore[attr-defined]  # noqa: E501
 
         patches = _base_module_patches(
