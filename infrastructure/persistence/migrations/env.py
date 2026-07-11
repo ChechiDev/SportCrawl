@@ -68,7 +68,7 @@ else:
         _app_url = URL.create(
             drivername="postgresql+asyncpg",
             username=_s.db.user,
-            password=_s.db.password,
+            password=_s.db.password.get_secret_value(),
             host=_s.db.host,
             port=_s.db.port,
             database=_s.db.name,
