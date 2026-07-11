@@ -27,10 +27,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from typing import Any
+from typing import Any, cast
 
 from aiohttp import web
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from infrastructure.jobs.job_loop import JobLoop
 from infrastructure.persistence.adapters.work_queue import ScrapeQueueWorkAdapter
@@ -116,17 +116,24 @@ async def serve(settings: Any) -> None:
 
     # --- Build JobLoop (dependency injection — no direct model imports) ---
     from infrastructure.persistence.models.provenance import Provenance
-    from infrastructure.persistence.models.scrape_queue import ScrapeQueue
     from infrastructure.persistence.repositories.provenance import ProvenanceRepository
-    from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
+    from infrastructure.persistence.repositories.scrape_queue import (
+        ScrapeQueueRepository,
+    )
     from infrastructure.persistence.session import get_session
 
     job_loop = JobLoop(
         session_factory=lambda: get_session(factory),
         scraper_factory=_noop_scraper_factory,
-        queue_repo_factory=lambda session: ScrapeQueueRepository(session),
-        provenance_repo_factory=lambda session: ProvenanceRepository(session),
-        provenance_factory=Provenance,
+        queue_repo_factory=lambda session: ScrapeQueueRepository(  # type: ignore[arg-type, return-value]
+            cast(AsyncSession, session)
+        ),
+        provenance_repo_factory=lambda session: ProvenanceRepository(
+            cast(AsyncSession, session)
+        ),
+        provenance_factory=lambda url, outcome, content_hash, run_id: Provenance(
+            url=url, outcome=outcome, content_hash=content_hash, run_id=run_id
+        ),
         settings=scraping,
     )
 
@@ -173,7 +180,7 @@ async def serve(settings: Any) -> None:
     jobloop_task.cancel()
     try:
         await asyncio.wait_for(jobloop_task, timeout=_SHUTDOWN_TIMEOUT)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
+    except (TimeoutError, asyncio.CancelledError):
         pass
 
     # 3. Close DB connection pool

@@ -22,7 +22,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from aiohttp import web
 
@@ -59,7 +59,7 @@ async def bearer_auth_middleware(
         # Check route-level auth exemption via app-level registry
         exempt_paths: set[str] = request.app.get(_KEY_EXEMPT, set())
         if request.path in exempt_paths:
-            return await handler(request)
+            return cast(web.Response, await handler(request))
 
     token: str = request.app[_KEY_TOKEN]
     auth_header = request.headers.get("Authorization", "")
@@ -71,7 +71,7 @@ async def bearer_auth_middleware(
     if not hmac.compare_digest(provided, token):
         return web.json_response({"error": "unauthorized"}, status=401)
 
-    return await handler(request)
+    return cast(web.Response, await handler(request))
 
 
 # ---------------------------------------------------------------------------

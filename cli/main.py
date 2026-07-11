@@ -19,7 +19,7 @@ app = typer.Typer(name="sportcrawl", help="Sportcrawl CLI")
 @app.command("work-server")
 def work_server() -> None:
     """Start the aiohttp work server and JobLoop in a single process."""
-    settings = Settings()
+    settings = Settings()  # type: ignore[call-arg]
     asyncio.run(serve(settings))
 
 

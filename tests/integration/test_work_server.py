@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
 import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import text
@@ -176,13 +175,20 @@ class TestWorkServerEndToEnd:
         """
         import uuid as uuid_module
         from unittest.mock import AsyncMock, MagicMock
-        from sqlalchemy.ext.asyncio import AsyncSession
-        from infrastructure.persistence.models.provenance import Provenance, ProvenanceOutcome
-        from infrastructure.persistence.repositories.provenance import ProvenanceRepository
-        from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
-        from infrastructure.persistence.session import get_session
-        from infrastructure.jobs.job_loop import JobLoop
+
         from config.settings import ScrapingSettings
+        from infrastructure.jobs.job_loop import JobLoop
+        from infrastructure.persistence.models.provenance import (
+            Provenance,
+            ProvenanceOutcome,
+        )
+        from infrastructure.persistence.repositories.provenance import (
+            ProvenanceRepository,
+        )
+        from infrastructure.persistence.repositories.scrape_queue import (
+            ScrapeQueueRepository,
+        )
+        from infrastructure.persistence.session import get_session
 
         url = _unique_url("e2e-done")
 
@@ -202,15 +208,18 @@ class TestWorkServerEndToEnd:
             scraper.last_html = "<html>fake</html>"
             return scraper
 
-        # ProvenanceFactory signature: (url: str, outcome_str: str, content_hash: str, run_id: UUID)
-        # Provenance ORM model uses keyword arguments with outcome as ProvenanceOutcome enum.
+        # ProvenanceFactory signature:
+        # (url: str, outcome_str: str, content_hash: str, run_id: UUID)
+        # Provenance ORM model uses keyword arguments
+        # with outcome as ProvenanceOutcome enum.
         def _provenance_factory(
             prov_url: str,
             outcome_str: str,
             content_hash: str,
             run_id: uuid_module.UUID,
         ) -> Provenance:
-            outcome = ProvenanceOutcome[outcome_str]  # "SUCCESS" → ProvenanceOutcome.SUCCESS
+            # "SUCCESS" → ProvenanceOutcome.SUCCESS
+            outcome = ProvenanceOutcome[outcome_str]
             return Provenance(
                 url=prov_url,
                 outcome=outcome,

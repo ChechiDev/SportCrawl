@@ -14,10 +14,7 @@ Covers (REQ-9.6, REQ-9.7):
 from __future__ import annotations
 
 import asyncio
-import signal
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,7 +76,9 @@ class TestServeCompositionRoot:
         settings = _make_settings()
 
         with (
-            patch("infrastructure.work_server.runtime.create_async_engine") as mock_engine_fn,
+            patch(
+                "infrastructure.work_server.runtime.create_async_engine"
+            ) as mock_engine_fn,
             patch("infrastructure.work_server.runtime.async_sessionmaker"),
             patch("infrastructure.work_server.runtime.ScrapeQueueWorkAdapter"),
             patch("infrastructure.work_server.runtime.create_app") as mock_create_app,
@@ -115,11 +114,17 @@ class TestServeCompositionRoot:
             # Patch stop_event so we can control shutdown
             stop_event = asyncio.Event()
 
-            with patch("infrastructure.work_server.runtime.asyncio.Event", return_value=stop_event):
+            with patch(
+                "infrastructure.work_server.runtime.asyncio.Event",
+                return_value=stop_event,
+            ):
                 # Set the event immediately so serve() exits fast
                 stop_event.set()
 
-                with patch("infrastructure.work_server.runtime._jobloop_forever", new_callable=AsyncMock):
+                with patch(
+                    "infrastructure.work_server.runtime._jobloop_forever",
+                    new_callable=AsyncMock,
+                ):
                     await serve(settings)
 
             runner_instance.setup.assert_awaited()
@@ -131,7 +136,9 @@ class TestServeCompositionRoot:
         settings = _make_settings()
 
         with (
-            patch("infrastructure.work_server.runtime.create_async_engine") as mock_engine_fn,
+            patch(
+                "infrastructure.work_server.runtime.create_async_engine"
+            ) as mock_engine_fn,
             patch("infrastructure.work_server.runtime.async_sessionmaker"),
             patch("infrastructure.work_server.runtime.ScrapeQueueWorkAdapter"),
             patch("infrastructure.work_server.runtime.create_app"),
@@ -154,9 +161,15 @@ class TestServeCompositionRoot:
             mock_engine_fn.return_value = engine_instance
 
             stop_event = asyncio.Event()
-            with patch("infrastructure.work_server.runtime.asyncio.Event", return_value=stop_event):
+            with patch(
+                "infrastructure.work_server.runtime.asyncio.Event",
+                return_value=stop_event,
+            ):
                 stop_event.set()
-                with patch("infrastructure.work_server.runtime._jobloop_forever", new_callable=AsyncMock):
+                with patch(
+                    "infrastructure.work_server.runtime._jobloop_forever",
+                    new_callable=AsyncMock,
+                ):
                     await serve(settings)
 
             site_instance.start.assert_awaited()
@@ -177,14 +190,19 @@ class TestServeCompositionRoot:
             return task
 
         with (
-            patch("infrastructure.work_server.runtime.create_async_engine") as mock_engine_fn,
+            patch(
+                "infrastructure.work_server.runtime.create_async_engine"
+            ) as mock_engine_fn,
             patch("infrastructure.work_server.runtime.async_sessionmaker"),
             patch("infrastructure.work_server.runtime.ScrapeQueueWorkAdapter"),
             patch("infrastructure.work_server.runtime.create_app"),
             patch("infrastructure.work_server.runtime.web.AppRunner") as MockRunner,
             patch("infrastructure.work_server.runtime.web.TCPSite") as MockSite,
             patch("infrastructure.work_server.runtime.JobLoop"),
-            patch("infrastructure.work_server.runtime.asyncio.create_task", side_effect=_spy_create_task),
+            patch(
+                "infrastructure.work_server.runtime.asyncio.create_task",
+                side_effect=_spy_create_task,
+            ),
         ):
             runner_instance = AsyncMock()
             runner_instance.setup = AsyncMock()
@@ -201,9 +219,15 @@ class TestServeCompositionRoot:
             mock_engine_fn.return_value = engine_instance
 
             stop_event = asyncio.Event()
-            with patch("infrastructure.work_server.runtime.asyncio.Event", return_value=stop_event):
+            with patch(
+                "infrastructure.work_server.runtime.asyncio.Event",
+                return_value=stop_event,
+            ):
                 stop_event.set()
-                with patch("infrastructure.work_server.runtime._jobloop_forever", new_callable=AsyncMock):
+                with patch(
+                    "infrastructure.work_server.runtime._jobloop_forever",
+                    new_callable=AsyncMock,
+                ):
                     await serve(settings)
 
         assert len(tasks_created) >= 1, "asyncio.create_task must be called for JobLoop"
@@ -215,7 +239,9 @@ class TestServeCompositionRoot:
         settings = _make_settings()
 
         with (
-            patch("infrastructure.work_server.runtime.create_async_engine") as mock_engine_fn,
+            patch(
+                "infrastructure.work_server.runtime.create_async_engine"
+            ) as mock_engine_fn,
             patch("infrastructure.work_server.runtime.async_sessionmaker"),
             patch("infrastructure.work_server.runtime.ScrapeQueueWorkAdapter"),
             patch("infrastructure.work_server.runtime.create_app"),
@@ -238,9 +264,15 @@ class TestServeCompositionRoot:
             mock_engine_fn.return_value = engine_instance
 
             stop_event = asyncio.Event()
-            with patch("infrastructure.work_server.runtime.asyncio.Event", return_value=stop_event):
+            with patch(
+                "infrastructure.work_server.runtime.asyncio.Event",
+                return_value=stop_event,
+            ):
                 stop_event.set()
-                with patch("infrastructure.work_server.runtime._jobloop_forever", new_callable=AsyncMock):
+                with patch(
+                    "infrastructure.work_server.runtime._jobloop_forever",
+                    new_callable=AsyncMock,
+                ):
                     await serve(settings)
 
             engine_instance.dispose.assert_awaited()
@@ -252,7 +284,9 @@ class TestServeCompositionRoot:
         settings = _make_settings()
 
         with (
-            patch("infrastructure.work_server.runtime.create_async_engine") as mock_engine_fn,
+            patch(
+                "infrastructure.work_server.runtime.create_async_engine"
+            ) as mock_engine_fn,
             patch("infrastructure.work_server.runtime.async_sessionmaker"),
             patch("infrastructure.work_server.runtime.ScrapeQueueWorkAdapter"),
             patch("infrastructure.work_server.runtime.create_app"),
@@ -275,9 +309,15 @@ class TestServeCompositionRoot:
             mock_engine_fn.return_value = engine_instance
 
             stop_event = asyncio.Event()
-            with patch("infrastructure.work_server.runtime.asyncio.Event", return_value=stop_event):
+            with patch(
+                "infrastructure.work_server.runtime.asyncio.Event",
+                return_value=stop_event,
+            ):
                 stop_event.set()
-                with patch("infrastructure.work_server.runtime._jobloop_forever", new_callable=AsyncMock):
+                with patch(
+                    "infrastructure.work_server.runtime._jobloop_forever",
+                    new_callable=AsyncMock,
+                ):
                     await serve(settings)
 
             runner_instance.cleanup.assert_awaited()

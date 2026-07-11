@@ -9,10 +9,7 @@ Uses unittest.mock to avoid real network or DB calls.
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestWorkServerCommand:
@@ -50,7 +47,7 @@ class TestWorkServerCommand:
         settings_instance = MagicMock()
 
         with (
-            patch("cli.main.Settings", return_value=settings_instance) as MockSettings,
+            patch("cli.main.Settings", return_value=settings_instance),
             patch("cli.main.asyncio.run"),
             patch("cli.main.serve") as mock_serve,
         ):

@@ -24,7 +24,6 @@ from infrastructure.persistence.adapters.work_queue import ScrapeQueueWorkAdapte
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from ports.work_queue import JobRecordProtocol, WorkQueuePort
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -74,7 +73,8 @@ class TestScrapeQueueWorkAdapterEnqueue:
     """Tests for the enqueue() method."""
 
     async def test_enqueue_returns_job_record_protocol(self) -> None:
-        """enqueue() returns an object satisfying JobRecordProtocol with PENDING status."""
+        """enqueue() returns an object satisfying JobRecordProtocol
+        with PENDING status."""
         session = AsyncMock()
         session.flush = AsyncMock()
         session.refresh = AsyncMock()
@@ -180,7 +180,9 @@ class TestScrapeQueueWorkAdapterGetJob:
 
     async def test_get_job_returns_job_record_when_found(self) -> None:
         """get_job() returns JobRecordProtocol-compatible object when row exists."""
-        row = _make_scrape_queue_row(id=7, url="https://fbref.com/found", status=ScrapeStatus.DONE)
+        row = _make_scrape_queue_row(
+            id=7, url="https://fbref.com/found", status=ScrapeStatus.DONE
+        )
 
         session = AsyncMock()
         session.get = AsyncMock(return_value=row)

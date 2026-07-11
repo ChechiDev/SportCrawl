@@ -18,13 +18,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
-from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from core.exceptions.repository import DuplicateError
 from infrastructure.persistence.adapters.work_queue import JobRecord
-from ports.work_queue import WorkQueuePort
 
 # ---------------------------------------------------------------------------
 # Token used in all tests
@@ -46,7 +43,11 @@ class FakeWorkQueuePort:
         self.get_job = AsyncMock()
 
 
-def _make_record(id: int = 1, url: str = "https://fbref.com/en/page", status: str = "PENDING") -> JobRecord:
+def _make_record(
+    id: int = 1,
+    url: str = "https://fbref.com/en/page",
+    status: str = "PENDING",
+) -> JobRecord:
     return JobRecord(id=id, url=url, status=status)
 
 
