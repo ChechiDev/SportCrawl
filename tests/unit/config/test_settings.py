@@ -42,7 +42,7 @@ class TestDatabaseSettings:
         monkeypatch.delenv("DB__NAME", raising=False)
         monkeypatch.delenv("DB__USER", raising=False)
         with pytest.raises(ValidationError):
-            Settings()  # type: ignore[call-arg]
+            Settings(_env_file=None)  # type: ignore[call-arg]
 
     def test_db_pool_size_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DB__HOST", "localhost")
@@ -121,7 +121,7 @@ class TestScrapingSettingsWorkServer:
         monkeypatch.delenv("ENV", raising=False)
         monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
         with pytest.raises(ValidationError):
-            Settings()  # type: ignore[call-arg]
+            Settings(_env_file=None)  # type: ignore[call-arg]
 
     def test_empty_string_work_server_token_raises_in_dev(
         self, monkeypatch: pytest.MonkeyPatch
@@ -174,7 +174,7 @@ class TestScrapingSettingsWorkServer:
         monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
         monkeypatch.setenv("SCRAPING__WORK_SERVER_URL", "https://example.com:9731")
         with pytest.raises(ValidationError):
-            Settings()  # type: ignore[call-arg]
+            Settings(_env_file=None)  # type: ignore[call-arg]
 
     def test_prod_with_http_work_server_url_raises(
         self, monkeypatch: pytest.MonkeyPatch
