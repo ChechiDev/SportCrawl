@@ -36,7 +36,7 @@ def create_session_factory(db: DatabaseSettings) -> async_sessionmaker[AsyncSess
     dsn = URL.create(
         drivername="postgresql+asyncpg",
         username=db.user,
-        password=db.password,
+        password=db.password.get_secret_value(),
         host=db.host,
         port=db.port,
         database=db.name,

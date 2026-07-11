@@ -10,7 +10,7 @@ Usage:
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +21,7 @@ class DatabaseSettings(BaseModel):
     port: int = 5432
     name: str
     user: str
-    password: str
+    password: SecretStr
     pool_size: int = 5
     max_overflow: int = 10
     pool_timeout: int = 30
@@ -37,12 +37,16 @@ class ScrapingSettings(BaseModel):
     max_delay: float = 60.0
     request_timeout: int = 30
     work_server_url: str = "http://localhost:9731"
-    work_server_token: str = ""
+    work_server_token: SecretStr = SecretStr("")
     allowed_hosts: list[str] = ["fbref.com"]
     max_concurrent_requests: int = 3
     request_delay_min: float = Field(default=3.0, ge=0.0)
     request_delay_max: float = Field(default=10.0, ge=0.0)
     max_queue_retries: int = 5
+    # Work server runtime settings
+    work_server_host: str = "127.0.0.1"
+    work_server_port: int = 9731
+    poll_interval: float = Field(default=5.0, gt=0.0)
 
 
 class Settings(BaseSettings):
@@ -79,7 +83,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def enforce_work_server_token(self) -> "Settings":
         """Require non-empty SCRAPING__WORK_SERVER_TOKEN in all environments."""
-        if not self.scraping.work_server_token:
+        if not self.scraping.work_server_token.get_secret_value():
             raise ValueError(
                 "SCRAPING__WORK_SERVER_TOKEN must be a non-empty value."
             )

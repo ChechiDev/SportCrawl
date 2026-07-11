@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.0",
     "structlog>=24.0",
     "pydoll-python>=2.0",
+    "aiohttp>=3.14",
     "typer>=0.12",
     "beautifulsoup4>=4.0",
     "lxml>=5.0",
@@ -88,6 +89,19 @@ modules = [
     "infrastructure.persistence",
     "infrastructure.work_server",
     "infrastructure.jobs",
+]
+# infrastructure.work_server.runtime is the composition root — it wires all
+# infrastructure sub-packages together at startup. This is the only permitted
+# cross-boundary import; server.py (handlers) must NEVER import from jobs or
+# persistence directly. The ignore_imports entries below exempt runtime.py only.
+ignore_imports = [
+    "infrastructure.work_server.runtime -> infrastructure.jobs.job_loop",
+    "infrastructure.work_server.runtime -> infrastructure.persistence.adapters.work_queue",
+    "infrastructure.work_server.runtime -> infrastructure.persistence.models.provenance",
+    "infrastructure.work_server.runtime -> infrastructure.persistence.models.scrape_queue",
+    "infrastructure.work_server.runtime -> infrastructure.persistence.repositories.provenance",
+    "infrastructure.work_server.runtime -> infrastructure.persistence.repositories.scrape_queue",
+    "infrastructure.work_server.runtime -> infrastructure.persistence.session",
 ]
 
 [tool.commitizen]

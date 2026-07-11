@@ -5,7 +5,7 @@ All tests use monkeypatch to set environment variables — no .env file required
 """
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from config.settings import DatabaseSettings, ScrapingSettings, Settings
 
@@ -62,6 +62,29 @@ class TestDatabaseSettings:
         monkeypatch.setenv("DB__POOL_SIZE", "10")
         settings = Settings()  # type: ignore[call-arg]
         assert settings.db.pool_size == 10
+
+
+    def test_password_not_exposed_in_repr(self) -> None:
+        """DatabaseSettings repr must not leak the password value."""
+        db = DatabaseSettings(
+            host="localhost",
+            port=5432,
+            name="testdb",
+            user="testuser",
+            password=SecretStr("supersecret"),
+        )
+        assert "supersecret" not in repr(db)
+
+    def test_password_accessible_via_get_secret_value(self) -> None:
+        """DatabaseSettings.password.get_secret_value() must return the raw string."""
+        db = DatabaseSettings(
+            host="localhost",
+            port=5432,
+            name="testdb",
+            user="testuser",
+            password=SecretStr("mypassword"),
+        )
+        assert db.password.get_secret_value() == "mypassword"
 
 
 class TestScrapingSettings:
@@ -160,7 +183,7 @@ class TestScrapingSettingsWorkServer:
         monkeypatch.setenv("DB__PASSWORD", "testpass")
         monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "mysecrettoken")
         settings = Settings()  # type: ignore[call-arg]
-        assert settings.scraping.work_server_token == "mysecrettoken"
+        assert settings.scraping.work_server_token.get_secret_value() == "mysecrettoken"
 
     def test_prod_with_empty_token_raises(
         self, monkeypatch: pytest.MonkeyPatch
@@ -189,6 +212,19 @@ class TestScrapingSettingsWorkServer:
         monkeypatch.setenv("SCRAPING__WORK_SERVER_URL", "http://example.com:9731")
         with pytest.raises(ValidationError):
             Settings()  # type: ignore[call-arg]
+
+
+    def test_work_server_token_not_exposed_in_repr(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SecretStr token must not appear in Settings repr."""
+        monkeypatch.setenv("DB__HOST", "localhost")
+        monkeypatch.setenv("DB__NAME", "testdb")
+        monkeypatch.setenv("DB__USER", "testuser")
+        monkeypatch.setenv("DB__PASSWORD", "testpass")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "topsecrettoken")
+        settings = Settings()  # type: ignore[call-arg]
+        assert "topsecrettoken" not in repr(settings)
 
 
 class TestScrapingSettingsNewFields:
