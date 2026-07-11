@@ -1,0 +1,4 @@
+# Baseline file for gitleaks secret scanning.
+# Add SHA256 fingerprints of allowlisted findings here.
+# Format: <fingerprint> #<description>
+# Leave empty when there are no pre-existing findings to ignore.

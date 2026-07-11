@@ -77,13 +77,18 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def enforce_work_server_token(self) -> "Settings":
+        """Require non-empty SCRAPING__WORK_SERVER_TOKEN in all environments."""
+        if not self.scraping.work_server_token:
+            raise ValueError(
+                "SCRAPING__WORK_SERVER_TOKEN must be a non-empty value."
+            )
+        return self
+
+    @model_validator(mode="after")
     def enforce_prod_work_server(self) -> "Settings":
-        """Require non-empty token and HTTPS work_server_url in prod."""
+        """Require HTTPS work_server_url in prod."""
         if self.env == "prod":
-            if not self.scraping.work_server_token:
-                raise ValueError(
-                    "SCRAPING__WORK_SERVER_TOKEN must be set in prod."
-                )
             if not self.scraping.work_server_url.startswith("https://"):
                 raise ValueError(
                     f"SCRAPING__WORK_SERVER_URL must use HTTPS in prod. "
