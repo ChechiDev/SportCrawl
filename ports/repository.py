@@ -91,12 +91,36 @@ class BaseRepository[T: DeclarativeBase](ABC):
                 "delete failed", operation="delete", cause=exc
             ) from exc
 
-    async def list(self, **filters: Any) -> list[T]:
-        """Return all matching entities, optionally filtered by keyword arguments."""
+    async def list(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        **filters: Any,
+    ) -> list[T]:
+        """Return matching entities with optional pagination.
+
+        Args:
+            limit:   Maximum number of rows to return. None means no upper bound.
+            offset:  Number of rows to skip from the start. Defaults to 0 (no skip).
+            **filters: Column equality filters applied as WHERE clauses.
+
+        Returns:
+            Empty list immediately when limit=0, without hitting the database.
+        """
+        if limit is not None and limit < 0:
+            raise ValueError(f"limit must be >= 0, got {limit!r}")
+        if offset < 0:
+            raise ValueError(f"offset must be >= 0, got {offset!r}")
+        if limit == 0:
+            return []
         try:
             stmt = select(self._model_class)
             for attr, value in filters.items():
                 stmt = stmt.where(getattr(self._model_class, attr) == value)
+            stmt = stmt.offset(offset)
+            if limit is not None:
+                stmt = stmt.limit(limit)
             result = await self._session.execute(stmt)
             return list(result.scalars().all())  # type: ignore[arg-type]
         except SQLAlchemyError as exc:

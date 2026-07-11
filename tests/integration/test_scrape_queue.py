@@ -361,3 +361,68 @@ class TestFromUrlSsrfValidation:
         with pytest.raises(SSRFError) as exc_info:
             ScrapeQueue.from_url(url="https://192.168.1.1/")
         assert exc_info.value.reason == "private IP not allowed"
+
+
+# ---------------------------------------------------------------------------
+# DB Trigger Tests (REQ-6.1)
+# ---------------------------------------------------------------------------
+
+
+class TestUpdatedAtTrigger:
+    """Verify that the DB trigger trg_scrape_queue_updated_at fires on UPDATE.
+
+    This test is only meaningful when migrations are run via alembic upgrade head
+    — create_all skips the trigger DDL entirely.
+    """
+
+    async def test_updated_at_trigger_fires_on_status_update(
+        self, async_session: AsyncSession
+    ) -> None:
+        """After updating status, updated_at must be >= created_at.
+
+        The trigger sets updated_at = NOW() on every UPDATE. Because the
+        testcontainer clock advances between INSERT and UPDATE, updated_at
+        should be >= created_at. We also confirm it's not None.
+        """
+        row = ScrapeQueue.from_url(url="https://fbref.com/trigger-test")
+        async_session.add(row)
+        await async_session.flush()
+        await async_session.refresh(row)
+
+        created_at_snapshot = row.created_at
+        assert created_at_snapshot is not None
+
+        # Perform a real UPDATE to fire the trigger.
+        row.status = ScrapeStatus.IN_PROGRESS
+        await async_session.flush()
+        await async_session.refresh(row)
+
+        assert row.updated_at is not None
+        assert row.updated_at >= created_at_snapshot, (
+            f"updated_at ({row.updated_at}) must be >= "
+            f"created_at ({created_at_snapshot}). "
+            "Trigger trg_scrape_queue_updated_at may not be installed."
+        )
+
+    async def test_trigger_exists_in_database(
+        self, async_session: AsyncSession
+    ) -> None:
+        """The trigger trg_scrape_queue_updated_at must exist in the DB.
+
+        This fails when create_all is used because triggers are not DDL
+        that SQLAlchemy reflects from ORM metadata.
+        """
+        from sqlalchemy import text
+
+        result = await async_session.execute(
+            text(
+                "SELECT COUNT(*) FROM information_schema.triggers "
+                "WHERE trigger_name = 'trg_scrape_queue_updated_at' "
+                "AND event_object_schema = 'sch_infra'"
+            )
+        )
+        count = result.scalar_one()
+        assert count == 1, (
+            "Trigger trg_scrape_queue_updated_at not found in sch_infra. "
+            "The migrate_db fixture must run alembic upgrade head to install triggers."
+        )
