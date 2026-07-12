@@ -1,0 +1,18 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends chromium curl socat xvfb && \
+    rm -rf /var/lib/apt/lists/*
+
+# Bake the unpacked extension — loaded by Chromium at startup
+COPY extensions/sportcrawl-chrome /opt/sportcrawl-chrome
+COPY docker/entrypoint-chromium.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 9222
+
+# Chrome >= 112 always binds --remote-debugging-port to 127.0.0.1 regardless
+# of --remote-debugging-address. The entrypoint starts Chromium on internal
+# port 9223 (loopback only) and uses socat to proxy 0.0.0.0:9222 → 127.0.0.1:9223,
+# making the CDP endpoint reachable from outside the container.
+CMD ["/entrypoint.sh"]
