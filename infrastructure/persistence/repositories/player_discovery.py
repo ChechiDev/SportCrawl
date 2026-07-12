@@ -11,6 +11,11 @@ The caller owns the transaction; this repository never commits.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -29,6 +34,12 @@ from infrastructure.persistence.models.shared.player_position import PlayerPosit
 logger = logging.getLogger(__name__)
 
 _FBREF_DOMAIN = "fbref.com"
+_CHUNK_SIZE = 500
+
+
+def _chunked(lst: list[Any], size: int) -> Iterator[list[Any]]:
+    for i in range(0, len(lst), size):
+        yield lst[i : i + size]
 
 
 class PlayerDiscoveryRepository:
@@ -67,7 +78,7 @@ class PlayerDiscoveryRepository:
             return 0
 
         try:
-            # 1. Insert Player rows — ON CONFLICT(player_id) DO NOTHING
+            # 1. Player rows — chunked to stay under asyncpg 32 767-param limit
             player_values = [
                 {
                     "player_id": r.player_id,
@@ -80,13 +91,14 @@ class PlayerDiscoveryRepository:
                 }
                 for r in rows
             ]
-            stmt_player = pg_insert(Player).values(player_values)
-            stmt_player = stmt_player.on_conflict_do_nothing(
-                index_elements=["player_id"]
-            )
-            await self._session.execute(stmt_player)
+            for chunk in _chunked(player_values, _CHUNK_SIZE):
+                stmt_player = pg_insert(Player).values(chunk)
+                stmt_player = stmt_player.on_conflict_do_nothing(
+                    index_elements=["player_id"]
+                )
+                await self._session.execute(stmt_player)
 
-            # 2. Insert PlayerPosition rows — ON CONFLICT DO NOTHING
+            # 2. PlayerPosition rows — chunked
             position_values: list[dict[str, object]] = []
             for r in rows:
                 for sort_order, pos_code in enumerate(r.positions):
@@ -97,16 +109,14 @@ class PlayerDiscoveryRepository:
                             "sort_order": sort_order,
                         }
                     )
-            if position_values:
-                stmt_pos = pg_insert(PlayerPosition).values(position_values)
+            for chunk in _chunked(position_values, _CHUNK_SIZE):
+                stmt_pos = pg_insert(PlayerPosition).values(chunk)
                 stmt_pos = stmt_pos.on_conflict_do_nothing(
                     index_elements=["fk_player", "position_code"]
                 )
                 await self._session.execute(stmt_pos)
 
-            # 3. Upsert ScrapeQueue rows and collect IDs in one round-trip.
-            #    ON CONFLICT DO UPDATE with a no-op set_ forces RETURNING to emit
-            #    IDs for both newly inserted rows and pre-existing conflicts.
+            # 3. ScrapeQueue upsert with RETURNING — collect IDs across all chunks
             sq_values = [
                 {
                     "url": r.player_url,
@@ -115,17 +125,19 @@ class PlayerDiscoveryRepository:
                 }
                 for r in rows
             ]
-            stmt_sq = pg_insert(ScrapeQueue).values(sq_values)
-            stmt_sq = stmt_sq.on_conflict_do_update(
-                index_elements=["url"],
-                # no-op update — forces RETURNING to include conflicting rows too
-                set_={"url": pg_insert(ScrapeQueue).excluded.url},
-            )
-            stmt_sq_ret = stmt_sq.returning(ScrapeQueue.id)
-            sq_result = await self._session.execute(stmt_sq_ret)
-            queue_ids: list[int] = list(sq_result.scalars().all())
+            queue_ids: list[int] = []
+            for chunk in _chunked(sq_values, _CHUNK_SIZE):
+                stmt_sq = pg_insert(ScrapeQueue).values(chunk)
+                stmt_sq = stmt_sq.on_conflict_do_update(
+                    index_elements=["url"],
+                    # no-op update — forces RETURNING to include conflicting rows too
+                    set_={"url": pg_insert(ScrapeQueue).excluded.url},
+                )
+                stmt_sq_ret = stmt_sq.returning(ScrapeQueue.id)
+                sq_result = await self._session.execute(stmt_sq_ret)
+                queue_ids.extend(sq_result.scalars().all())
 
-            # 4. Upsert PlayerDiscoveryBatch — ON CONFLICT(country_id) DO UPDATE
+            # 4. PlayerDiscoveryBatch — single row, no chunking needed
             stmt_batch = pg_insert(PlayerDiscoveryBatch).values(
                 country_id=country_id,
                 total_urls=len(rows),
@@ -137,16 +149,18 @@ class PlayerDiscoveryRepository:
             )
             await self._session.execute(stmt_batch)
 
+            # 5. PlayerQueueRef — chunked
             if queue_ids:
                 ref_values = [
                     {"queue_id": qid, "country_id": country_id}
                     for qid in queue_ids
                 ]
-                stmt_ref = pg_insert(PlayerQueueRef).values(ref_values)
-                stmt_ref = stmt_ref.on_conflict_do_nothing(
-                    index_elements=["queue_id"]
-                )
-                await self._session.execute(stmt_ref)
+                for chunk in _chunked(ref_values, _CHUNK_SIZE):
+                    stmt_ref = pg_insert(PlayerQueueRef).values(chunk)
+                    stmt_ref = stmt_ref.on_conflict_do_nothing(
+                        index_elements=["queue_id"]
+                    )
+                    await self._session.execute(stmt_ref)
 
         except SQLAlchemyError as exc:
             raise RepositoryError(
