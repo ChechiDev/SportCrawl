@@ -12,6 +12,7 @@ test). No mocks — real Postgres via testcontainers.
 
 from __future__ import annotations
 
+import pytest_asyncio
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +47,25 @@ def _make_player(
         career_end=None,
         positions=positions or ["FW"],
         player_url=f"https://fbref.com/en/players/{player_id}/Player-Name",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture(autouse=True, loop_scope="function")
+async def _seed_country(async_session: AsyncSession) -> None:
+    """Insert the ESP country row so tbl_players FK is satisfied."""
+    await async_session.execute(
+        text(
+            "INSERT INTO sch_shared.tbl_countries"
+            " (country_id, country_name, country_url)"
+            " VALUES (:cid, 'Spain', 'https://fbref.com/en/country/ESP/')"
+            " ON CONFLICT DO NOTHING"
+        ),
+        {"cid": _COUNTRY_ID},
     )
 
 
