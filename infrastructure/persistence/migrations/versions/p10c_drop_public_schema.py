@@ -31,23 +31,33 @@ def upgrade() -> None:
         """
     )
 
-    # 2. Copy current version data only if sch_infra.alembic_version is empty.
-    # env.py may have already seeded the table (bootstrap scenario), so we
-    # avoid duplicating the row which would break Alembic's single-row
-    # invariant.
+    # 2. Copy version data from public.alembic_version only when it exists.
+    # On existing DBs, Alembic tracked in public — we migrate the row over.
+    # On fresh DBs (CI/testcontainers), env.py tracked in sch_infra from the
+    # start so public.alembic_version was never created; the DO block is a no-op.
     op.execute(
         """
-        INSERT INTO sch_infra.alembic_version
-        SELECT * FROM public.alembic_version
-        WHERE NOT EXISTS (
-            SELECT 1 FROM sch_infra.alembic_version
-        )
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'alembic_version'
+            ) THEN
+                INSERT INTO sch_infra.alembic_version
+                SELECT * FROM public.alembic_version
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM sch_infra.alembic_version
+                );
+                DROP TABLE public.alembic_version;
+            END IF;
+        END $$
         """
     )
 
-    # 3. Drop public.alembic_version and then the public schema itself.
-    op.execute("DROP TABLE public.alembic_version")
-    op.execute("DROP SCHEMA public CASCADE")
+    # 3. Drop the public schema itself (IF EXISTS covers fresh-DB runs where
+    # public was already absent or had no tracked version table).
+    op.execute("DROP SCHEMA IF EXISTS public CASCADE")
 
 
 def downgrade() -> None:
