@@ -146,8 +146,8 @@ async def run_async_migrations() -> None:
     # Bootstrap sch_infra before Alembic connects — version_table_schema="sch_infra"
     # requires the schema to exist before Alembic tries to read/write the version table.
     # Must be committed in its own transaction; executing inside do_run_migrations
-    # would start an implicit transaction that Alembic wraps in SAVEPOINTs instead of
-    # BEGIN/COMMIT, causing all migrations to roll back when the outer connection closes.
+    # starts an implicit transaction — Alembic detects in_transaction()=True and uses
+    # SAVEPOINTs, so the outer connection auto-rolls back everything on close.
     async with connectable.begin() as conn:
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
     async with connectable.connect() as connection:

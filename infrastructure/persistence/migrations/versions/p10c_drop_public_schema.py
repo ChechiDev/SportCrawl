@@ -55,7 +55,37 @@ def upgrade() -> None:
         """
     )
 
-    # 3. Drop the public schema itself (IF EXISTS covers fresh-DB runs where
+    # 3. Relocate the updated_at trigger function from public to sch_infra before
+    # dropping public. The initial migration (134f2e68682a) created
+    # update_updated_at_column() in the default (public) schema. DROP SCHEMA
+    # public CASCADE would cascade through that function to drop the trigger on
+    # sch_infra.scrape_queue, breaking the updated_at automation. We recreate the
+    # function in sch_infra and rewire the trigger first, then drop the old one.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION sch_infra.update_updated_at_column()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = NOW();
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+        """
+    )
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_scrape_queue_updated_at"
+        " ON sch_infra.scrape_queue"
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_scrape_queue_updated_at
+            BEFORE UPDATE ON sch_infra.scrape_queue
+            FOR EACH ROW EXECUTE FUNCTION sch_infra.update_updated_at_column()
+        """
+    )
+    op.execute("DROP FUNCTION IF EXISTS public.update_updated_at_column()")
+
+    # 4. Drop the public schema itself (IF EXISTS covers fresh-DB runs where
     # public was already absent or had no tracked version table).
     op.execute("DROP SCHEMA IF EXISTS public CASCADE")
 
