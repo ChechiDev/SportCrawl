@@ -196,7 +196,13 @@ class PydollEngine(ScrapingEngine):
         deadline = loop.time() + _CHALLENGE_TIMEOUT
 
         while loop.time() < deadline:
-            source: str = await tab.page_source
+            try:
+                source: str = await tab.page_source
+            except KeyError:
+                # CDP Runtime.evaluate response missing 'value' — tab still
+                # in a transitional state (e.g. large page still loading).
+                await asyncio.sleep(1)
+                continue
             peek = source[:1024].lower()
             if not any(marker in peek for marker in _CHALLENGE_MARKERS):
                 return source
