@@ -115,9 +115,6 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Execute pending migrations using a synchronous connection handle."""
-    from sqlalchemy import text
-
-    connection.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -143,7 +140,16 @@ def _build_engine() -> AsyncEngine:
 
 async def run_async_migrations() -> None:
     """Acquire an async engine, then run migrations via run_sync."""
+    from sqlalchemy import text
+
     connectable = _build_engine()
+    # Bootstrap sch_infra before Alembic connects — version_table_schema="sch_infra"
+    # requires the schema to exist before Alembic tries to read/write the version table.
+    # Must be committed in its own transaction; executing inside do_run_migrations
+    # would start an implicit transaction that Alembic wraps in SAVEPOINTs instead of
+    # BEGIN/COMMIT, causing all migrations to roll back when the outer connection closes.
+    async with connectable.begin() as conn:
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
