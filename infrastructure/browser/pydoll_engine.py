@@ -65,7 +65,10 @@ class _XvfbManager:
             return False
 
     def start(self) -> None:
-        """Point DISPLAY at a virtual framebuffer so Chrome never opens a visible window."""
+        """Point DISPLAY at a virtual framebuffer — Chrome never opens a visible window.
+
+        Safe to call when Xvfb or xdpyinfo are not installed (CI environments).
+        """
         if self._proc is not None:
             return  # already managed by us
 

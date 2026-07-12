@@ -118,10 +118,11 @@ class PlayerDiscoveryRepository:
             stmt_sq = pg_insert(ScrapeQueue).values(sq_values)
             stmt_sq = stmt_sq.on_conflict_do_update(
                 index_elements=["url"],
-                set_={"url": pg_insert(ScrapeQueue).excluded.url},  # no-op to trigger RETURNING
+                # no-op update — forces RETURNING to include conflicting rows too
+                set_={"url": pg_insert(ScrapeQueue).excluded.url},
             )
-            stmt_sq = stmt_sq.returning(ScrapeQueue.id)
-            sq_result = await self._session.execute(stmt_sq)
+            stmt_sq_ret = stmt_sq.returning(ScrapeQueue.id)
+            sq_result = await self._session.execute(stmt_sq_ret)
             queue_ids: list[int] = list(sq_result.scalars().all())
 
             # 4. Upsert PlayerDiscoveryBatch — ON CONFLICT(country_id) DO UPDATE

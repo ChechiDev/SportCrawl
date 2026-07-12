@@ -30,8 +30,10 @@ from ports.browser import ScrapingEngine
 _PLAYER_LIST_HTML = """
 <html><body>
 <div class="section_content">
-<p><a href="/en/players/d70ce98e/Lionel-Messi"><strong>Lionel Messi</strong></a> 2004-2026&nbsp;\xb7 FW,MF</p>
-<p><a href="/en/players/abc12345/Roberto-Carlos">Roberto Carlos</a> 1991-2011&nbsp;\xb7 DF</p>
+<p><a href="/en/players/d70ce98e/Lionel-Messi"><strong>Lionel Messi</strong></a>
+ 2004-2026&nbsp;\xb7 FW,MF</p>
+<p><a href="/en/players/abc12345/Roberto-Carlos">Roberto Carlos</a>
+ 1991-2011&nbsp;\xb7 DF</p>
 </div>
 </body></html>
 """

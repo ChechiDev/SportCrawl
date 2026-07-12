@@ -8,7 +8,6 @@ Commands:
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
 
 import typer
 
@@ -27,10 +26,10 @@ def work_server() -> None:
 
 @app.command("scrape-players")
 def scrape_players(
-    country: Optional[str] = typer.Option(None, "--country", "-c", metavar="CODE",
-                                           help="FBRef country code, e.g. ARG."),
-    url: Optional[str] = typer.Option(None, "--url", "-u", metavar="URL",
-                                       help="Full FBRef country player-list URL."),
+    country: str | None = typer.Option(None, "--country", "-c", metavar="CODE",
+                                       help="FBRef country code, e.g. ARG."),
+    url: str | None = typer.Option(None, "--url", "-u", metavar="URL",
+                                   help="Full FBRef country player-list URL."),
     all_countries: bool = typer.Option(False, "--all", "-a",
                                         help="Scrape all countries from the database."),
 ) -> None:
