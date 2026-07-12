@@ -11,11 +11,20 @@ Spike findings (task 6.1):
 - PydollException is the base for all pydoll errors
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from ports.browser import ScrapingEngine
+
+
+@pytest.fixture(autouse=True)
+def mock_xvfb_start() -> MagicMock:
+    """Suppress _XvfbManager.start for all tests — CI has no Xvfb or xdpyinfo."""
+    with patch(
+        "infrastructure.browser.pydoll_engine._XvfbManager.start"
+    ) as mock:
+        yield mock
 
 # ---------------------------------------------------------------------------
 # Contract: PydollEngine is a concrete ScrapingEngine
