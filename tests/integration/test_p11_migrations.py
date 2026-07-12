@@ -17,7 +17,9 @@ in the local unit suite.
 
 from __future__ import annotations
 
+import asyncio
 import os
+from functools import partial
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
@@ -28,6 +30,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _alembic_run(fn: object, cfg: AlembicConfig, revision: str) -> None:
+    """Run a sync alembic command in a thread so it can call asyncio.run() safely."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, partial(fn, cfg, revision))  # type: ignore[arg-type]
 
 
 def _alembic_cfg(db_url: URL) -> AlembicConfig:
@@ -111,7 +119,7 @@ class TestP11Migrations:
         """alembic upgrade p11b creates all Phase 11 tables and the view."""
         cfg = _alembic_cfg(_integration_db_url)
         # upgrade head runs p11b (which runs p11a first via chain)
-        alembic_command.upgrade(cfg, "p11b")
+        await _alembic_run(alembic_command.upgrade, cfg, "p11b")
 
         engine = create_async_engine(_integration_db_url, echo=False)
         try:
@@ -144,7 +152,7 @@ class TestP11Migrations:
         # p11b is already applied after test_p11a_upgrade_creates_player_tables,
         # but we re-apply idempotently (upgrade to head is safe after head).
         cfg = _alembic_cfg(_integration_db_url)
-        alembic_command.upgrade(cfg, "p11b")
+        await _alembic_run(alembic_command.upgrade, cfg, "p11b")
 
         engine = create_async_engine(_integration_db_url, echo=False)
         try:
@@ -161,7 +169,7 @@ class TestP11Migrations:
     ) -> None:
         """Downgrade from p11b to p11a removes locked_at; player tables intact."""
         cfg = _alembic_cfg(_integration_db_url)
-        alembic_command.downgrade(cfg, "p11a")
+        await _alembic_run(alembic_command.downgrade, cfg, "p11a")
 
         engine = create_async_engine(_integration_db_url, echo=False)
         try:
@@ -185,7 +193,7 @@ class TestP11Migrations:
     ) -> None:
         """Downgrade from p11a to p10d drops view and player tables cleanly."""
         cfg = _alembic_cfg(_integration_db_url)
-        alembic_command.downgrade(cfg, "p10d_add_fk_ondelete")
+        await _alembic_run(alembic_command.downgrade, cfg, "p10d_add_fk_ondelete")
 
         engine = create_async_engine(_integration_db_url, echo=False)
         try:
@@ -216,3 +224,7 @@ class TestP11Migrations:
                     )
         finally:
             await engine.dispose()
+
+        # Restore schema to head so subsequent tests in the session can use
+        # the Phase 11 tables (migrate_db runs upgrade head only once).
+        await _alembic_run(alembic_command.upgrade, cfg, "head")
