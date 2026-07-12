@@ -30,7 +30,7 @@ def _make_player(player_id: str, player_url: str) -> PlayerRawData:
 
 @pytest.mark.asyncio
 async def test_enqueue_calls_bulk_enqueue_with_players_and_country_id() -> None:
-    """enqueue(page) must call repo.bulk_enqueue using page.country_id (no extra arg)."""
+    """enqueue(page) calls repo.bulk_enqueue using page.country_id (no extra arg)."""
     players = [
         _make_player("d70ce98e", _PLAYER_URL),
         _make_player("abc12345", _PLAYER_URL_2),
@@ -64,7 +64,7 @@ async def test_enqueue_returns_count_from_repo() -> None:
 
 @pytest.mark.asyncio
 async def test_enqueue_empty_page_calls_bulk_enqueue_with_empty_list() -> None:
-    """enqueue(page) with no players calls bulk_enqueue with empty list and page.country_id."""
+    """enqueue(page) with no players calls bulk_enqueue with empty list."""
     page = PlayerListPage(country_id="BRA", players=[])
 
     repo = MagicMock()

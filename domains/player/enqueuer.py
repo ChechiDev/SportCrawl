@@ -36,7 +36,8 @@ class PlayerDiscoveryEnqueuer:
         """Enqueue all players from a scraped page.
 
         Args:
-            page: Parsed country player-list page; country_id is taken from page.country_id.
+            page: Parsed country player-list page; country_id taken from
+                page.country_id.
 
         Returns:
             Number of player URLs enqueued (as reported by the repository).
