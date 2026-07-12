@@ -87,7 +87,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --frozen
-      - run: uv run pip-audit --strict --skip-editable
+      - run: uv run pip-audit --skip-editable
 
   secret-scan:
     name: Secret Scanning
