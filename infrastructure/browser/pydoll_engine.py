@@ -61,7 +61,7 @@ class _XvfbManager:
                 timeout=2,
             )
             return result.returncode == 0
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
     def start(self) -> None:
@@ -75,11 +75,17 @@ class _XvfbManager:
             # An X server is already listening on :199 — reuse it
             return
 
-        self._proc = subprocess.Popen(
-            ["Xvfb", _XVFB_DISPLAY, "-screen", "0", "1920x1080x24"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        try:
+            self._proc = subprocess.Popen(
+                ["Xvfb", _XVFB_DISPLAY, "-screen", "0", "1920x1080x24"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "Xvfb not found — Chrome will use existing DISPLAY or run headless"
+            )
+            return
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
             if self._display_alive(_XVFB_DISPLAY):
