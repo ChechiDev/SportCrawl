@@ -59,7 +59,7 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
         super().__init__(engine, settings)
         self._session_factory = session_factory
 
-    async def parse(self, html: str, country_id: str = "") -> PlayerListPage:  # type: ignore[override]
+    async def parse(self, html: str, country_id: str = "") -> PlayerListPage:
         """Parse FBRef country player-list HTML into a PlayerListPage.
 
         Pure parsing — no database calls, no instance state mutation.
