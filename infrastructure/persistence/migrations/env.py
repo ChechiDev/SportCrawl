@@ -30,6 +30,18 @@ import infrastructure.persistence.models.provenance  # noqa: F401, E501  # pyrig
 import infrastructure.persistence.models.scrape_queue  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
 from infrastructure.persistence.migrations._filters import include_name
 from infrastructure.persistence.models.base import Base
+from infrastructure.persistence.models.football.player_discovery_batch import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    PlayerDiscoveryBatch,
+)
+from infrastructure.persistence.models.football.player_queue_ref import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    PlayerQueueRef,
+)
+from infrastructure.persistence.models.shared.player import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    Player,
+)
+from infrastructure.persistence.models.shared.player_position import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    PlayerPosition,
+)
 
 target_metadata = Base.metadata
 

@@ -7,8 +7,10 @@ methods. The caller (JobLoop) owns the transaction; this repository never commit
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 
 from core.exceptions.repository import RepositoryError
@@ -61,9 +63,53 @@ class ScrapeQueueRepository(BaseRepository[ScrapeQueue]):
                 cause=exc,
             ) from exc
 
+    async def recover_stale(
+        self, domain: str, ttl_minutes: int = 30
+    ) -> int:
+        """Reset IN_PROGRESS rows older than *ttl_minutes* back to PENDING.
+
+        Issues a single UPDATE that sets status=PENDING and locked_at=NULL for
+        all IN_PROGRESS rows whose locked_at is older than the TTL window.
+        Caller owns the transaction and must commit.
+
+        Args:
+            domain: Filter rows to this domain only.
+            ttl_minutes: Rows locked for longer than this interval are reset.
+
+        Returns:
+            Number of rows reset.
+
+        Raises:
+            RepositoryError: if the UPDATE fails.
+        """
+        try:
+            stmt = text(
+                """
+                UPDATE sch_infra.scrape_queue
+                   SET status    = 'PENDING',
+                       locked_at = NULL
+                 WHERE status    = 'IN_PROGRESS'
+                   AND domain    = :domain
+                   AND locked_at < now() - (:ttl * interval '1 minute')
+                """
+            )
+            result = await self._session.execute(
+                stmt, {"domain": domain, "ttl": ttl_minutes}
+            )
+            rowcount = cast(CursorResult, result).rowcount  # type: ignore[type-arg]
+            assert rowcount is not None, "recover_stale: DML result has no rowcount"
+            return rowcount
+        except SQLAlchemyError as exc:
+            raise RepositoryError(
+                "recover_stale failed",
+                operation="recover_stale",
+                cause=exc,
+            ) from exc
+
     async def mark_in_progress(self, row: ScrapeQueue) -> ScrapeQueue:
         """Transition *row* from PENDING to IN_PROGRESS.
 
+        Sets locked_at to the current UTC time to enable stale detection.
         Flushes the change to the database but does NOT commit.
         The caller is responsible for committing the transaction.
 
@@ -78,6 +124,7 @@ class ScrapeQueueRepository(BaseRepository[ScrapeQueue]):
         """
         try:
             row.status = ScrapeStatus.IN_PROGRESS
+            row.locked_at = datetime.now(UTC)
             await self._session.flush()
             return row
         except SQLAlchemyError as exc:
@@ -90,6 +137,7 @@ class ScrapeQueueRepository(BaseRepository[ScrapeQueue]):
     async def mark_done(self, row: ScrapeQueue) -> ScrapeQueue:
         """Transition *row* to DONE and record completion time.
 
+        Clears locked_at (no longer in progress).
         Flushes but does NOT commit. Caller owns the transaction.
 
         Args:
@@ -104,6 +152,7 @@ class ScrapeQueueRepository(BaseRepository[ScrapeQueue]):
         try:
             row.status = ScrapeStatus.DONE
             row.completed_at = datetime.now(UTC)
+            row.locked_at = None
             await self._session.flush()
             return row
         except SQLAlchemyError as exc:
@@ -139,6 +188,7 @@ class ScrapeQueueRepository(BaseRepository[ScrapeQueue]):
         try:
             row.retry_count += 1
             row.error_message = error
+            row.locked_at = None
 
             if row.retry_count >= max_queue_retries:
                 row.status = ScrapeStatus.FAILED
