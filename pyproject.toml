@@ -19,6 +19,15 @@ dependencies = [
     "pandas>=2.0",
 ]
 
+[project.scripts]
+sportcrawl = "cli.main:main"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["cli*", "core*", "config*", "domains*", "infrastructure*", "ports*", "scripts*"]
+
 [dependency-groups]
 dev = [
     "flake8>=7.3.0",

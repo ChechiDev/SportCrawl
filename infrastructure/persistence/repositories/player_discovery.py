@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 
-import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,9 +37,9 @@ class PlayerDiscoveryRepository:
     Insert order per batch:
         1. tbl_players (Player) — ON CONFLICT(player_id) DO NOTHING
         2. tbl_player_positions (PlayerPosition) — ON CONFLICT DO NOTHING
-        3. scrape_queue (ScrapeQueue) — ON CONFLICT(url) DO NOTHING
+        3. scrape_queue (ScrapeQueue) — ON CONFLICT(url) DO UPDATE (no-op) RETURNING id
         4. player_discovery_batch — ON CONFLICT(country_id) DO UPDATE total_urls
-        5. player_queue_ref (PlayerQueueRef) — after SELECT id FROM scrape_queue
+        5. player_queue_ref (PlayerQueueRef) — IDs from step 3 RETURNING clause
 
     The caller owns the transaction and must call session.commit() after
     bulk_enqueue().
@@ -105,7 +104,9 @@ class PlayerDiscoveryRepository:
                 )
                 await self._session.execute(stmt_pos)
 
-            # 3. Insert ScrapeQueue rows — ON CONFLICT(url) DO NOTHING
+            # 3. Upsert ScrapeQueue rows and collect IDs in one round-trip.
+            #    ON CONFLICT DO UPDATE with a no-op set_ forces RETURNING to emit
+            #    IDs for both newly inserted rows and pre-existing conflicts.
             sq_values = [
                 {
                     "url": r.player_url,
@@ -114,14 +115,14 @@ class PlayerDiscoveryRepository:
                 }
                 for r in rows
             ]
-            # urls derived from sq_values so ordering invariant is explicit:
-            # urls[i] always matches sq_values[i]["url"]
-            urls = [v["url"] for v in sq_values]
             stmt_sq = pg_insert(ScrapeQueue).values(sq_values)
-            stmt_sq = stmt_sq.on_conflict_do_nothing(
-                constraint="uq_scrape_queue_url"
+            stmt_sq = stmt_sq.on_conflict_do_update(
+                index_elements=["url"],
+                set_={"url": pg_insert(ScrapeQueue).excluded.url},  # no-op to trigger RETURNING
             )
-            await self._session.execute(stmt_sq)
+            stmt_sq = stmt_sq.returning(ScrapeQueue.id)
+            sq_result = await self._session.execute(stmt_sq)
+            queue_ids: list[int] = list(sq_result.scalars().all())
 
             # 4. Upsert PlayerDiscoveryBatch — ON CONFLICT(country_id) DO UPDATE
             stmt_batch = pg_insert(PlayerDiscoveryBatch).values(
@@ -134,15 +135,6 @@ class PlayerDiscoveryRepository:
                 set_={"total_urls": len(rows)},
             )
             await self._session.execute(stmt_batch)
-
-            # 5. Resolve ScrapeQueue IDs, then insert PlayerQueueRef rows.
-            #    pg_insert goes through Core (bypasses ORM UoW buffer), so rows are
-            #    immediately visible to this SELECT within the same transaction.
-            select_stmt = sa.select(ScrapeQueue.id).where(
-                ScrapeQueue.url.in_(urls)
-            )
-            id_result = await self._session.execute(select_stmt)
-            queue_ids: list[int] = list(id_result.scalars().all())
 
             if queue_ids:
                 ref_values = [
