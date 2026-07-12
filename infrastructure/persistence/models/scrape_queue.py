@@ -37,7 +37,7 @@ class ScrapeStatus(enum.Enum):
 class ScrapeQueue(Base):
     """ORM model for the scrape_queue table.
 
-    Columns (9):
+    Columns (10):
         id           — integer primary key (auto-increment)
         url          — target URL to scrape (NOT NULL)
         domain       — domain extracted from URL (NOT NULL) — used in index
@@ -47,6 +47,7 @@ class ScrapeQueue(Base):
         completed_at — nullable timestamp; set when status reaches DONE/FAILED
         error_message — nullable text; populated on FAILED
         retry_count  — integer, default 0; incremented on each retry
+        locked_at    — nullable timestamp; set on IN_PROGRESS, cleared on DONE/FAILED
 
     Indexes:
         ix_scrape_queue_domain_status — composite (domain, status)
@@ -76,6 +77,11 @@ class ScrapeQueue(Base):
     )
     error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
     retry_count: Mapped[int] = mapped_column(server_default=text("0"))
+    # Set when status transitions to IN_PROGRESS; cleared to NULL on DONE/FAILED.
+    # recover_stale() uses this to reset rows stuck in IN_PROGRESS beyond the TTL.
+    locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint("url", name="uq_scrape_queue_url"),
