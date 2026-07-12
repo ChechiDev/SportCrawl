@@ -50,7 +50,21 @@ class PydollEngine(ScrapingEngine):
         """Lazily initialize the Chrome browser and its initial tab."""
         if self._browser is None:
             logger.debug("Starting Chrome browser (lazy init)")
-            self._browser = Chrome()
+            import os
+
+            from pydoll.browser.options import ChromiumOptions
+
+            opts = ChromiumOptions()  # type: ignore[no-untyped-call]
+            opts.headless = False  # headless fails Cloudflare
+            for path in [
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/chromium",
+            ]:
+                if os.path.exists(path):
+                    opts.binary_location = path
+                    break
+            self._browser = Chrome(options=opts)
             self._tab = await self._browser.start()
 
     async def fetch(self, url: str) -> str:

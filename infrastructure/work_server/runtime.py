@@ -27,11 +27,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+from collections.abc import Callable
 from typing import Any, cast
 
 from aiohttp import web
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from config.settings import Settings
 from infrastructure.jobs.job_loop import JobLoop
 from infrastructure.persistence.adapters.work_queue import ScrapeQueueWorkAdapter
 from infrastructure.work_server.server import create_app
@@ -61,11 +63,43 @@ async def _jobloop_forever(job_loop: JobLoop, poll_interval: float) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Scraper factory
+# ---------------------------------------------------------------------------
+
+
+def make_scraper_factory(
+    browser_engine: Any,
+    scraping: Any,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Callable[[str], Any]:
+    """Return a URL-routing factory that maps URLs to concrete BaseScraper instances.
+
+    Args:
+        browser_engine: Shared PydollEngine instance (injected by the composition root).
+        scraping:        ScrapingSettings instance.
+        session_factory: Async session factory for scrapers that need DB persistence.
+
+    Returns:
+        A callable ``factory(url: str) -> BaseScraper`` that raises ScraperError
+        when no scraper is registered for the given URL.
+    """
+    from core.exceptions.scraper import ScraperError
+    from infrastructure.scraping.countries import CountryScraper
+
+    def _factory(url: str) -> Any:
+        if "fbref.com/en/countries" in url:
+            return CountryScraper(browser_engine, scraping, session_factory)
+        raise ScraperError(f"No scraper registered for URL: {url}")
+
+    return _factory
+
+
+# ---------------------------------------------------------------------------
 # Composition root
 # ---------------------------------------------------------------------------
 
 
-async def serve(settings: Any) -> None:
+async def serve(settings: Settings) -> None:
     """Build and run the work server with a shared event loop.
 
     Args:
@@ -115,6 +149,7 @@ async def serve(settings: Any) -> None:
     app = create_app(adapter, token)
 
     # --- Build JobLoop (dependency injection — no direct model imports) ---
+    from infrastructure.browser.pydoll_engine import PydollEngine
     from infrastructure.persistence.models.provenance import Provenance
     from infrastructure.persistence.repositories.provenance import ProvenanceRepository
     from infrastructure.persistence.repositories.scrape_queue import (
@@ -122,9 +157,12 @@ async def serve(settings: Any) -> None:
     )
     from infrastructure.persistence.session import get_session
 
+    browser_engine = PydollEngine()
+    scraper_factory = make_scraper_factory(browser_engine, scraping, factory)
+
     job_loop = JobLoop(
         session_factory=lambda: get_session(factory),
-        scraper_factory=_noop_scraper_factory,
+        scraper_factory=scraper_factory,
         queue_repo_factory=lambda session: ScrapeQueueRepository(  # type: ignore
             cast(AsyncSession, session)
         ),
@@ -183,15 +221,25 @@ async def serve(settings: Any) -> None:
     except (TimeoutError, asyncio.CancelledError):
         pass
 
-    # 3. Close DB connection pool
+    # 3. Close browser engine
+    try:
+        await browser_engine.close()
+    except Exception:
+        logger.debug("browser_engine.close() raised during shutdown; ignoring")
+
+    # 4. Close DB connection pool
     await engine.dispose()
 
     logger.info("Shutdown complete")
 
 
-def _noop_scraper_factory(url: str) -> Any:
-    """Placeholder scraper factory — replaced at real composition root init."""
-    raise NotImplementedError(
-        "Real scraper factory must be injected at startup. "
-        "This placeholder should not be called in production."
+if __name__ == "__main__":
+    import sys
+
+    _settings = Settings()  # type: ignore[call-arg]  # pydantic-settings reads from env
+    logging.basicConfig(
+        level=getattr(logging, _settings.log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
     )
+    asyncio.run(serve(_settings))

@@ -1,6 +1,6 @@
 [project]
 name = "sportcrawl"
-version = "0.10.0"
+version = "0.11.0"
 description = "Multi-sport data scraping infrastructure"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -89,6 +89,7 @@ modules = [
     "infrastructure.persistence",
     "infrastructure.work_server",
     "infrastructure.jobs",
+    "infrastructure.scraping",
 ]
 # infrastructure.work_server.runtime is the composition root — it wires all
 # infrastructure sub-packages together at startup. This is the only permitted
@@ -101,11 +102,15 @@ ignore_imports = [
     "infrastructure.work_server.runtime -> infrastructure.persistence.repositories.provenance",
     "infrastructure.work_server.runtime -> infrastructure.persistence.repositories.scrape_queue",
     "infrastructure.work_server.runtime -> infrastructure.persistence.session",
+    "infrastructure.work_server.runtime -> infrastructure.browser.pydoll_engine",
+    "infrastructure.work_server.runtime -> infrastructure.scraping.countries",
+    "infrastructure.scraping.countries -> infrastructure.persistence.repositories.country",
+    "infrastructure.scraping.countries -> infrastructure.persistence.session",
 ]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.10.0"
+version = "0.11.0"
 version_files = ["pyproject.toml:version"]
 tag_format = "v$version"
 update_changelog_on_bump = false
