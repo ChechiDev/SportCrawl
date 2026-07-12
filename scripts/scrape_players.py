@@ -3,7 +3,7 @@
 Usage:
     uv run python scripts/scrape_players.py                  # Spain (default)
     uv run python scripts/scrape_players.py --country ARG
-    uv run python scripts/scrape_players.py --url https://fbref.com/en/country/players/BRA/Brazil-Football
+    uv run python scripts/scrape_players.py --url <FBREF_COUNTRY_PLAYERS_URL>
     uv run python scripts/scrape_players.py --all            # all 219 countries from DB
 """
 
@@ -47,10 +47,11 @@ def _players_url(country_url: str) -> str:
 
 
 async def _load_all_countries(session_factory: object) -> list[tuple[str, str]]:
-    """Return (country_id, player_list_url) for every country in the DB, sorted by name."""
+    """Return (country_id, player_list_url) for every country in the DB."""
     async with get_session(session_factory) as session:  # type: ignore[arg-type]
         result = await session.execute(
-            sa.select(Country.country_id, Country.country_url).order_by(Country.country_name)
+            sa.select(Country.country_id, Country.country_url)
+            .order_by(Country.country_name)
         )
         return [(row.country_id, _players_url(row.country_url)) for row in result]
 
@@ -95,7 +96,9 @@ async def main_all() -> None:
             try:
                 count = await scrape_one(scraper, url)
                 grand_total += count
-                print(f"[{i:>3}/{total}] {country_id:<6}  {count:>5} players  (total so far: {grand_total:,})")
+                total_str = f"{grand_total:,}"
+                prefix = f"[{i:>3}/{total}] {country_id:<6}"
+                print(f"{prefix}  {count:>5} players  (total: {total_str})")
             except (PageLoadError, RateLimitError) as exc:
                 failed.append(country_id)
                 print(f"[{i:>3}/{total}] {country_id:<6}  ERROR: {exc}")
@@ -114,7 +117,9 @@ if __name__ == "__main__":
         default="ESP",
         help="FBRef country code (default: ESP).",
     )
-    group.add_argument("--url", metavar="URL", help="Full FBRef country player-list URL.")
+    group.add_argument(
+        "--url", metavar="URL", help="Full FBRef country player-list URL."
+    )
     group.add_argument("--all", action="store_true", dest="all_countries",
                        help="Scrape all countries from the database.")
     args = parser.parse_args()

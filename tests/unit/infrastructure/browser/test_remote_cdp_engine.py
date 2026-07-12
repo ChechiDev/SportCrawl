@@ -19,7 +19,6 @@ import pytest
 from core.exceptions.scraper import PageLoadError, RateLimitError
 from ports.browser import ScrapingEngine
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -47,7 +46,10 @@ def _make_mock_browser(tab: AsyncMock) -> AsyncMock:
     return mock_browser
 
 
-def _patch_aiohttp_version_endpoint(ws_url: str = "ws://localhost:9222/devtools/browser/abc"):
+_DEFAULT_WS_URL = "ws://localhost:9222/devtools/browser/abc"
+
+
+def _patch_aiohttp_version_endpoint(ws_url: str = _DEFAULT_WS_URL):
     """Return a context manager that patches aiohttp to return *ws_url*."""
     mock_response = AsyncMock()
     mock_response.json = AsyncMock(return_value={"webSocketDebuggerUrl": ws_url})
@@ -224,14 +226,16 @@ class TestRemoteCDPEngineFetchHtml:
         with _patch_aiohttp_version_endpoint(), patch(
             "infrastructure.browser.remote_cdp_engine.Chrome",
             return_value=mock_browser,
-        ), patch("infrastructure.browser.remote_cdp_engine.asyncio.sleep", new=AsyncMock()):
+        ), patch(
+            "infrastructure.browser.remote_cdp_engine.asyncio.sleep", new=AsyncMock()
+        ):
             engine = RemoteCDPEngine()
             result = await engine.fetch("https://fbref.com/")
 
         assert result == clean_html
 
     async def test_fetch_returns_html_directly_when_no_challenge(self) -> None:
-        """fetch() returns HTML immediately when page_source has no challenge markers."""
+        """fetch() returns HTML immediately when no challenge markers present."""
         from infrastructure.browser.remote_cdp_engine import RemoteCDPEngine
 
         clean_html = "<html><body>Player stats</body></html>"
@@ -350,7 +354,7 @@ class TestRemoteCDPEngineClose:
         assert engine._tab is None
 
     async def test_close_is_idempotent_when_no_browser(self) -> None:
-        """close() must not raise when called before any fetch() (no browser started)."""
+        """close() must not raise when called before any fetch()."""
         from infrastructure.browser.remote_cdp_engine import RemoteCDPEngine
 
         engine = RemoteCDPEngine()

@@ -97,7 +97,7 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
             else:
                 player_url = f"{_FBREF_BASE}{href}"
 
-            # Collect text nodes of <p> (NavigableString subclasses str, so isinstance(str) works)
+            # Collect text nodes of <p> — NavigableString subclasses str
             tail_parts: list[str] = []
             for child in p_tag.children:
                 if isinstance(child, str):
