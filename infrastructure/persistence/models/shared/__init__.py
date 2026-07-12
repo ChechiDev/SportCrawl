@@ -1,6 +1,6 @@
-"""Shared persistence models stub package.
+from infrastructure.persistence.models.shared.confederation import Confederation
+from infrastructure.persistence.models.shared.country import Country
+from infrastructure.persistence.models.shared.flag import Flag
+from infrastructure.persistence.models.shared.gender import Gender
 
-ORM model stubs for the sch_shared schema. Concrete table definitions
-will be added here as the shared domain is built out. This stub ensures
-the package is importable and registered before any models are defined.
-"""
+__all__ = ["Confederation", "Country", "Flag", "Gender"]
