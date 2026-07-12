@@ -54,7 +54,7 @@ class PydollEngine(ScrapingEngine):
 
             from pydoll.browser.options import ChromiumOptions
 
-            opts = ChromiumOptions()
+            opts = ChromiumOptions()  # type: ignore[no-untyped-call]
             opts.headless = False  # headless fails Cloudflare
             for path in [
                 "/usr/bin/google-chrome",

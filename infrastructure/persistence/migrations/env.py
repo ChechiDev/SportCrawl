@@ -115,6 +115,9 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Execute pending migrations using a synchronous connection handle."""
+    from sqlalchemy import text
+
+    connection.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
