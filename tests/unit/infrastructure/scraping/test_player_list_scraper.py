@@ -71,7 +71,7 @@ class MockEngine(ScrapingEngine):
     def __init__(self, html: str = "") -> None:
         self._html = html
 
-    async def fetch(self, _url: str) -> str:
+    async def fetch(self, url: str) -> str:  # noqa: ARG002
         return self._html
 
     async def close(self) -> None:
