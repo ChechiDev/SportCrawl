@@ -101,6 +101,8 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
         include_name=include_name,
+        version_table="alembic_version",
+        version_table_schema="sch_infra",
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -118,6 +120,8 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         include_schemas=True,
         include_name=include_name,
+        version_table="alembic_version",
+        version_table_schema="sch_infra",
     )
     with context.begin_transaction():
         context.run_migrations()
