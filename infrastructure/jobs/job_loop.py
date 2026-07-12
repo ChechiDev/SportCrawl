@@ -135,6 +135,53 @@ class JobLoop:
         self._provenance_factory = provenance_factory
         self._settings = settings
 
+    async def drain(
+        self,
+        *,
+        batch_size: int,
+        stop_event: asyncio.Event,
+    ) -> int:
+        """Process all PENDING jobs until the queue is empty or stop_event is set.
+
+        Checks stop_event at the top of every iteration so it always exits
+        at a clean batch boundary — never mid-batch.
+
+        Args:
+            batch_size: Max jobs per batch iteration.
+            stop_event: When set, drain exits at the next batch boundary.
+
+        Returns:
+            Total number of jobs processed across all batches.
+        """
+        total = 0
+        while not stop_event.is_set():
+            processed = await self._run_batch(batch_size)
+            if processed == 0:
+                break
+            total += processed
+        return total
+
+    async def _run_batch(self, batch_size: int) -> int:
+        """Fetch up to *batch_size* PENDING rows and process them concurrently.
+
+        Returns:
+            Number of rows that were dispatched (may be 0 if queue is empty).
+        """
+        async with self._session_factory() as session:
+            queue_repo = self._queue_repo_factory(session)
+            rows = await queue_repo.list_pending(batch_size)
+
+        if not rows:
+            return 0
+
+        run_id = uuid.uuid4()
+        sem = asyncio.Semaphore(self._settings.max_concurrent_requests)
+        await asyncio.gather(
+            *(self._process(row.id, row.url, run_id, sem) for row in rows),
+            return_exceptions=True,
+        )
+        return len(rows)
+
     async def run(self, *, limit: int | None = None) -> uuid.UUID:
         """Drain PENDING rows and dispatch them concurrently.
 
