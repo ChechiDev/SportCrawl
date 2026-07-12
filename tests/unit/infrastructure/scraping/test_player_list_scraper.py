@@ -18,54 +18,28 @@ from infrastructure.scraping.players import PlayerListScraper
 from ports.browser import ScrapingEngine
 
 # ---------------------------------------------------------------------------
-# HTML fixtures — FBRef-style player list table
+# HTML fixtures — FBRef-style player list using <p> tags
 #
-# FBRef country player-list pages use a standard table with data-stat attributes.
-# Each player row contains:
-#   - an <a> tag with href "/en/players/{8-char-id}/{Name}"
-#   - data-stat="position" cell with comma-separated codes (e.g. "FW,MF")
-#   - data-stat="career_start" cell with the start year (or birth_year fallback)
-#   - data-stat="career_end" cell: empty for active, year string for retired
+# FBRef country player-list pages use <p> tags, NOT tables with data-stat.
+# Each player row is a <p> element containing:
+#   - an <a href="/en/players/{8-char-id}/{Name}"> anchor
+#   - <strong> wrapper inside the anchor for active players
+#   - tail text: "{start}-{end}\xa0· {POS,POS}" (e.g. "2004-2026\xa0· FW,MF")
 # ---------------------------------------------------------------------------
 
 _PLAYER_LIST_HTML = """
 <html><body>
-<table id="players_ESP">
-  <thead>
-    <tr>
-      <th data-stat="player">Player</th>
-      <th data-stat="position">Pos</th>
-      <th data-stat="career_start">From</th>
-      <th data-stat="career_end">To</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td data-stat="player">
-        <a href="/en/players/d70ce98e/Lionel-Messi">Lionel Messi</a>
-      </td>
-      <td data-stat="position">FW,MF</td>
-      <td data-stat="career_start">2004</td>
-      <td data-stat="career_end"></td>
-    </tr>
-    <tr>
-      <td data-stat="player">
-        <a href="/en/players/abc12345/Roberto-Carlos">Roberto Carlos</a>
-      </td>
-      <td data-stat="position">DF</td>
-      <td data-stat="career_start">1991</td>
-      <td data-stat="career_end">2011</td>
-    </tr>
-  </tbody>
-</table>
+<div class="section_content">
+<p><a href="/en/players/d70ce98e/Lionel-Messi"><strong>Lionel Messi</strong></a> 2004-2026&nbsp;\xb7 FW,MF</p>
+<p><a href="/en/players/abc12345/Roberto-Carlos">Roberto Carlos</a> 1991-2011&nbsp;\xb7 DF</p>
+</div>
 </body></html>
 """
 
 _EMPTY_TABLE_HTML = """
 <html><body>
-<table id="players_ESP">
-  <tbody></tbody>
-</table>
+<div class="section_content">
+</div>
 </body></html>
 """
 

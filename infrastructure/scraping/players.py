@@ -73,41 +73,23 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
             PlayerListPage containing all successfully parsed player rows.
         """
         soup = BeautifulSoup(html, "lxml")
-
-        # Find any table with a tbody (FBRef player list uses data-stat attributes)
-        tbody = None
-        for table in soup.find_all("table"):
-            tbody = table.find("tbody")
-            if tbody:
-                break
-
         players: list[PlayerRawData] = []
 
-        if not tbody:
-            return PlayerListPage(country_id=country_id, players=players)
-
-        for row in tbody.find_all("tr"):
-            cells_by_stat = {
-                cell.get("data-stat"): cell
-                for cell in row.find_all(["th", "td"])
-            }
-
-            # Find the player anchor — could be in "player" stat or first td with <a>
-            player_cell = cells_by_stat.get("player")
-            if not player_cell:
-                continue
-
-            a_tag = player_cell.find("a")
+        for p_tag in soup.find_all("p"):
+            a_tag = p_tag.find("a")
             if not a_tag or not a_tag.get("href"):
                 continue
 
             href = str(a_tag.get("href", ""))
-            match = _PLAYER_HREF_RE.search(href)
-            if not match:
+            href_match = _PLAYER_HREF_RE.search(href)
+            if not href_match:
                 continue
 
-            player_id = match.group(1).lower()
+            player_id = href_match.group(1).lower()
             display_name = a_tag.get_text(strip=True)
+
+            # Active players have their name wrapped in <strong>
+            is_active = a_tag.find("strong") is not None
 
             # Build absolute player_url
             if href.startswith("http"):
@@ -115,33 +97,30 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
             else:
                 player_url = f"{_FBREF_BASE}{href}"
 
-            # Positions from data-stat="position" — e.g. "FW,MF"
-            pos_cell = cells_by_stat.get("position")
-            raw_pos = pos_cell.get_text(strip=True) if pos_cell else ""
-            positions = (
-                [p.strip() for p in raw_pos.split(",") if p.strip()]
-                if raw_pos
-                else []
-            )
+            # Collect text nodes of <p> (NavigableString subclasses str, so isinstance(str) works)
+            tail_parts: list[str] = []
+            for child in p_tag.children:
+                if isinstance(child, str):
+                    tail_parts.append(child)
+            tail = "".join(tail_parts).replace("\xa0", " ")
 
-            # Career start from data-stat="career_start"
-            start_cell = cells_by_stat.get("career_start")
-            raw_start = start_cell.get_text(strip=True) if start_cell else ""
-            try:
-                career_start = int(raw_start)
-            except (ValueError, TypeError):
-                continue  # career_start is required; skip row if unparseable
+            # Career dates from tail: "2004-2026 · FW,MF"
+            years_match = re.search(r"(\d{4})-(\d{4})", tail)
+            if years_match is None:
+                continue  # career dates are required; skip row if absent
 
-            # Career end from data-stat="career_end" — empty means active
-            end_cell = cells_by_stat.get("career_end")
-            raw_end = end_cell.get_text(strip=True) if end_cell else ""
-            career_end: int | None = None
-            if raw_end:
-                try:
-                    career_end = int(raw_end)
-                except (ValueError, TypeError):
-                    # career_end is optional; None means currently active
-                    career_end = None
+            career_start = int(years_match.group(1))
+            career_end: int | None = None if is_active else int(years_match.group(2))
+
+            # Positions come after the "·" separator
+            positions: list[str] = []
+            if "·" in tail:
+                pos_part = tail.split("·", 1)[1]
+                positions = [
+                    pos.strip()
+                    for pos in pos_part.split(",")
+                    if re.fullmatch(r"[A-Z]{1,4}", pos.strip())
+                ]
 
             players.append(
                 PlayerRawData(
