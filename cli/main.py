@@ -26,12 +26,18 @@ def work_server() -> None:
 
 @app.command("scrape-players")
 def scrape_players(
-    country: str | None = typer.Option(None, "--country", "-c", metavar="CODE",
-                                       help="FBRef country code, e.g. ARG."),
-    url: str | None = typer.Option(None, "--url", "-u", metavar="URL",
-                                   help="Full FBRef country player-list URL."),
-    all_countries: bool = typer.Option(False, "--all", "-a",
-                                        help="Scrape all countries from the database."),
+    country: str | None = typer.Option(
+        None, "--country", "-c", metavar="CODE",
+        help="FBRef country code, e.g. ARG.",
+    ),
+    url: str | None = typer.Option(
+        None, "--url", "-u", metavar="URL",
+        help="Full FBRef country player-list URL.",
+    ),
+    all_countries: bool = typer.Option(
+        False, "--all", "-a",
+        help="Scrape all countries from the database.",
+    ),
 ) -> None:
     """Discover and persist players for one country or all countries."""
     import logging
@@ -48,7 +54,8 @@ def scrape_players(
     elif url:
         asyncio.run(main_single(url))
     elif country:
-        asyncio.run(main_single(f"{_FBREF_BASE}/{country.upper()}/{country.upper()}-Football"))
+        code = country.upper()
+        asyncio.run(main_single(f"{_FBREF_BASE}/{code}/{code}-Football"))
     else:
         typer.echo("Specify --country, --url, or --all.", err=True)
         raise typer.Exit(code=1)
