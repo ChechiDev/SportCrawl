@@ -35,7 +35,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 async def _alembic_run(fn: object, cfg: AlembicConfig, revision: str) -> None:
     """Run a sync alembic command in a thread so it can call asyncio.run() safely."""
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, partial(fn, cfg, revision))  # type: ignore[arg-type]
+    await loop.run_in_executor(  # type: ignore[arg-type]
+        None, partial(fn, cfg, revision)
+    )
 
 
 def _alembic_cfg(db_url: URL) -> AlembicConfig:
