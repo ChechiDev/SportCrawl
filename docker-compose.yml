@@ -10,7 +10,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB__USER:-sportcrawl} -d ${DB__NAME:-sportcrawl}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB__USER:-sportcrawl} -d ${DB__NAME:-sportcrawl}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
