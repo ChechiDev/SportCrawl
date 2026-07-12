@@ -243,13 +243,14 @@ class PydollEngine(ScrapingEngine):
             raise
         except PydollException as exc:
             logger.debug("Fetch failed for %s: %s", url, exc)
-            try:
-                await self._browser.stop()  # type: ignore[union-attr]
-            except PydollException:
-                logger.debug("browser.stop() raised during error cleanup; ignoring")
-            finally:
-                self._browser = None
-                self._tab = None
+            browser = self._browser
+            if browser is not None:
+                try:
+                    await browser.stop()  # type: ignore[no-untyped-call]
+                except PydollException:
+                    logger.debug("browser.stop() raised during error cleanup; ignoring")
+            self._browser = None
+            self._tab = None
             raise PageLoadError(
                 f"Failed to fetch {url}: {exc}",
                 url=url,
