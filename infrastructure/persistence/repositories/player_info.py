@@ -103,10 +103,16 @@ class PlayerInfoRepository:
                 if raw.fk_country_birth in valid_countries
                 else None
             )
+            fk_national_team = (
+                raw.fk_national_team
+                if raw.fk_national_team in valid_countries
+                else None
+            )
 
             values: dict[str, object] = {
                 "player_id": raw.player_id,
                 "fk_country_birth": fk_country_birth,
+                "fk_national_team": fk_national_team,
                 "city_name": raw.city_name,
                 "player_born": raw.player_born,
                 "player_height": raw.player_height,
@@ -124,6 +130,7 @@ class PlayerInfoRepository:
                 index_elements=["player_id"],
                 set_={
                     "fk_country_birth": stmt.excluded.fk_country_birth,
+                    "fk_national_team": stmt.excluded.fk_national_team,
                     "city_name": stmt.excluded.city_name,
                     "player_born": stmt.excluded.player_born,
                     "player_height": stmt.excluded.player_height,

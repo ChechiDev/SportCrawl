@@ -47,6 +47,15 @@ class PlayerInfo(Base):
         ),
         nullable=True,
     )
+    fk_national_team: Mapped[str | None] = mapped_column(
+        String(10),
+        ForeignKey(
+            "sch_shared.tbl_countries.country_id",
+            ondelete="SET NULL",
+            name="tbl_player_info_fk_national_team_fkey",
+        ),
+        nullable=True,
+    )
     city_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     player_born: Mapped[date | None] = mapped_column(Date, nullable=True)
     player_height: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
