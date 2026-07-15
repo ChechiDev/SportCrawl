@@ -141,22 +141,34 @@ def _parse_birth(soup: BeautifulSoup | Tag) -> tuple[date | None, str | None]:
     return player_born, city_name
 
 
-def _parse_country_birth(soup: BeautifulSoup | Tag) -> str | None:
-    """Extract birth country_id from the flag span in the born paragraph."""
+def _parse_country_birth_name(soup: BeautifulSoup | Tag) -> str | None:
+    """Extract birth country name from 'in City, Country' text near necro-birth span."""
     birth_span = soup.find("span", id="necro-birth")
-    if not birth_span:
+    if not birth_span or not isinstance(birth_span, Tag):
         return None
-    parent = birth_span.find_parent("p") if isinstance(birth_span, Tag) else None
+    parent = birth_span.find_parent("p")
     if not parent or not isinstance(parent, Tag):
         return None
-    # Flag span style: background-image:url('.../es-2007.svg') → country code "ES"
-    for span in parent.find_all("span"):
-        if not isinstance(span, Tag):
-            continue
-        style = span.get("style", "")
-        m = re.search(r"/([a-z]{2})-\d{4}\.svg", str(style), re.IGNORECASE)
-        if m:
-            return m.group(1).upper()
+    full_text = parent.get_text(separator=" ", strip=True)
+    m = re.search(r"\bin\s+[^,]+,\s*([A-Za-z\s\-]+?)(?:\s*$|\s*\()", full_text)
+    if m:
+        return m.group(1).strip() or None
+    # Fallback: "in <Country>" with no city
+    m2 = re.search(r"\bin\s+([A-Za-z\s\-]+?)(?:\s*$|\s*\()", full_text)
+    if m2:
+        return m2.group(1).strip() or None
+    return None
+
+
+def _parse_national_team_name(soup: BeautifulSoup | Tag) -> str | None:
+    """Extract national team country name from the National Team paragraph."""
+    for strong in soup.find_all("strong"):
+        if "National Team" in strong.get_text():
+            p = strong.find_parent("p")
+            if p and isinstance(p, Tag):
+                a = p.find("a", href=re.compile(r"^/en/country/"))
+                if a and isinstance(a, Tag):
+                    return a.get_text(strip=True) or None
     return None
 
 
@@ -223,14 +235,18 @@ class PlayerInfoScraper:
         player_foot = _parse_foot(scope)
         player_height, player_weight = _parse_height_weight(scope)
         player_born, city_name = _parse_birth(scope)
-        fk_country_birth = _parse_country_birth(scope)
+        country_birth_name = _parse_country_birth_name(scope)
+        national_team_name = _parse_national_team_name(scope)
         player_wages, player_expires = _parse_wages_expires(scope)
         photo_url = _parse_photo(scope)
 
         raw = PlayerInfoRawData(
             player_id=self._player_id,
             player_info_url=self._player_info_url,
-            fk_country_birth=fk_country_birth,
+            fk_country_birth=None,
+            country_birth_name=country_birth_name,
+            national_team_name=national_team_name,
+            fk_national_team=None,
             city_name=city_name,
             player_born=player_born,
             player_height=player_height,

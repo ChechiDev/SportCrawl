@@ -21,6 +21,9 @@ class PlayerInfoRawData(BaseModel):
     Attributes:
         player_id: FBRef slug (e.g. "abc123"), 8 chars typically.
         fk_country_birth: country_id FK referencing tbl_countries (e.g. "ARG").
+        country_birth_name: Raw country name extracted from the born paragraph text.
+        national_team_name: Raw national team country name from the National Team link.
+        fk_national_team: country_id FK resolved from national_team_name.
         city_name: Free-text birth city name; no FK.
         player_born: Date of birth.
         player_height: Height in centimetres.
@@ -37,6 +40,9 @@ class PlayerInfoRawData(BaseModel):
 
     player_id: str
     fk_country_birth: str | None = None
+    country_birth_name: str | None = None
+    national_team_name: str | None = None
+    fk_national_team: str | None = None
     city_name: str | None = None
     player_born: date | None = None
     player_height: int | None = None
