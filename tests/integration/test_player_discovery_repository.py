@@ -50,7 +50,7 @@ def _make_player(
 
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="function")
-async def seed_country(async_session: AsyncSession) -> None:
+async def _seed_country(async_session: AsyncSession) -> None:
     """Insert the ESP country row so tbl_players FK is satisfied."""
     await async_session.execute(
         text(
