@@ -41,18 +41,19 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     _ids = tuple(row[0] for row in _ROWS)
+    # Use ANY syntax for PostgreSQL tuple matching with asyncpg
     op.execute(
         sa.text(
             "UPDATE sch_shared.tbl_player_info"
             " SET fk_country_birth = NULL"
-            " WHERE fk_country_birth IN :ids"
+            " WHERE fk_country_birth = ANY(:ids)"
         ).bindparams(ids=_ids)
     )
     op.execute(
         sa.text(
             "UPDATE sch_shared.tbl_player_info"
             " SET fk_national_team = NULL"
-            " WHERE fk_national_team IN :ids"
+            " WHERE fk_national_team = ANY(:ids)"
         ).bindparams(ids=_ids)
     )
     for country_id, *_ in _ROWS:
