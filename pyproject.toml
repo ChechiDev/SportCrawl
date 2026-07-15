@@ -17,6 +17,7 @@ dependencies = [
     "beautifulsoup4>=4.0",
     "lxml>=5.0",
     "pandas>=2.0",
+    "rich>=15.0.0",
 ]
 
 [project.scripts]

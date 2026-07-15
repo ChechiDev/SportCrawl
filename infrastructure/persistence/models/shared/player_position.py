@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, SmallInteger, String
+from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from infrastructure.persistence.models.base import Base
@@ -11,22 +11,14 @@ from infrastructure.persistence.models.base import Base
 class PlayerPosition(Base):
     """ORM model for sch_shared.tbl_player_positions.
 
-    Composite primary key on (fk_player, position_code).
-    Cascades deletes from tbl_players so removing a player removes all its positions.
-    sort_order preserves the order positions appeared during scraping.
+    Lookup table of known position codes (e.g. "FW", "MF", "DF", "GK").
+    Populated by Phase 14 (player-info scraping). No FK relationships to tbl_players
+    in the current schema.
     """
 
     __tablename__ = "tbl_player_positions"
 
-    fk_player: Mapped[str] = mapped_column(
-        String(20),
-        ForeignKey(
-            "sch_shared.tbl_players.player_id",
-            ondelete="CASCADE",
-        ),
-        primary_key=True,
-    )
-    position_code: Mapped[str] = mapped_column(String(10), primary_key=True)
-    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    position_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    position_code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
 
     __table_args__ = ({"schema": "sch_shared"},)

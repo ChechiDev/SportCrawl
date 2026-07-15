@@ -4,7 +4,6 @@ Covers:
 - bulk_enqueue persists rows across tbl_players, scrape_queue, player_queue_ref
 - v_player_scrape_progress reports correct pending count after bulk_enqueue
 - bulk_enqueue is idempotent — repeated calls produce no duplicates
-- Player positions cascade-delete when the parent player is deleted
 
 All tests use the async_session fixture (function-scoped, rolled back after each
 test). No mocks — real Postgres via testcontainers.
@@ -17,10 +16,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domains.player.models import PlayerRawData
-from infrastructure.persistence.models.football.player_queue_ref import PlayerQueueRef
+from infrastructure.persistence.models.infra.player_queue_ref import PlayerQueueRef
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.player import Player
-from infrastructure.persistence.models.shared.player_position import PlayerPosition
 from infrastructure.persistence.repositories.player_discovery import (
     PlayerDiscoveryRepository,
 )
@@ -34,18 +32,14 @@ _COUNTRY_ID = "ESP"
 
 def _make_player(
     player_id: str,
-    display_name: str,
-    *,
-    positions: list[str] | None = None,
+    full_name: str,
 ) -> PlayerRawData:
     """Return a minimal PlayerRawData for testing."""
     return PlayerRawData(
         player_id=player_id,
-        display_name=display_name,
-        full_name=None,
+        full_name=full_name,
         career_start=2010,
-        career_end=None,
-        positions=positions or ["FW"],
+        career_end=2023,
         player_url=f"https://fbref.com/en/players/{player_id}/Player-Name",
     )
 
@@ -56,7 +50,7 @@ def _make_player(
 
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="function")
-async def _seed_country(async_session: AsyncSession) -> None:
+async def seed_country(async_session: AsyncSession) -> None:
     """Insert the ESP country row so tbl_players FK is satisfied."""
     await async_session.execute(
         text(
@@ -212,41 +206,3 @@ class TestBulkEnqueueIdempotent:
         assert row[0] == 2
 
 
-class TestBulkEnqueueCascadeDelete:
-    async def test_bulk_enqueue_positions_cascade_delete(
-        self, async_session: AsyncSession
-    ) -> None:
-        """Deleting a player cascades to tbl_player_positions."""
-        repo = PlayerDiscoveryRepository(async_session)
-        player_id = "55555555"
-        rows = [
-            _make_player(
-                player_id, "Player Five", positions=["FW", "MF"]
-            )
-        ]
-
-        await repo.bulk_enqueue(rows, _COUNTRY_ID)
-        await async_session.flush()
-
-        # Verify positions were inserted
-        pos_result = await async_session.execute(
-            select(PlayerPosition).where(
-                PlayerPosition.fk_player == player_id
-            )
-        )
-        positions = pos_result.scalars().all()
-        assert len(positions) == 2
-
-        # Delete the player — should cascade to positions
-        player = await async_session.get(Player, player_id)
-        assert player is not None
-        await async_session.delete(player)
-        await async_session.flush()
-
-        # Positions should be gone
-        pos_after = await async_session.execute(
-            select(PlayerPosition).where(
-                PlayerPosition.fk_player == player_id
-            )
-        )
-        assert len(pos_after.scalars().all()) == 0

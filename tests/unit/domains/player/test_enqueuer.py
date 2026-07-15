@@ -14,11 +14,9 @@ _PLAYER_URL_2 = "https://fbref.com/en/players/abc12345/Some-Player"
 def _make_player(player_id: str, player_url: str) -> PlayerRawData:
     return PlayerRawData(
         player_id=player_id,
-        display_name="Test Player",
-        full_name=None,
+        full_name="Test Player",
         career_start=2000,
-        career_end=None,
-        positions=["FW"],
+        career_end=2000,
         player_url=player_url,
     )
 

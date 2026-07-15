@@ -13,20 +13,16 @@ class PlayerRawData(BaseModel):
 
     Attributes:
         player_id: 8-character FBRef slug (e.g. "d70ce98e").
-        display_name: Player name as displayed on the page.
-        full_name: Full legal name if available; None otherwise.
+        full_name: Player name as displayed on the page (never None — parser always fills it).
         career_start: Year the player's professional career began.
-        career_end: Year the career ended; None means currently active.
-        positions: Position codes in the order they appear on the scraped page.
+        career_end: Year the career ended; equals career_start for currently active players.
         player_url: Absolute URL to the player's FBRef profile page.
     """
 
     player_id: str
-    display_name: str
-    full_name: str | None
+    full_name: str
     career_start: int
-    career_end: int | None  # None = active player
-    positions: list[str]  # ordered by scrape appearance
+    career_end: int  # equals career_start for active players
     player_url: str
 
 
