@@ -163,6 +163,7 @@ async def test_worker_inserts_player_info_and_marks_done(
             chrome_profile_base="/tmp/test-chrome",
             position_cache={},
             valid_countries=frozenset(),
+            country_name_cache={},
             worker_status={},
         )
 

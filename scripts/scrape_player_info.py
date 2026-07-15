@@ -65,6 +65,22 @@ async def _load_country_ids(
         return frozenset(row[0] for row in result.fetchall())
 
 
+async def _load_country_name_cache(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> dict[str, str]:
+    """Load a country_name → country_id mapping from tbl_countries.
+
+    Used to resolve scraped country name strings to FK values.
+    """
+    async with get_session(session_factory) as session:
+        result = await session.execute(
+            sa.text(
+                "SELECT country_name, country_id FROM sch_shared.tbl_countries"
+            )
+        )
+        return {row[0]: row[1] for row in result.fetchall()}
+
+
 async def _resolve_positions(
     raw: PlayerInfoRawData,
     info_repo: PlayerInfoRepository,
@@ -127,6 +143,7 @@ async def _worker(
     chrome_profile_base: str,
     position_cache: dict[str, int],
     valid_countries: frozenset[str],
+    country_name_cache: dict[str, str],
     worker_status: dict[int, str],
     total_jobs: int = 0,
     already_done: int = 0,
@@ -194,6 +211,17 @@ async def _worker(
                         )
 
                     raw = page.players[0]
+
+                    # Resolve country name strings to FK country_id values
+                    if raw.country_birth_name is not None:
+                        raw.fk_country_birth = country_name_cache.get(
+                            raw.country_birth_name
+                        )
+                    if raw.national_team_name is not None:
+                        raw.fk_national_team = country_name_cache.get(
+                            raw.national_team_name
+                        )
+
                     async with get_session(session_factory) as session:
                         info_repo = PlayerInfoRepository(session)
                         pos_ids = await _resolve_positions(
@@ -391,6 +419,7 @@ async def main() -> None:
     fetch_gate = asyncio.Semaphore(1)
 
     valid_countries = await _load_country_ids(session_factory)
+    country_name_cache = await _load_country_name_cache(session_factory)
     position_cache: dict[str, int] = {}
 
     logger.info(
@@ -419,6 +448,7 @@ async def main() -> None:
                     chrome_profile_base=settings.scraping.chrome_profile_dir,
                     position_cache=position_cache,
                     valid_countries=valid_countries,
+                    country_name_cache=country_name_cache,
                     worker_status=worker_status,
                     total_jobs=already_done + pending_total,
                     already_done=already_done,
