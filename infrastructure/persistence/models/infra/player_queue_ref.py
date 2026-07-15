@@ -1,4 +1,4 @@
-"""ORM model for player_queue_ref in sch_football schema."""
+"""ORM model for player_queue_ref in sch_infra schema."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from infrastructure.persistence.models.base import FootballBase
 
 
 class PlayerQueueRef(FootballBase):
-    """ORM model for sch_football.player_queue_ref.
+    """ORM model for sch_infra.player_queue_ref.
 
     Links a scrape_queue entry to the country that owns it, enabling
     per-country progress reporting via v_player_scrape_progress.
@@ -44,5 +44,5 @@ class PlayerQueueRef(FootballBase):
         UniqueConstraint("queue_id", name="uq_player_queue_ref_queue_id"),
         Index("ix_player_queue_ref_queue_id", "queue_id"),
         Index("ix_player_queue_ref_country_id", "country_id"),
-        {"schema": "sch_football"},
+        {"schema": "sch_infra"},
     )

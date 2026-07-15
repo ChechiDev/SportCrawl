@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from config.settings import ScrapingSettings
 
-from sqlalchemy import DateTime, Index, Text, UniqueConstraint, func, text
+from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -82,6 +82,8 @@ class ScrapeQueue(Base):
     locked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Discriminates queue entries by scraping job (e.g. 'player_discovery').
+    job_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("url", name="uq_scrape_queue_url"),

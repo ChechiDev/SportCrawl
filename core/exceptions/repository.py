@@ -4,6 +4,11 @@ RepositoryError is the base. All repository errors carry optional operation and 
 Callers catch RepositoryError (or a specific subtype). Never raise bare Exception.
 """
 
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+from sqlalchemy.exc import SQLAlchemyError
+
 
 class RepositoryError(Exception):
     """Base exception for all persistence failures."""
@@ -26,3 +31,13 @@ class NotFoundError(RepositoryError):
 
 class DuplicateError(RepositoryError):
     """Raised when an insert violates a uniqueness constraint."""
+
+
+@asynccontextmanager
+async def repo_error_context(
+    operation: str, message: str
+) -> AsyncGenerator[None, None]:
+    try:
+        yield
+    except SQLAlchemyError as exc:
+        raise RepositoryError(message, operation=operation, cause=exc) from exc
