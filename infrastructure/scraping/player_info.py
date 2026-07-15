@@ -51,6 +51,12 @@ _MONTHS = {
 }
 
 
+def _clean(raw: str) -> str | None:
+    """Strip trailing 2-letter country code (e.g., ' es' from 'Spain es')."""
+    cleaned = re.sub(r"\s+[a-z]{2}$", "", raw.strip())
+    return cleaned or None
+
+
 def _meta_div(soup: BeautifulSoup | Tag) -> Tag | None:
     info = soup.find("div", id="info")
     if info and isinstance(info, Tag):
@@ -150,10 +156,6 @@ def _parse_country_birth_name(soup: BeautifulSoup | Tag) -> str | None:
     if not parent or not isinstance(parent, Tag):
         return None
     full_text = parent.get_text(separator=" ", strip=True).strip()
-    def _clean(raw: str) -> str | None:
-        cleaned = re.sub(r"\s+[a-z]{2}$", "", raw.strip())
-        return cleaned or None
-
     m = re.search(r"\bin\s+[^,]+,\s*([A-Za-z\s\-]+)", full_text)
     if m:
         return _clean(m.group(1))
