@@ -14,6 +14,7 @@ import asyncio
 import logging
 
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
 from core.exceptions.scraper import PageLoadError, RateLimitError
@@ -46,9 +47,11 @@ def _players_url(country_url: str) -> str:
     return f"{_FBREF_BASE}{path}"
 
 
-async def _load_all_countries(session_factory: object) -> list[tuple[str, str]]:
+async def _load_all_countries(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[tuple[str, str]]:
     """Return (country_id, player_list_url) for every country in the DB."""
-    async with get_session(session_factory) as session:  # type: ignore[arg-type]
+    async with get_session(session_factory) as session:
         result = await session.execute(
             sa.select(Country.country_id, Country.country_url)
             .order_by(Country.country_name)
@@ -74,9 +77,8 @@ async def main_single(url: str) -> None:
         print(f"players    : {len(page.players)}")
         print("\nFirst 10:")
         for p in page.players[:10]:
-            positions = ", ".join(p.positions)
-            career = f"{p.career_start}–{p.career_end or 'active'}"
-            print(f"  {p.player_id}  {p.display_name:<30}  [{positions}]  {career}")
+            career = f"{p.career_start}–{p.career_end}"
+            print(f"  {p.player_id}  {p.full_name:<30}  {career}")
 
 
 async def main_all() -> None:

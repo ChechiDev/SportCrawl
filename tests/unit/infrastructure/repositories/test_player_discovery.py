@@ -19,14 +19,12 @@ from infrastructure.persistence.repositories.player_discovery import (
 # ---------------------------------------------------------------------------
 
 
-def _make_player(player_id: str, positions: list[str] | None = None) -> PlayerRawData:
+def _make_player(player_id: str) -> PlayerRawData:
     return PlayerRawData(
         player_id=player_id,
-        display_name=f"Player {player_id}",
-        full_name=None,
+        full_name=f"Player {player_id}",
         career_start=2000,
-        career_end=None,
-        positions=positions or ["FW"],
+        career_end=2000,
         player_url=f"https://fbref.com/en/players/{player_id}/Player-{player_id}",
     )
 
@@ -81,22 +79,6 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         call_tables = [c.args[0] for c in mock_pg_insert.call_args_list]
         assert Player in call_tables
 
-    async def test_bulk_enqueue_calls_pg_insert_for_player_position(self) -> None:
-        """bulk_enqueue must issue a pg_insert for PlayerPosition."""
-        session = _make_session()
-        rows = [_make_player("aabbccdd", positions=["FW", "MF"])]
-
-        with _pg_insert_mock() as mock_pg_insert:
-            repo = PlayerDiscoveryRepository(session)
-            await repo.bulk_enqueue(rows, "ESP")
-
-        from infrastructure.persistence.models.shared.player_position import (
-            PlayerPosition,
-        )
-
-        call_tables = [c.args[0] for c in mock_pg_insert.call_args_list]
-        assert PlayerPosition in call_tables
-
     async def test_bulk_enqueue_calls_pg_insert_for_scrape_queue(self) -> None:
         """bulk_enqueue must issue a pg_insert for ScrapeQueue ON CONFLICT(url)."""
         session = _make_session()
@@ -125,7 +107,7 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
             repo = PlayerDiscoveryRepository(session)
             await repo.bulk_enqueue(rows, "ESP")
 
-        from infrastructure.persistence.models.football.player_queue_ref import (
+        from infrastructure.persistence.models.infra.player_queue_ref import (
             PlayerQueueRef,
         )
 
@@ -148,8 +130,15 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         session = _make_session()
         rows = [_make_player("aabbccdd")]
 
-        with _pg_insert_mock():
+        with _pg_insert_mock() as mock_pg_insert:
             repo = PlayerDiscoveryRepository(session)
-            await repo.bulk_enqueue(rows, "ESP")
+            result_first = await repo.bulk_enqueue(rows, "ESP")
             # Second call with same data — must not raise
-            await repo.bulk_enqueue(rows, "ESP")
+            result_second = await repo.bulk_enqueue(rows, "ESP")
+
+        # Both calls return the same row count (idempotent result)
+        assert result_first == result_second == 1
+        # pg_insert was called for both invocations —
+        # call count is 2× that of a single call
+        assert mock_pg_insert.call_count % 2 == 0
+        assert mock_pg_insert.call_count >= 4  # at least Player + ScrapeQueue × 2 calls

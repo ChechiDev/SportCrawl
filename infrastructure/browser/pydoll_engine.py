@@ -105,7 +105,7 @@ class _XvfbManager:
 
 _CHALLENGE_MARKERS = ("just a moment", "checking your browser")
 _EXTENSION_PATH = Path(__file__).parents[2] / "extensions" / "sportcrawl-chrome"
-_CHALLENGE_TIMEOUT = 60  # seconds — Turnstile managed challenge can take 30–45s
+_CHALLENGE_TIMEOUT = 120  # seconds — Turnstile managed challenge can take 30–90s
 
 
 class PydollEngine(ScrapingEngine):
@@ -115,11 +115,13 @@ class PydollEngine(ScrapingEngine):
     explicitly released via close(), or used as an async context manager.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, profile_dir: str | None = None, name: str = "engine") -> None:
         self._browser: Chrome | None = None
         # pydoll Tab type is not exported; using Any until upstream types stabilize
         self._tab: Any = None
         self._xvfb: _XvfbManager = _XvfbManager()
+        self._profile_dir: str = profile_dir or "/tmp/sportcrawl-chrome-profile"
+        self._name = name
 
     async def __aenter__(self) -> PydollEngine:
         return self
@@ -142,13 +144,14 @@ class PydollEngine(ScrapingEngine):
             logger.debug("Starting Chrome browser (lazy init)")
             await asyncio.to_thread(self._xvfb.start)
 
-            _profile = "/tmp/sportcrawl-chrome-profile"
+            _profile = self._profile_dir
             self._clear_profile_lock(_profile)
 
             from pydoll.browser.options import ChromiumOptions
 
             opts = ChromiumOptions()  # type: ignore[no-untyped-call]
             opts.headless = False  # headless fails Cloudflare
+            opts.start_timeout = 30  # WSL2 Chrome startup can be slow
             for path in [
                 "/usr/bin/google-chrome",
                 "/usr/bin/google-chrome-stable",
@@ -167,7 +170,7 @@ class PydollEngine(ScrapingEngine):
 
             if _EXTENSION_PATH.exists():
                 opts.add_argument(f"--load-extension={_EXTENSION_PATH}")
-                logger.info("Chrome extension loaded: %s", _EXTENSION_PATH)
+                logger.info("[%s] Chrome extension loaded successfully", self._name)
             else:
                 logger.warning("Chrome extension not found at %s", _EXTENSION_PATH)
 
@@ -195,13 +198,23 @@ class PydollEngine(ScrapingEngine):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + _CHALLENGE_TIMEOUT
 
+        challenge_logged = False
         while loop.time() < deadline:
-            source: str = await tab.page_source
+            try:
+                source: str = await tab.page_source
+            except KeyError:
+                await asyncio.sleep(1)
+                continue
             peek = source[:1024].lower()
             if not any(marker in peek for marker in _CHALLENGE_MARKERS):
                 return source
-            remaining = int(deadline - loop.time())
-            logger.info("Cloudflare challenge active — waiting (%ds left)", remaining)
+            if not challenge_logged:
+                logger.info(
+                    "[%s] Cloudflare challenge detected — waiting up to %ds",
+                    self._name,
+                    _CHALLENGE_TIMEOUT,
+                )
+                challenge_logged = True
             await asyncio.sleep(1)
 
         raise PageLoadError(
@@ -244,13 +257,13 @@ class PydollEngine(ScrapingEngine):
             return content
         except (PageLoadError, RateLimitError):
             raise
-        except PydollException as exc:
+        except (PydollException, OSError, ConnectionError) as exc:
             logger.debug("Fetch failed for %s: %s", url, exc)
             browser = self._browser
             if browser is not None:
                 try:
                     await browser.stop()  # type: ignore[no-untyped-call]
-                except PydollException:
+                except Exception:
                     logger.debug("browser.stop() raised during error cleanup; ignoring")
             self._browser = None
             self._tab = None
