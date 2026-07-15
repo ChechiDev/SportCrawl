@@ -105,19 +105,12 @@ class TestPlayerListScraperParse:
         ids = [p.player_id for p in page.players]
         assert "d70ce98e" in ids
 
-    async def test_parse_extracts_positions_in_order(self) -> None:
-        """parse() must return positions in the order they appear (FW before MF)."""
+    async def test_parse_active_player_career_end_equals_career_start(self) -> None:
+        """parse() must set career_end == career_start for active players."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")
-        assert messi.positions == ["FW", "MF"]
-
-    async def test_parse_active_player_career_end_is_none(self) -> None:
-        """parse() must set career_end=None for active players (empty career_end)."""
-        scraper = _make_scraper()
-        page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
-        messi = next(p for p in page.players if p.player_id == "d70ce98e")
-        assert messi.career_end is None
+        assert messi.career_end == messi.career_start
 
     async def test_parse_retired_player_career_end_is_int(self) -> None:
         """parse() must set career_end to an int for retired players."""
@@ -127,18 +120,19 @@ class TestPlayerListScraperParse:
         assert carlos.career_end == 2011
 
     async def test_parse_extracts_career_start(self) -> None:
-        """parse() must extract career_start as int from data-stat='career_start'."""
+        """parse() must extract career_start as int from the year range
+        in the p-tag tail."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")
         assert messi.career_start == 2004
 
-    async def test_parse_extracts_display_name_from_anchor_text(self) -> None:
-        """parse() must use the anchor text as display_name."""
+    async def test_parse_extracts_full_name_from_anchor_text(self) -> None:
+        """parse() must use the anchor text as full_name."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")
-        assert messi.display_name == "Lionel Messi"
+        assert messi.full_name == "Lionel Messi"
 
     async def test_parse_returns_player_list_page(self) -> None:
         """parse() must return a PlayerListPage instance."""
@@ -157,13 +151,6 @@ class TestPlayerListScraperParse:
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         assert len(page.players) == 2
-
-    async def test_parse_single_position_is_list(self) -> None:
-        """parse() must wrap a single position code in a list."""
-        scraper = _make_scraper()
-        page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
-        carlos = next(p for p in page.players if p.player_id == "abc12345")
-        assert carlos.positions == ["DF"]
 
     async def test_parse_player_url_is_absolute(self) -> None:
         """parse() must produce an absolute URL for player_url."""

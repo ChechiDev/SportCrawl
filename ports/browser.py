@@ -4,6 +4,8 @@ Concrete implementations (e.g. PydollEngine) wrap a real browser/CDP client.
 Tests use in-file mock subclasses — no real browser required at unit-test time.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 
@@ -19,3 +21,9 @@ class ScrapingEngine(ABC):
     async def close(self) -> None:
         """Release browser resources (close tabs, sessions, CDP connections)."""
         ...
+
+    async def __aenter__(self) -> ScrapingEngine:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.close()

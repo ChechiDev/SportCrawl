@@ -1,4 +1,4 @@
-"""ORM model for player_discovery_batch in sch_football schema."""
+"""ORM model for player_discovery_batch in sch_infra schema."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from infrastructure.persistence.models.base import FootballBase
 
 
 class PlayerDiscoveryBatch(FootballBase):
-    """ORM model for sch_football.player_discovery_batch.
+    """ORM model for sch_infra.player_discovery_batch.
 
     Tracks the total number of player URLs enqueued per country.
     country_id is the natural primary key — one batch record per country.
@@ -35,4 +35,4 @@ class PlayerDiscoveryBatch(FootballBase):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = ({"schema": "sch_football"},)
+    __table_args__ = ({"schema": "sch_infra"},)

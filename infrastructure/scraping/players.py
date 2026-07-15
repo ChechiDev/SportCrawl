@@ -42,7 +42,7 @@ _FBREF_BASE = "https://fbref.com"
 class PlayerListScraper(BaseScraper[PlayerListPage]):
     """Scraper for FBRef country player-list pages.
 
-    Parses the player table and extracts player_id, display_name, positions,
+    Parses the player table and extracts player_id, full_name,
     career_start, and career_end for each row. Persistence is handled
     separately via persist() to respect SRP.
 
@@ -72,6 +72,8 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
         Returns:
             PlayerListPage containing all successfully parsed player rows.
         """
+        if not country_id:
+            raise ValueError("country_id must not be empty")
         soup = BeautifulSoup(html, "lxml")
         players: list[PlayerRawData] = []
 
@@ -86,7 +88,7 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
                 continue
 
             player_id = href_match.group(1).lower()
-            display_name = a_tag.get_text(strip=True)
+            full_name = a_tag.get_text(strip=True)
 
             # Active players have their name wrapped in <strong>
             is_active = a_tag.find("strong") is not None
@@ -110,26 +112,14 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
                 continue  # career dates are required; skip row if absent
 
             career_start = int(years_match.group(1))
-            career_end: int | None = None if is_active else int(years_match.group(2))
-
-            # Positions come after the "·" separator
-            positions: list[str] = []
-            if "·" in tail:
-                pos_part = tail.split("·", 1)[1]
-                positions = [
-                    pos.strip()
-                    for pos in pos_part.split(",")
-                    if re.fullmatch(r"[A-Z]{1,4}", pos.strip())
-                ]
+            career_end: int = career_start if is_active else int(years_match.group(2))
 
             players.append(
                 PlayerRawData(
                     player_id=player_id,
-                    display_name=display_name,
-                    full_name=None,
+                    full_name=full_name,
                     career_start=career_start,
                     career_end=career_end,
-                    positions=positions,
                     player_url=player_url,
                 )
             )
