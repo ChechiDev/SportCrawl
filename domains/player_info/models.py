@@ -15,7 +15,8 @@ class PlayerInfoRawData(BaseModel):
 
     All fields except player_id and player_info_url are optional (None by default).
     player_wages=0 is a valid value meaning wages are explicitly zero — not unknown.
-    player_age is intentionally absent: age is derived at read time via AGE(player_born).
+    player_age is intentionally absent: age is derived at read time
+        via AGE(player_born).
 
     Attributes:
         player_id: FBRef slug (e.g. "abc123"), 8 chars typically.

@@ -26,7 +26,6 @@ from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeSt
 from infrastructure.persistence.models.shared.player import Player
 from scripts.scrape_player_info import _worker
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

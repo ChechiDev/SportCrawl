@@ -13,9 +13,11 @@ class PlayerRawData(BaseModel):
 
     Attributes:
         player_id: 8-character FBRef slug (e.g. "d70ce98e").
-        full_name: Player name as displayed on the page (never None — parser always fills it).
+        full_name: Player name as displayed on the page
+            (never None — parser always fills it).
         career_start: Year the player's professional career began.
-        career_end: Year the career ended; equals career_start for currently active players.
+        career_end: Year the career ended; equals career_start
+            for currently active players.
         player_url: Absolute URL to the player's FBRef profile page.
     """
 

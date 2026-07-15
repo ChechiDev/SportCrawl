@@ -69,7 +69,8 @@ class PlayerInfoRepository:
             position_id = result.scalar_one_or_none()
             if position_id is None:
                 raise RepositoryError(
-                    f"upsert_position: position_code '{position_code}' not found after insert",
+                    f"upsert_position: position_code '{position_code}' "
+                    "not found after insert",
                     operation="upsert_position",
                 )
             return int(position_id)
@@ -92,12 +93,18 @@ class PlayerInfoRepository:
         Raises:
             RepositoryError: if the upsert fails.
         """
-        async with repo_error_context("upsert_player_info", "upsert_player_info failed"):
+        async with repo_error_context(
+            "upsert_player_info", "upsert_player_info failed"
+        ):
             fk1, fk2, fk3 = pos_ids
 
-            fk_country_birth = raw.fk_country_birth if raw.fk_country_birth in valid_countries else None
+            fk_country_birth = (
+                raw.fk_country_birth
+                if raw.fk_country_birth in valid_countries
+                else None
+            )
 
-            values: dict = {
+            values: dict[str, object] = {
                 "player_id": raw.player_id,
                 "fk_country_birth": fk_country_birth,
                 "city_name": raw.city_name,
