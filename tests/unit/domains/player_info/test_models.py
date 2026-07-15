@@ -10,7 +10,6 @@ from datetime import date
 
 from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
 
-
 # ---------------------------------------------------------------------------
 # PlayerInfoRawData — construction
 # ---------------------------------------------------------------------------

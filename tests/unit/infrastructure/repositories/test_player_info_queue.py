@@ -9,10 +9,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
+from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
-from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 
 # ---------------------------------------------------------------------------
 # Fixtures

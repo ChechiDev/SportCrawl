@@ -13,24 +13,22 @@ import logging
 import random
 import time
 
+import sqlalchemy as sa
+from pydoll.exceptions import BrowserException
 from rich.console import Console, Group
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
 from rich.rule import Rule
 from rich.table import Table
-
-import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
 from domains.player_info.models import PlayerInfoRawData
-from pydoll.exceptions import BrowserException
-
 from infrastructure.browser.pydoll_engine import PydollEngine
-from infrastructure.persistence.models.shared.player import Player
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
+from infrastructure.persistence.models.shared.player import Player
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,

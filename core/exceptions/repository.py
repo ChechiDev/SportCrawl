@@ -4,8 +4,8 @@ RepositoryError is the base. All repository errors carry optional operation and 
 Callers catch RepositoryError (or a specific subtype). Never raise bare Exception.
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy.exc import SQLAlchemyError
 
