@@ -43,7 +43,9 @@ _WAGES_ZERO_HTML = """
 # ---------------------------------------------------------------------------
 
 
-def _make_scraper(player_id: str = _PLAYER_ID, player_url: str = _PLAYER_URL) -> PlayerInfoScraper:
+def _make_scraper(
+    player_id: str = _PLAYER_ID, player_url: str = _PLAYER_URL
+) -> PlayerInfoScraper:
     return PlayerInfoScraper(player_id=player_id, player_info_url=player_url)
 
 

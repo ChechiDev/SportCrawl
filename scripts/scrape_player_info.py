@@ -102,7 +102,9 @@ def _build_table(worker_status: dict[int, str], num_workers: int) -> Group:
     table.add_column(style="bold green")
     table.add_column()
     for i in range(1, num_workers + 1):
-        table.add_row("RUN", escape(worker_status.get(i, f"[Crawl-{i}] starting crawl...")))
+        table.add_row(
+            "RUN", escape(worker_status.get(i, f"[Crawl-{i}] starting crawl..."))
+        )
     return Group(Rule(), table)
 
 
@@ -186,26 +188,40 @@ async def _worker(
                     page = await scraper.parse(html)
 
                     if not page.players:
-                        raise RuntimeError("scraper returned empty page — possible parse failure or Cloudflare slip-through")
+                        raise RuntimeError(
+                            "scraper returned empty page"
+                            " — possible parse failure or Cloudflare slip-through"
+                        )
 
                     raw = page.players[0]
                     async with get_session(session_factory) as session:
                         info_repo = PlayerInfoRepository(session)
-                        pos_ids = await _resolve_positions(raw, info_repo, position_cache)
-                        await info_repo.upsert_player_info(raw, pos_ids, valid_countries)
+                        pos_ids = await _resolve_positions(
+                            raw, info_repo, position_cache
+                        )
+                        await info_repo.upsert_player_info(
+                            raw, pos_ids, valid_countries
+                        )
                         await info_repo.upsert_photo(raw.player_id, raw.photo_url)
                         await session.commit()  # persist player data first
 
                     async with get_session(session_factory) as queue_session:
                         q_repo = PlayerInfoQueueRepository(queue_session)
                         await q_repo.mark_done(job.id)
-                        await queue_session.commit()  # mark done only after data is safe
+                        # mark done only after data is safe
+                        await queue_session.commit()
 
                     success = True
                     processed += 1
                     global_done = already_done + processed
-                    progress = f"[{global_done}/{total_jobs}]" if total_jobs else f"[{global_done}]"
-                    worker_status[worker_id] = f"[Crawl-{worker_id}] {progress} scraped: {processed}"
+                    progress = (
+                        f"[{global_done}/{total_jobs}]"
+                        if total_jobs
+                        else f"[{global_done}]"
+                    )
+                    worker_status[worker_id] = (
+                        f"[Crawl-{worker_id}] {progress} scraped: {processed}"
+                    )
 
                 except Exception as exc:
                     attempt += 1
@@ -360,7 +376,10 @@ async def main() -> None:
 
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_infra.scrape_queue WHERE job_type='player_info' AND status='PENDING'")
+            sa.text(
+                "SELECT count(*) FROM sch_infra.scrape_queue"
+                " WHERE job_type='player_info' AND status='PENDING'"
+            )
         )
         pending_total = result.scalar() or 0
         result = await session.execute(
@@ -383,7 +402,11 @@ async def main() -> None:
     stop_event = asyncio.Event()
 
     t0 = time.monotonic()
-    with Live(_build_table(worker_status, args.workers), console=_console, refresh_per_second=2) as live:
+    with Live(
+        _build_table(worker_status, args.workers),
+        console=_console,
+        refresh_per_second=2,
+    ) as live:
         display_task = asyncio.create_task(
             _display_loop(args.workers, worker_status, stop_event, live)
         )
@@ -410,7 +433,8 @@ async def main() -> None:
     rate = total / elapsed if elapsed > 0 else 0
     eta_hours = (pending_total - total) / (rate * 3600) if rate > 0 else float("inf")
     logger.info(
-        "Done. workers=%d | scraped=%d | elapsed=%.1fs | rate=%.2f/s | ETA full run=%.1fh",
+        "Done. workers=%d | scraped=%d | elapsed=%.1fs"
+        " | rate=%.2f/s | ETA full run=%.1fh",
         args.workers, total, elapsed, rate, eta_hours,
     )
 

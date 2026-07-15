@@ -56,7 +56,8 @@ def upgrade() -> None:
         schema="sch_shared",
     )
 
-    # 4. Drop and recreate tbl_players with correct column order and nullable fk_ply_pos_1
+    # 4. Drop and recreate tbl_players with correct column order
+    #    and nullable fk_ply_pos_1
     op.execute("DROP TABLE sch_shared.tbl_players CASCADE")
     op.create_table(
         "tbl_players",
@@ -146,7 +147,8 @@ def downgrade() -> None:
         ["fk_country_team"],
         schema="sch_shared",
     )
-    # Remove the server_default from display_name after adding (only needed for ADD COLUMN)
+    # Remove the server_default from display_name after adding
+    # (only needed for ADD COLUMN)
     op.alter_column(
         "tbl_players",
         "display_name",

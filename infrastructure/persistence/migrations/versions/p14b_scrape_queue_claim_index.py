@@ -27,4 +27,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_scrape_queue_claim", table_name="scrape_queue", schema="sch_infra")
+    op.drop_index(
+        "ix_scrape_queue_claim", table_name="scrape_queue", schema="sch_infra"
+    )

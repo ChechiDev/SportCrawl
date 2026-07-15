@@ -43,7 +43,8 @@ def upgrade() -> None:
 
     # 3. Backfill existing rows
     op.execute(
-        "UPDATE sch_infra.scrape_queue SET job_type = 'player_discovery' WHERE job_type IS NULL"
+        "UPDATE sch_infra.scrape_queue"
+        " SET job_type = 'player_discovery' WHERE job_type IS NULL"
     )
 
 

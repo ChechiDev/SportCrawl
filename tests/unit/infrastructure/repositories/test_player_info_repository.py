@@ -74,7 +74,8 @@ _REPO_MODULE = "infrastructure.persistence.repositories.player_info"
 
 class TestUpsertPlayerInfo:
     async def test_upsert_player_info_inserts_new_row(self) -> None:
-        """upsert_player_info must call pg_insert for PlayerInfo ON CONFLICT DO UPDATE."""
+        """upsert_player_info must call pg_insert for PlayerInfo
+        ON CONFLICT DO UPDATE."""
         session = _make_session()
         raw = _make_raw()
         pos_ids: tuple[int | None, int | None, int | None] = (1, None, None)

@@ -5,7 +5,8 @@ HTML structure (from live FBRef inspection):
   <div id="info" class="players open">
     <div id="meta">
       <h1><span>Player Name</span></h1>
-      <p><strong>Position:</strong> FW-MF (AM, right) • <strong>Footed:</strong> Left</p>
+      <p><strong>Position:</strong> FW-MF (AM, right) •
+         <strong>Footed:</strong> Left</p>
       <p><span>180cm</span>,&nbsp;<span>76kg</span>&nbsp;...</p>
       <p>
         <strong>Born:</strong>
@@ -13,7 +14,8 @@ HTML structure (from live FBRef inspection):
         ... in Mataró, Spain
         <span class="f-i" style="background-image:url('.../es-2007.svg')"> </span>
       </p>
-      <p><strong>Wages</strong> ". " <a href="#all_wages">...</a> " Expires June 2031. Via "</p>
+      <p><strong>Wages</strong> ". " <a href="#all_wages">...</a>
+         " Expires June 2031. Via "</p>
     </div>
   </div>
 
@@ -55,7 +57,9 @@ def _meta_div(soup: BeautifulSoup | Tag) -> Tag | None:
     return None
 
 
-def _parse_positions(soup: BeautifulSoup | Tag) -> tuple[str | None, str | None, str | None]:
+def _parse_positions(
+    soup: BeautifulSoup | Tag,
+) -> tuple[str | None, str | None, str | None]:
     """Extract position codes from the Position label paragraph."""
     for p in soup.find_all("p"):
         strong = p.find("strong")
@@ -67,7 +71,11 @@ def _parse_positions(soup: BeautifulSoup | Tag) -> tuple[str | None, str | None,
         # "FW-MF (AM, right) • Footed: Left" → take up to first "(" or "•"
         pos_part = re.split(r"[•(]", after_label)[0].strip()
         # Split on "-" and clean
-        parts = [c.strip().upper() for c in pos_part.split("-") if c.strip() and c.strip().isalpha()]
+        parts = [
+            c.strip().upper()
+            for c in pos_part.split("-")
+            if c.strip() and c.strip().isalpha()
+        ]
         return (
             parts[0] if len(parts) > 0 else None,
             parts[1] if len(parts) > 1 else None,
@@ -119,7 +127,11 @@ def _parse_birth(soup: BeautifulSoup | Tag) -> tuple[date | None, str | None]:
         if parent and isinstance(parent, Tag):
             full_text = parent.get_text(separator=" ", strip=True)
             # Match "in <City>" — the city ends at a comma or end of meaningful text
-            m = re.search(r"\bin\s+([\w\s\-áéíóúàèìòùäëïöüñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÑÇ]+?)(?:\s*,|\s*$)", full_text)
+            m = re.search(
+                r"\bin\s+([\w\s\-áéíóúàèìòùäëïöüñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÑÇ]+?)"
+                r"(?:\s*,|\s*$)",
+                full_text,
+            )
             if m:
                 city_name = m.group(1).strip() or None
 

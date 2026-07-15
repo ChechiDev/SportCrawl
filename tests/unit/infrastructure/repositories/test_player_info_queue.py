@@ -48,7 +48,8 @@ def _make_pending_row(job_id: int = 1) -> ScrapeQueue:
 
 class TestClaimNext:
     async def test_claim_next_returns_pending_job_with_correct_job_type(self) -> None:
-        """claim_next must execute a SELECT FOR UPDATE SKIP LOCKED filtered by job_type."""
+        """claim_next must execute a SELECT FOR UPDATE SKIP LOCKED
+        filtered by job_type."""
         session = _make_session()
         row = _make_pending_row()
         result = MagicMock()
@@ -78,7 +79,8 @@ class TestClaimNext:
 
 class TestMarkDone:
     async def test_mark_done_sets_status_done_and_clears_locked_at(self) -> None:
-        """mark_done must set status=DONE, locked_at=None, completed_at to a datetime."""
+        """mark_done must set status=DONE, locked_at=None,
+        completed_at to a datetime."""
         session = _make_session()
         row = _make_pending_row()
         row.status = ScrapeStatus.IN_PROGRESS
@@ -122,7 +124,9 @@ class TestMarkFailed:
         assert row.status == ScrapeStatus.PENDING
         assert row.locked_at is None
 
-    async def test_mark_failed_sets_status_failed_when_retry_count_reaches_3(self) -> None:
+    async def test_mark_failed_sets_status_failed_when_retry_count_reaches_3(
+        self,
+    ) -> None:
         """mark_failed at retry ceiling (3) must set status=FAILED permanently."""
         session = _make_session()
         row = _make_pending_row()
@@ -137,7 +141,9 @@ class TestMarkFailed:
 
 
 class TestRecoverStale:
-    async def test_recover_stale_resets_in_progress_rows_older_than_cutoff(self) -> None:
+    async def test_recover_stale_resets_in_progress_rows_older_than_cutoff(
+        self,
+    ) -> None:
         """recover_stale must issue an UPDATE and return the count of reset rows."""
         session = _make_session()
         result = MagicMock()

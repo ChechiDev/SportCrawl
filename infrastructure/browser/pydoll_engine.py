@@ -209,7 +209,11 @@ class PydollEngine(ScrapingEngine):
             if not any(marker in peek for marker in _CHALLENGE_MARKERS):
                 return source
             if not challenge_logged:
-                logger.info("[%s] Cloudflare challenge detected — waiting up to %ds", self._name, _CHALLENGE_TIMEOUT)
+                logger.info(
+                    "[%s] Cloudflare challenge detected — waiting up to %ds",
+                    self._name,
+                    _CHALLENGE_TIMEOUT,
+                )
                 challenge_logged = True
             await asyncio.sleep(1)
 

@@ -18,7 +18,9 @@ class PlayerPosition(Base):
 
     __tablename__ = "tbl_player_positions"
 
-    position_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    position_id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
     position_code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
 
     __table_args__ = ({"schema": "sch_shared"},)

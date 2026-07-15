@@ -120,7 +120,8 @@ class TestPlayerListScraperParse:
         assert carlos.career_end == 2011
 
     async def test_parse_extracts_career_start(self) -> None:
-        """parse() must extract career_start as int from the year range in the p-tag tail."""
+        """parse() must extract career_start as int from the year range
+        in the p-tag tail."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")

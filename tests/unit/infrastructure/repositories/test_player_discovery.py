@@ -138,6 +138,7 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
 
         # Both calls return the same row count (idempotent result)
         assert result_first == result_second == 1
-        # pg_insert was called for both invocations — call count is 2× that of a single call
+        # pg_insert was called for both invocations —
+        # call count is 2× that of a single call
         assert mock_pg_insert.call_count % 2 == 0
         assert mock_pg_insert.call_count >= 4  # at least Player + ScrapeQueue × 2 calls

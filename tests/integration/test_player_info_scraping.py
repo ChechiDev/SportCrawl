@@ -13,6 +13,7 @@ layer without exercising the real browser or FBRef network.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from unittest.mock import AsyncMock, patch
 
@@ -158,6 +159,11 @@ async def test_worker_inserts_player_info_and_marks_done(
         processed = await _worker(
             worker_id=1,
             session_factory=factory,
+            fetch_gate=asyncio.Semaphore(1),
+            chrome_profile_base="/tmp/test-chrome",
+            position_cache={},
+            valid_countries=frozenset(),
+            worker_status={},
         )
 
     assert processed == 1
