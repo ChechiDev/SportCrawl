@@ -100,5 +100,9 @@ class PlayerInfo(Base):
 
     __table_args__ = (
         Index("ix_player_info_fk_country_birth", "fk_country_birth"),
+        Index("ix_player_info_fk_national_team", "fk_national_team"),
+        Index("ix_player_info_fk_ply_pos_1", "fk_ply_pos_1"),
+        Index("ix_player_info_fk_ply_pos_2", "fk_ply_pos_2"),
+        Index("ix_player_info_fk_ply_pos_3", "fk_ply_pos_3"),
         {"schema": "sch_shared"},
     )

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -142,6 +142,7 @@ class PlayerInfoRepository:
                     "player_wages": stmt.excluded.player_wages,
                     "player_expires": stmt.excluded.player_expires,
                     "player_info_url": stmt.excluded.player_info_url,
+                    "updated_at": func.now(),
                 },
             )
             await self._session.execute(stmt)
