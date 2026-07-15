@@ -149,14 +149,18 @@ def _parse_country_birth_name(soup: BeautifulSoup | Tag) -> str | None:
     parent = birth_span.find_parent("p")
     if not parent or not isinstance(parent, Tag):
         return None
-    full_text = parent.get_text(separator=" ", strip=True)
-    m = re.search(r"\bin\s+[^,]+,\s*([A-Za-z\s\-]+?)(?:\s*$|\s*\()", full_text)
+    full_text = parent.get_text(separator=" ", strip=True).strip()
+    def _clean(raw: str) -> str | None:
+        cleaned = re.sub(r"\s+[a-z]{2}$", "", raw.strip())
+        return cleaned or None
+
+    m = re.search(r"\bin\s+[^,]+,\s*([A-Za-z\s\-]+)", full_text)
     if m:
-        return m.group(1).strip() or None
+        return _clean(m.group(1))
     # Fallback: "in <Country>" with no city
-    m2 = re.search(r"\bin\s+([A-Za-z\s\-]+?)(?:\s*$|\s*\()", full_text)
+    m2 = re.search(r"\bin\s+([A-Za-z\s\-]+)", full_text)
     if m2:
-        return m2.group(1).strip() or None
+        return _clean(m2.group(1))
     return None
 
 
@@ -238,7 +242,7 @@ class PlayerInfoScraper:
         country_birth_name = _parse_country_birth_name(scope)
         national_team_name = _parse_national_team_name(scope)
         player_wages, player_expires = _parse_wages_expires(scope)
-        photo_url = _parse_photo(scope)
+        photo_url = _parse_photo(soup)
 
         raw = PlayerInfoRawData(
             player_id=self._player_id,

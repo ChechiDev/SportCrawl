@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
+from core.exceptions.scraper import PageLoadError, RateLimitError
 from domains.player_info.models import PlayerInfoRawData
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
@@ -217,6 +218,11 @@ async def _worker(
                         raw.fk_country_birth = country_name_cache.get(
                             raw.country_birth_name
                         )
+                        if raw.fk_country_birth is None:
+                            logger.warning(
+                                "Country birth name not found in cache: %r",
+                                raw.country_birth_name,
+                            )
                     if raw.national_team_name is not None:
                         raw.fk_national_team = country_name_cache.get(
                             raw.national_team_name
@@ -251,7 +257,9 @@ async def _worker(
                         f"[Crawl-{worker_id}] {progress} scraped: {processed}"
                     )
 
-                except Exception as exc:
+                except (
+                    PageLoadError, RateLimitError, BrowserException, RuntimeError
+                ) as exc:
                     attempt += 1
                     logger.warning(
                         "[worker-%d] job %d attempt %d failed: %s",
@@ -274,6 +282,19 @@ async def _worker(
                             worker_id,
                         )
                         return processed
+                except Exception as exc:
+                    # Non-retryable error (DB constraint, bug).
+                    # Fail immediately without consuming retry attempts.
+                    logger.error(
+                        "[worker-%d] job %d non-retryable error — marking FAILED",
+                        worker_id, job.id,
+                        exc_info=True,
+                    )
+                    async with get_session(session_factory) as session:
+                        q_repo = PlayerInfoQueueRepository(session)
+                        await q_repo.mark_failed(job.id, str(exc))
+                        await session.commit()
+                    break
 
             if not success:
                 logger.error(
@@ -446,7 +467,7 @@ async def main() -> None:
                     session_factory=session_factory,
                     fetch_gate=fetch_gate,
                     chrome_profile_base=settings.scraping.chrome_profile_dir,
-                    position_cache=position_cache,
+                    position_cache=dict(position_cache),
                     valid_countries=valid_countries,
                     country_name_cache=country_name_cache,
                     worker_status=worker_status,
@@ -469,5 +490,9 @@ async def main() -> None:
     )
 
 
-if __name__ == "__main__":
+def run() -> None:
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()

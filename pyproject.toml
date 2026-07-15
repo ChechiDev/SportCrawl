@@ -22,6 +22,8 @@ dependencies = [
 
 [project.scripts]
 sportcrawl = "cli.main:main"
+scrape-players = "scripts.scrape_players:main"
+scrape-player-info = "scripts.scrape_player_info:run"
 
 [tool.uv]
 package = true

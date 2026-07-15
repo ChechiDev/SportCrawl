@@ -170,7 +170,7 @@ class PydollEngine(ScrapingEngine):
 
             if _EXTENSION_PATH.exists():
                 opts.add_argument(f"--load-extension={_EXTENSION_PATH}")
-                logger.info("[%s] Chrome extension loaded successfully", self._name)
+                logger.debug("[%s] Chrome extension loaded successfully", self._name)
             else:
                 logger.warning("Chrome extension not found at %s", _EXTENSION_PATH)
 
@@ -209,7 +209,7 @@ class PydollEngine(ScrapingEngine):
             if not any(marker in peek for marker in _CHALLENGE_MARKERS):
                 return source
             if not challenge_logged:
-                logger.info(
+                logger.debug(
                     "[%s] Cloudflare challenge detected — waiting up to %ds",
                     self._name,
                     _CHALLENGE_TIMEOUT,

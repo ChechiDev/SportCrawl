@@ -110,7 +110,7 @@ async def main_all() -> None:
         print(f"Failed ({len(failed)}): {', '.join(failed)}")
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape FBRef player lists.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -134,3 +134,7 @@ if __name__ == "__main__":
             _BASE_URL.format(code=args.country.upper()),
         )
         asyncio.run(main_single(target_url))
+
+
+if __name__ == "__main__":
+    main()
