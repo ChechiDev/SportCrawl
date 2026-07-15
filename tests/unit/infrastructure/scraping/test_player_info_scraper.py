@@ -107,7 +107,9 @@ class TestPlayerInfoScraperParse:
 
     async def test_parse_missing_optional_fields_returns_none(self) -> None:
         """Fields absent from HTML must yield None, not raise an error."""
-        scraper = PlayerInfoScraper(player_id="ghost00x", player_info_url="https://fbref.com/ghost")
+        scraper = PlayerInfoScraper(
+            player_id="ghost00x", player_info_url="https://fbref.com/ghost"
+        )
         result = await scraper.parse(_MISSING_FIELDS_HTML)
 
         player = result.players[0]
@@ -119,7 +121,9 @@ class TestPlayerInfoScraperParse:
 
     async def test_parse_wages_zero_is_not_none(self) -> None:
         """player_wages=0 must be stored as 0, not converted to None."""
-        scraper = PlayerInfoScraper(player_id="cheap00x", player_info_url="https://fbref.com/cheap")
+        scraper = PlayerInfoScraper(
+            player_id="cheap00x", player_info_url="https://fbref.com/cheap"
+        )
         result = await scraper.parse(_WAGES_ZERO_HTML)
 
         assert result.players[0].player_wages == 0

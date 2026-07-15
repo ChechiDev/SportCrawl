@@ -38,7 +38,10 @@ _HEIGHT_RE = re.compile(r"(\d+)\s*cm", re.IGNORECASE)
 _WEIGHT_RE = re.compile(r"(\d+)\s*kg", re.IGNORECASE)
 _WAGES_RE = re.compile(r"£([\d,]+)")
 _EXPIRES_RE = re.compile(
-    r"Expires\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
+    r"Expires\s+"
+    r"(January|February|March|April|May|June"
+    r"|July|August|September|October|November|December)"
+    r"\s+(\d{4})",
     re.IGNORECASE,
 )
 _MONTHS = {

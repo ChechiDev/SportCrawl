@@ -134,10 +134,10 @@ class TestP11Migrations:
                         session, "tbl_player_positions", "sch_shared"
                     )
                     assert await _table_exists(
-                        session, "player_discovery_batch", "sch_football"
+                        session, "player_discovery_batch", "sch_infra"
                     )
                     assert await _table_exists(
-                        session, "player_queue_ref", "sch_football"
+                        session, "player_queue_ref", "sch_infra"
                     )
                     assert await _view_exists(
                         session,
