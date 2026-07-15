@@ -204,5 +204,3 @@ class TestBulkEnqueueIdempotent:
         assert row is not None
         # Only 2 unique players enqueued — pending count must not be 4
         assert row[0] == 2
-
-
