@@ -44,6 +44,13 @@ def downgrade() -> None:
     # Use ANY syntax for PostgreSQL tuple matching with asyncpg
     op.execute(
         sa.text(
+            "UPDATE sch_shared.tbl_players"
+            " SET fk_country = NULL"
+            " WHERE fk_country = ANY(:ids)"
+        ).bindparams(ids=_ids)
+    )
+    op.execute(
+        sa.text(
             "UPDATE sch_shared.tbl_player_info"
             " SET fk_country_birth = NULL"
             " WHERE fk_country_birth = ANY(:ids)"
