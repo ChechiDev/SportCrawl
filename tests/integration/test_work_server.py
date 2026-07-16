@@ -237,8 +237,8 @@ class TestWorkServerEndToEnd:
         job_loop = JobLoop(
             session_factory=lambda: get_session(factory),
             scraper_factory=_fake_scraper_factory,
-            queue_repo_factory=lambda session: ScrapeQueueRepository(  # type: ignore[arg-type]
-                cast(AsyncSession, session)
+            queue_repo_factory=lambda s: ScrapeQueueRepository(  # type: ignore
+                cast(AsyncSession, s)
             ),
             provenance_repo_factory=lambda session: ProvenanceRepository(
                 cast(AsyncSession, session)

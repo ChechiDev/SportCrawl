@@ -134,7 +134,6 @@ class TestScrapeJobProcessorSuccess:
         upserted_raw: PlayerInfoRawData = call_args[0][0]
         assert upserted_raw.fk_country_birth == "ESP"
 
-
     async def test_invalid_country_id_is_nullified(self) -> None:
         """FK country IDs not in valid_countries must be set to None before upsert."""
 
