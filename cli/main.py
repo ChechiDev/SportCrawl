@@ -64,6 +64,73 @@ def scrape_players(
         raise typer.Exit(code=1)
 
 
+@app.command("reset")
+def reset_db(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Truncate all scraped data. Keeps schemas and migrations intact."""
+    from rich.console import Console
+    from rich.panel import Panel
+
+    console = Console()
+
+    console.print(Panel(
+        "[bold red]WARNING[/bold red]\n\n"
+        "This will delete ALL scraped data:\n"
+        "  • sch_shared: countries, players, player_info, photos, positions\n"
+        "  • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
+        "Schemas and migrations will NOT be touched.",
+        title="[red]Reset Database[/red]",
+        border_style="red",
+    ))
+
+    if not yes:
+        confirm = typer.confirm("Continue?", default=False)
+        if not confirm:
+            raise typer.Exit(code=0)
+
+    asyncio.run(_do_reset(console))
+
+
+async def _do_reset(console: object) -> None:
+    import asyncpg
+
+    from config.settings import Settings
+
+    settings = Settings()  # type: ignore[call-arg]
+    db = settings.db
+    dsn = (
+        f"postgresql://{db.user}:{db.password.get_secret_value()}"
+        f"@{db.host}:{db.port}/{db.name}"
+    )
+
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        tables = [
+            ("sch_shared", "tbl_player_info"),
+            ("sch_shared", "tbl_player_photo"),
+            ("sch_shared", "tbl_player_positions"),
+            ("sch_shared", "tbl_players"),
+            ("sch_shared", "tbl_countries"),
+            ("sch_shared", "tbl_confederations"),
+            ("sch_shared", "tbl_gender"),
+            ("sch_infra", "scrape_queue"),
+            ("sch_infra", "player_discovery_batch"),
+            ("sch_infra", "player_queue_ref"),
+        ]
+        for schema, table in tables:
+            await conn.execute(
+                f"TRUNCATE {schema}.{table} RESTART IDENTITY CASCADE"
+            )
+            console.print(f"  ✅ {schema}.{table} truncated")  # type: ignore[union-attr]
+    finally:
+        await conn.close()
+
+    console.print(  # type: ignore[union-attr]
+        "\n[green]Reset complete. Ready to scrape from scratch.[/green]"
+    )
+
+
 def main() -> None:
     """Run the CLI."""
     app()
