@@ -25,8 +25,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
+from core.application.scrape_job_processor import ScrapeJobProcessor
 from core.exceptions.scraper import PageLoadError, RateLimitError
-from domains.player_info.models import PlayerInfoRawData
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.player import Player
@@ -82,33 +82,6 @@ async def _load_country_name_cache(
         return {row[0]: row[1] for row in result.fetchall()}
 
 
-async def _resolve_positions(
-    raw: PlayerInfoRawData,
-    info_repo: PlayerInfoRepository,
-    cache: dict[str, int],
-) -> tuple[int | None, int | None, int | None]:
-    """Resolve position codes to surrogate ids, inserting rows as needed.
-
-    Args:
-        raw: Parsed player info containing optional position_1/2/3 codes.
-        info_repo: Repository used to upsert position rows.
-        cache: Process-level cache mapping position_code → position_id.
-
-    Returns:
-        Tuple of (fk_ply_pos_1, fk_ply_pos_2, fk_ply_pos_3), each None when
-        the corresponding position code is absent.
-    """
-    pos_ids: list[int | None] = []
-    for code in (raw.position_1, raw.position_2, raw.position_3):
-        if code is not None:
-            if code not in cache:
-                cache[code] = await info_repo.upsert_position(code)
-            pos_ids.append(cache[code])
-        else:
-            pos_ids.append(None)
-    return (pos_ids[0], pos_ids[1], pos_ids[2])
-
-
 # ---------------------------------------------------------------------------
 # Worker coroutine
 # ---------------------------------------------------------------------------
@@ -151,13 +124,8 @@ async def _worker(
 ) -> int:
     """Process player_info jobs from scrape_queue until the queue is empty.
 
-    For each job:
-    1. Claims the next PENDING row (SELECT FOR UPDATE SKIP LOCKED).
-    2. Fetches the player profile HTML via PydollEngine.
-    3. Parses it with PlayerInfoScraper.
-    4. Persists the result via PlayerInfoRepository.
-    5. Marks the job DONE.
-    On fetch/parse/persist errors: marks the job FAILED (up to 3 retries).
+    Owns: browser engine lifetime, job claiming loop, HTML fetch, progress display.
+    Delegates: parse → FK resolution → persist → mark done/failed to ScrapeJobProcessor.
 
     Args:
         worker_id: Integer identifier for this worker (1-based). Used to
@@ -203,47 +171,20 @@ async def _worker(
                         player_id=_player_id_from_url(job.url),
                         player_info_url=job.url,
                     )
-                    page = scraper.parse(html)
-
-                    if not page.players:
-                        raise RuntimeError(
-                            "scraper returned empty page"
-                            " — possible parse failure or Cloudflare slip-through"
-                        )
-
-                    raw = page.players[0]
-
-                    # Resolve country name strings to FK country_id values
-                    if raw.country_birth_name is not None:
-                        raw.fk_country_birth = country_name_cache.get(
-                            raw.country_birth_name
-                        )
-                        if raw.fk_country_birth is None:
-                            logger.warning(
-                                "Country birth name not found in cache: %r",
-                                raw.country_birth_name,
-                            )
-                    if raw.national_team_name is not None:
-                        raw.fk_national_team = country_name_cache.get(
-                            raw.national_team_name
-                        )
 
                     async with get_session(session_factory) as session:
                         info_repo = PlayerInfoRepository(session)
-                        pos_ids = await _resolve_positions(
-                            raw, info_repo, position_cache
+                        q_repo = PlayerInfoQueueRepository(session)
+                        processor = ScrapeJobProcessor(
+                            scraper=scraper,
+                            queue_repo=q_repo,
+                            player_info_repo=info_repo,
+                            country_name_cache=country_name_cache,
+                            position_cache=position_cache,
+                            valid_countries=valid_countries,
                         )
-                        await info_repo.upsert_player_info(
-                            raw, pos_ids, valid_countries
-                        )
-                        await info_repo.upsert_photo(raw.player_id, raw.photo_url)
-                        await session.commit()  # persist player data first
-
-                    async with get_session(session_factory) as queue_session:
-                        q_repo = PlayerInfoQueueRepository(queue_session)
-                        await q_repo.mark_done(job.id)
-                        # mark done only after data is safe
-                        await queue_session.commit()
+                        await processor.process(job, html)
+                        await session.commit()
 
                     success = True
                     processed += 1
@@ -282,19 +223,6 @@ async def _worker(
                             worker_id,
                         )
                         return processed
-                except Exception as exc:
-                    # Non-retryable error (DB constraint, bug).
-                    # Fail immediately without consuming retry attempts.
-                    logger.error(
-                        "[worker-%d] job %d non-retryable error — marking FAILED",
-                        worker_id, job.id,
-                        exc_info=True,
-                    )
-                    async with get_session(session_factory) as session:
-                        q_repo = PlayerInfoQueueRepository(session)
-                        await q_repo.mark_failed(job.id, str(exc))
-                        await session.commit()
-                    break
 
             if not success:
                 logger.error(
