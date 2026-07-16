@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
-from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
+from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueJobRepository as ScrapeQueueRepository
 
 # ---------------------------------------------------------------------------
 # Helpers
