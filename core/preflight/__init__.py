@@ -18,11 +18,11 @@ from core.preflight.checks import (
 from core.preflight.renderer import render_check
 from core.preflight.result import CheckResult
 
-REQUIRED_HEAD = "p14g"
+REQUIRED_HEAD = "p14h"
 
 MINIMUM_REVISION: dict[str, str] = {
     "countries": "p10d_add_fk_ondelete",
-    "players": "p11e_move_player_discovery_to_infra",
+    "players": "p11e",
     "player_info": REQUIRED_HEAD,
 }
 
@@ -30,7 +30,7 @@ _ALEMBIC_INI = Path(__file__).parent.parent.parent / "alembic.ini"
 
 
 async def _run_migrations(console: Console) -> None:
-    console.print("  🔄 Running: alembic upgrade head ...")
+    console.print("  --> Running: alembic upgrade head ...")
     proc = await asyncio.create_subprocess_exec(
         "uv", "run", "alembic", "-c", str(_ALEMBIC_INI), "upgrade", "head",
         stdout=asyncio.subprocess.PIPE,
@@ -38,9 +38,9 @@ async def _run_migrations(console: Console) -> None:
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        console.print(f"  ❌ Migration failed:\n{stderr.decode()}")
+        console.print(f"  [bold red]FAIL[/bold red] Migration failed:\n{stderr.decode()}")
         raise SystemExit(1)
-    console.print("  ✅ Migrations applied.")
+    console.print("  [bold green]OK  [/bold green] Migrations applied.")
 
 
 async def run_checks(dsn: str, phase: str, console: Console) -> list[CheckResult]:

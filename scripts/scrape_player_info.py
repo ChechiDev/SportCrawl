@@ -39,7 +39,7 @@ from infrastructure.scraping.player_info import PlayerInfoScraper
 
 _console = Console(stderr=True)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(message)s",
     handlers=[RichHandler(console=_console, show_time=False, show_path=False)],
 )
@@ -295,7 +295,7 @@ async def _seed_queue(
     for i in range(0, len(rows), chunk_size):
         chunk = rows[i : i + chunk_size]
         stmt = pg_insert(ScrapeQueue).values(chunk)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["url"])
+        stmt = stmt.on_conflict_do_nothing(index_elements=["url", "job_type"])
         async with get_session(session_factory) as session:
             result = await session.execute(stmt)
             inserted += getattr(result, "rowcount", None) or 0
@@ -310,32 +310,37 @@ async def _seed_queue(
 # ---------------------------------------------------------------------------
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Scrape FBRef player info pages."
-    )
-    parser.add_argument(
-        "--workers",
-        metavar="N",
-        type=int,
-        default=1,
-        choices=range(1, 26),
-        help="Number of parallel worker coroutines (1–5, default: 1).",
-    )
-    parser.add_argument(
-        "--seed",
-        action="store_true",
-        help=(
-            "Seed scrape_queue with player_info rows from tbl_players "
-            "before launching workers."
-        ),
-    )
-    args = parser.parse_args()
+async def main(workers: int | None = None, seed: bool | None = None) -> None:
+    if workers is None or seed is None:
+        parser = argparse.ArgumentParser(
+            description="Scrape FBRef player info pages."
+        )
+        parser.add_argument(
+            "--workers",
+            metavar="N",
+            type=int,
+            default=1,
+            choices=range(1, 26),
+            help="Number of parallel worker coroutines (1–25, default: 1).",
+        )
+        parser.add_argument(
+            "--seed",
+            action="store_true",
+            help=(
+                "Seed scrape_queue with player_info rows from tbl_players "
+                "before launching workers."
+            ),
+        )
+        args = parser.parse_args()
+        if workers is None:
+            workers = workers
+        if seed is None:
+            seed = seed
 
     settings = Settings()  # type: ignore[call-arg]
 
     # Ensure pool can serve all workers without starvation
-    settings.db.pool_size = max(args.workers * 2, settings.db.pool_size)
+    settings.db.pool_size = max(workers * 2, settings.db.pool_size)
 
     session_factory = create_session_factory(settings.db)
 
@@ -347,7 +352,7 @@ async def main() -> None:
     if stale:
         logger.info("Recovered %d stale jobs back to PENDING", stale)
 
-    if args.seed:
+    if seed:
         seeded = await _seed_queue(session_factory)
         logger.info("Seeded %d player_info jobs", seeded)
 
@@ -373,7 +378,7 @@ async def main() -> None:
 
     logger.info(
         "Launching %d worker(s)… (%d done, %d pending, %d total)",
-        args.workers, already_done, pending_total, already_done + pending_total,
+        workers, already_done, pending_total, already_done + pending_total,
     )
 
     worker_status: dict[int, str] = {}
@@ -381,12 +386,12 @@ async def main() -> None:
 
     t0 = time.monotonic()
     with Live(
-        _build_table(worker_status, args.workers),
+        _build_table(worker_status, workers),
         console=_console,
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
-            _display_loop(args.workers, worker_status, stop_event, live)
+            _display_loop(workers, worker_status, stop_event, live)
         )
         results = await asyncio.gather(
             *[
@@ -402,7 +407,7 @@ async def main() -> None:
                     total_jobs=already_done + pending_total,
                     already_done=already_done,
                 )
-                for i in range(args.workers)
+                for i in range(workers)
             ]
         )
         stop_event.set()
@@ -414,7 +419,7 @@ async def main() -> None:
     logger.info(
         "Done. workers=%d | scraped=%d | elapsed=%.1fs"
         " | rate=%.2f/s | ETA full run=%.1fh",
-        args.workers, total, elapsed, rate, eta_hours,
+        workers, total, elapsed, rate, eta_hours,
     )
 
 

@@ -122,7 +122,11 @@ async def _do_reset(console: object) -> None:
             await conn.execute(
                 f"TRUNCATE {schema}.{table} RESTART IDENTITY CASCADE"
             )
-            console.print(f"  ✅ {schema}.{table} truncated")  # type: ignore[union-attr]
+            console.print(f"  [bold green]OK  [/bold green] {schema}.{table} truncated")  # type: ignore[union-attr]
+        await conn.execute(
+            "INSERT INTO sch_shared.tbl_gender (gender) VALUES ('M'), ('F')"
+        )
+        console.print("  [bold green]OK  [/bold green] sch_shared.tbl_gender re-seeded")  # type: ignore[union-attr]
     finally:
         await conn.close()
 

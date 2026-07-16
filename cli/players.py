@@ -16,6 +16,23 @@ players_app = typer.Typer(name="players", help="Scrape players pipeline")
 console = Console()
 
 
+async def _seed_countries(settings: Settings) -> None:
+    import logging
+    logging.getLogger("pydoll").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure").setLevel(logging.WARNING)
+
+    from infrastructure.browser.pydoll_engine import PydollEngine
+    from infrastructure.persistence.session import create_session_factory
+    from infrastructure.scraping.countries import CountryScraper
+
+    _COUNTRIES_URL = "https://fbref.com/en/countries/"
+    session_factory = create_session_factory(settings.db)
+    async with PydollEngine() as engine:
+        scraper = CountryScraper(engine, settings.scraping, session_factory)
+        page = await scraper.scrape(_COUNTRIES_URL)
+        console.print(f"  [bold green]OK  [/bold green] {len(page.countries)} countries persisted.")
+
+
 def _build_dsn(settings: Settings) -> str:
     db = settings.db
     return (
@@ -56,10 +73,21 @@ async def _run(
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
     dsn = _build_dsn(settings)
-    phase = "player_info" if with_player_info else "players"
 
     if not skip_preflight:
-        results = await run_checks(dsn, phase, console)
+        results = await run_checks(dsn, "players", console)
+
+        seed_failed = next(
+            (r for r in results if r.name == "Seed data" and not r.passed), None
+        )
+        if seed_failed and "countries" in seed_failed.detail:
+            from rich.rule import Rule as _Rule
+            console.print(_Rule())
+            console.print("  No countries in DB — running country scraper first...")
+            await _seed_countries(settings)
+            console.print("  [bold green]OK  [/bold green] Countries seeded. Re-running checks...\n")
+            results = await run_checks(dsn, "players", console)
+
         from core.preflight.renderer import render_summary
 
         render_summary(results, console)
@@ -82,19 +110,36 @@ async def _run(
         finally:
             await conn.close()
 
+    import logging
+    logging.getLogger("pydoll").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure").setLevel(logging.WARNING)
+
     _FBREF_BASE = "https://fbref.com/en/country/players"
 
-    console.print("\n[bold]Step 1 — Scraping players[/bold]")
+    console.print("[bold]Step 1 — Scraping players[/bold]")
     if all_countries:
         await main_all()
     elif country:
         code = country.upper()
-        await main_single(f"{_FBREF_BASE}/{code}/{code}-Football")
+        url = f"{_FBREF_BASE}/{code}/{code}-Football"
+        count = await main_single(url, verbose=False)
+        console.print(f"  [bold green]OK  [/bold green] {code}: {count:,} players scraped.")
     else:
         console.print("[red]Specify --country or --all.[/red]")
         raise typer.Exit(code=1)
 
     if with_player_info:
+        if not skip_preflight:
+            from rich.rule import Rule
+            console.print(Rule())
+            console.print("[bold]Step 2 — Preflight for player info[/bold]")
+            from core.preflight.renderer import render_summary as _render_summary
+            pi_results = await run_checks(dsn, "player_info", console)
+            _render_summary(pi_results, console)
+            pi_failures = [r for r in pi_results if not r.passed and r.fatal]
+            if pi_failures:
+                raise typer.Exit(code=1)
+
         conn = await asyncpg.connect(dsn, timeout=5)
         try:
             count = await conn.fetchval(
@@ -102,14 +147,7 @@ async def _run(
             )
         finally:
             await conn.close()
-        console.print(
-            f"\nAbout to scrape player info for ~{count} players "
-            f"({count} requests). Continue? [y/N] ",
-            end="",
-        )
-        answer = input()
-        if answer.lower() != "y":
-            raise typer.Exit(code=0)
+        console.print(f"\n  {count:,} players queued for scraping.")
         from scripts.scrape_player_info import main as scrape_info
 
         await scrape_info(workers=workers, seed=True)
