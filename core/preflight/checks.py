@@ -11,6 +11,40 @@ import asyncpg
 
 from core.preflight.result import CheckResult
 
+_REVISION_ORDER = [
+    "134f2e68682a",
+    "a3f8c1d29e5b",
+    "5ab3b4f7d8a7",
+    "p8a_lockdown_public",
+    "p8b_create_sch_shared",
+    "p8c_create_sch_football",
+    "p10a_create_country_tables",
+    "p10b_refactor_country_pk",
+    "p10c_drop_public_schema",
+    "p10d_add_fk_ondelete",
+    "p11a_player_discovery",
+    "p11b_scrape_queue_locked_at",
+    "p11c_player_schema_redesign",
+    "p11d_schema_fixes",
+    "p11e_move_player_discovery_to_infra",
+    "p14a_player_info_schema",
+    "p14b_scrape_queue_claim_index",
+    "p14c_player_info_national_team",
+    "p14d_reorder_fk_national_team",
+    "p14e_add_uk_home_nations",
+    "p14f_add_player_info_fk_indexes",
+    "p14g_scrape_queue_recover_stale_index",
+]
+
+
+def _revision_gte(current: str, minimum: str) -> bool:
+    """Return True if current revision is >= minimum in the migration chain."""
+    try:
+        return _REVISION_ORDER.index(current) >= _REVISION_ORDER.index(minimum)
+    except ValueError:
+        return current == minimum
+
+
 _COUNTRIES_TABLES = [
     "sch_infra.scrape_queue",
     "sch_shared.tbl_confederations",
@@ -85,17 +119,20 @@ async def check_alembic_revision(dsn: str, required_head: str) -> CheckResult:
         current = await conn.fetchval(
             "SELECT version_num FROM sch_infra.alembic_version"
         )
-        if current == required_head:
+        if _revision_gte(current, required_head):
             return CheckResult(
                 name="Alembic revision",
                 passed=True,
-                detail=f"DB at required revision {required_head}.",
+                detail=f"DB at revision {current} (>= {required_head}).",
                 fatal=True,
             )
         return CheckResult(
             name="Alembic revision",
             passed=False,
-            detail=f"DB at revision {current}, required {required_head}",
+            detail=(
+                f"DB at revision {current}, minimum required: {required_head}. "
+                f"Run: alembic upgrade head"
+            ),
             fatal=True,
         )
     finally:
