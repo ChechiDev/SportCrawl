@@ -79,15 +79,17 @@ class PlayerInfoRepository:
         self,
         raw: PlayerInfoRawData,
         pos_ids: tuple[int | None, int | None, int | None],
-        valid_countries: frozenset[str] = frozenset(),
     ) -> None:
         """Insert or update a tbl_player_info row.
 
         Uses ON CONFLICT(player_id) DO UPDATE to overwrite all fields on repeat
         runs, so re-scraping a profile is idempotent.
 
+        FK country IDs must already be validated by the caller (application layer).
+
         Args:
-            raw: Parsed player info from PlayerInfoScraper.
+            raw: Parsed player info from PlayerInfoScraper. FK country fields must
+                already be validated or set to None before calling.
             pos_ids: Tuple of (fk_ply_pos_1, fk_ply_pos_2, fk_ply_pos_3) surrogate ids.
 
         Raises:
@@ -98,21 +100,10 @@ class PlayerInfoRepository:
         ):
             fk1, fk2, fk3 = pos_ids
 
-            fk_country_birth = (
-                raw.fk_country_birth
-                if raw.fk_country_birth in valid_countries
-                else None
-            )
-            fk_national_team = (
-                raw.fk_national_team
-                if raw.fk_national_team in valid_countries
-                else None
-            )
-
             values: dict[str, object] = {
                 "player_id": raw.player_id,
-                "fk_country_birth": fk_country_birth,
-                "fk_national_team": fk_national_team,
+                "fk_country_birth": raw.fk_country_birth,
+                "fk_national_team": raw.fk_national_team,
                 "city_name": raw.city_name,
                 "player_born": raw.player_born,
                 "player_height": raw.player_height,

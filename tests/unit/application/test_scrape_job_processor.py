@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.application.scrape_job_processor import ScrapeJobProcessor
 from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 
@@ -62,7 +63,6 @@ def _make_page(raw: PlayerInfoRawData) -> PlayerInfoPage:
 class TestScrapeJobProcessorSuccess:
     async def test_success_path_calls_upsert_and_mark_done(self) -> None:
         """On success: parse is called, upsert_player_info called, mark_done called."""
-        from core.application.scrape_job_processor import ScrapeJobProcessor
 
         raw = _make_raw_data()
         page = _make_page(raw)
@@ -103,7 +103,6 @@ class TestScrapeJobProcessorSuccess:
 
     async def test_success_resolves_country_from_cache(self) -> None:
         """country_birth_name → fk_country_birth resolved from country_name_cache."""
-        from core.application.scrape_job_processor import ScrapeJobProcessor
 
         raw = _make_raw_data()
         raw.country_birth_name = "Spain"
@@ -139,10 +138,47 @@ class TestScrapeJobProcessorSuccess:
         assert upserted_raw.fk_country_birth == "ESP"
 
 
+    async def test_invalid_country_id_is_nullified(self) -> None:
+        """FK country IDs not in valid_countries must be set to None before upsert."""
+
+        raw = _make_raw_data()
+        raw.country_birth_name = "Argentina"
+        raw.national_team_name = "Argentina"
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        # ARG is NOT in valid_countries — both FKs must be nullified
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["BRA"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        call_args = player_info_repo.upsert_player_info.call_args
+        upserted_raw: PlayerInfoRawData = call_args[0][0]
+        assert upserted_raw.fk_country_birth is None
+        assert upserted_raw.fk_national_team is None
+
+
 class TestScrapeJobProcessorFailure:
     async def test_scraper_parse_error_calls_mark_failed(self) -> None:
         """If scraper.parse raises, processor calls mark_failed with the error."""
-        from core.application.scrape_job_processor import ScrapeJobProcessor
 
         job = _make_job()
         scraper = MagicMock()
@@ -168,7 +204,6 @@ class TestScrapeJobProcessorFailure:
 
     async def test_db_upsert_error_calls_mark_failed(self) -> None:
         """If upsert_player_info raises, processor calls mark_failed."""
-        from core.application.scrape_job_processor import ScrapeJobProcessor
 
         raw = _make_raw_data()
         page = _make_page(raw)

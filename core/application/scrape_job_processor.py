@@ -8,11 +8,29 @@ Does NOT own: browser engine lifetime, job claiming, or concurrency.
 from __future__ import annotations
 
 import logging
+from typing import Protocol
 
-from domains.player_info.models import PlayerInfoRawData
+from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue
 
 logger = logging.getLogger(__name__)
+
+
+class _Scraper(Protocol):
+    def parse(self, html: str) -> PlayerInfoPage: ...
+
+
+class _QueueRepo(Protocol):
+    async def mark_done(self, job_id: int) -> None: ...
+    async def mark_failed(self, job_id: int, reason: str) -> None: ...
+
+
+class _PlayerInfoRepo(Protocol):
+    async def upsert_player_info(
+        self, raw: PlayerInfoRawData, pos_ids: tuple[int | None, int | None, int | None]
+    ) -> None: ...
+    async def upsert_photo(self, player_id: str, photo_url: str | None) -> None: ...
+    async def upsert_position(self, code: str) -> int: ...
 
 
 class ScrapeJobProcessor:
@@ -30,9 +48,9 @@ class ScrapeJobProcessor:
 
     def __init__(
         self,
-        scraper: object,
-        queue_repo: object,
-        player_info_repo: object,
+        scraper: _Scraper,
+        queue_repo: _QueueRepo,
+        player_info_repo: _PlayerInfoRepo,
         country_name_cache: dict[str, str],
         position_cache: dict[str, int],
         valid_countries: frozenset[str],
@@ -79,12 +97,16 @@ class ScrapeJobProcessor:
                     raw.national_team_name
                 )
 
+            # Validate resolved FK country IDs against the allowed set
+            if raw.fk_country_birth not in self._valid_countries:
+                raw.fk_country_birth = None
+            if raw.fk_national_team not in self._valid_countries:
+                raw.fk_national_team = None
+
             # Resolve position codes to surrogate IDs
             pos_ids = await self._resolve_positions(raw)
 
-            await self._player_info_repo.upsert_player_info(
-                raw, pos_ids, self._valid_countries
-            )
+            await self._player_info_repo.upsert_player_info(raw, pos_ids)
             await self._player_info_repo.upsert_photo(raw.player_id, raw.photo_url)
             await self._queue_repo.mark_done(job.id)
 
