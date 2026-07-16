@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from typing import cast
 
 import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
@@ -190,6 +191,8 @@ class TestWorkServerEndToEnd:
             ScrapeQueueJobRepository as ScrapeQueueRepository,
         )
         from infrastructure.persistence.session import get_session
+        from pydantic import SecretStr
+        from sqlalchemy.ext.asyncio import AsyncSession
 
         url = _unique_url("e2e-done")
 
@@ -229,13 +232,13 @@ class TestWorkServerEndToEnd:
             )
 
         factory = async_sessionmaker(_ws_engine, expire_on_commit=False)
-        scraping_settings = ScrapingSettings(work_server_token="test-token")
+        scraping_settings = ScrapingSettings(work_server_token=SecretStr("test-token"))
 
         job_loop = JobLoop(
             session_factory=lambda: get_session(factory),
             scraper_factory=_fake_scraper_factory,
-            queue_repo_factory=lambda session: ScrapeQueueRepository(session),
-            provenance_repo_factory=lambda session: ProvenanceRepository(session),
+            queue_repo_factory=lambda session: ScrapeQueueRepository(cast(AsyncSession, session)),  # type: ignore[arg-type]
+            provenance_repo_factory=lambda session: ProvenanceRepository(cast(AsyncSession, session)),
             provenance_factory=_provenance_factory,
             settings=scraping_settings,
         )
