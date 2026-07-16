@@ -8,6 +8,7 @@ Usage:
     settings = Settings()
 """
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, SecretStr, model_validator
@@ -47,6 +48,10 @@ class ScrapingSettings(BaseModel):
     work_server_host: str = "127.0.0.1"
     work_server_port: int = 9731
     poll_interval: float = Field(default=5.0, gt=0.0)
+    # Remote CDP engine — set to connect to a pre-running Chromium container.
+    # Example: SCRAPING__CDP_WS_URL=ws://chromium:9222
+    cdp_ws_url: str | None = None
+    chrome_profile_dir: str = str(Path.home() / ".cache" / "sportcrawl" / "chrome")
 
 
 class Settings(BaseSettings):

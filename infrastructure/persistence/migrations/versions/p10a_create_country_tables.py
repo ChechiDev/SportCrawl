@@ -108,7 +108,6 @@ def upgrade() -> None:
         schema="sch_shared",
     )
 
-
     op.create_index("ix_flags_flag_id", "tbl_flags", ["flag_id"], schema="sch_shared")
 
     op.create_index(

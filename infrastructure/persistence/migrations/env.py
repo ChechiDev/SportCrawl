@@ -30,6 +30,18 @@ import infrastructure.persistence.models.provenance  # noqa: F401, E501  # pyrig
 import infrastructure.persistence.models.scrape_queue  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
 from infrastructure.persistence.migrations._filters import include_name
 from infrastructure.persistence.models.base import Base
+from infrastructure.persistence.models.infra.player_discovery_batch import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    PlayerDiscoveryBatch,
+)
+from infrastructure.persistence.models.infra.player_queue_ref import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    PlayerQueueRef,
+)
+from infrastructure.persistence.models.shared.player import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    Player,
+)
+from infrastructure.persistence.models.shared.player_position import (  # noqa: F401, E501  # pyright: ignore[reportUnusedImport]
+    PlayerPosition,
+)
 
 target_metadata = Base.metadata
 
@@ -140,7 +152,16 @@ def _build_engine() -> AsyncEngine:
 
 async def run_async_migrations() -> None:
     """Acquire an async engine, then run migrations via run_sync."""
+    from sqlalchemy import text
+
     connectable = _build_engine()
+    # Bootstrap sch_infra before Alembic connects — version_table_schema="sch_infra"
+    # requires the schema to exist before Alembic tries to read/write the version table.
+    # Must be committed in its own transaction; executing inside do_run_migrations
+    # starts an implicit transaction — Alembic detects in_transaction()=True and uses
+    # SAVEPOINTs, so the outer connection auto-rolls back everything on close.
+    async with connectable.begin() as conn:
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

@@ -16,6 +16,8 @@ fixture truncates sch_infra.scrape_queue rows after each test.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
+from typing import cast
 
 import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
@@ -47,7 +49,7 @@ async def _ws_engine(_integration_db_url: URL):
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def adapter(_ws_engine) -> ScrapeQueueWorkAdapter:
+async def adapter(_ws_engine) -> AsyncGenerator[ScrapeQueueWorkAdapter, None]:
     """Real ScrapeQueueWorkAdapter backed by the testcontainer Postgres.
 
     Cleans up all scrape_queue rows after each test to avoid cross-test
@@ -62,7 +64,7 @@ async def adapter(_ws_engine) -> ScrapeQueueWorkAdapter:
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def client(adapter: ScrapeQueueWorkAdapter) -> TestClient:
+async def client(adapter: ScrapeQueueWorkAdapter) -> AsyncGenerator[TestClient, None]:
     """Wired TestClient using the real adapter."""
     app = create_app(adapter, _TOKEN)
     test_client = TestClient(TestServer(app))
@@ -164,7 +166,6 @@ class TestWorkServerEndToEnd:
     async def test_jobloop_drains_pending_to_done(
         self,
         _ws_engine,
-        adapter: ScrapeQueueWorkAdapter,
         client: TestClient,
     ) -> None:
         """POST /jobs → JobLoop.run() → GET /jobs/{id} returns DONE.
@@ -176,6 +177,9 @@ class TestWorkServerEndToEnd:
         import uuid as uuid_module
         from unittest.mock import AsyncMock, MagicMock
 
+        from pydantic import SecretStr
+        from sqlalchemy.ext.asyncio import AsyncSession
+
         from config.settings import ScrapingSettings
         from infrastructure.jobs.job_loop import JobLoop
         from infrastructure.persistence.models.provenance import (
@@ -186,7 +190,7 @@ class TestWorkServerEndToEnd:
             ProvenanceRepository,
         )
         from infrastructure.persistence.repositories.scrape_queue import (
-            ScrapeQueueRepository,
+            ScrapeQueueJobRepository as ScrapeQueueRepository,
         )
         from infrastructure.persistence.session import get_session
 
@@ -202,7 +206,7 @@ class TestWorkServerEndToEnd:
         job_id = (await post_resp.json())["jobs"][0]["id"]
 
         # Build a fake scraper that "succeeds" without real network
-        def _fake_scraper_factory(scrape_url: str):
+        def _fake_scraper_factory(_scrape_url: str):
             scraper = MagicMock()
             scraper.fetch_and_parse = AsyncMock(return_value=None)
             scraper.last_html = "<html>fake</html>"
@@ -228,13 +232,17 @@ class TestWorkServerEndToEnd:
             )
 
         factory = async_sessionmaker(_ws_engine, expire_on_commit=False)
-        scraping_settings = ScrapingSettings(work_server_token="test-token")
+        scraping_settings = ScrapingSettings(work_server_token=SecretStr("test-token"))
 
         job_loop = JobLoop(
             session_factory=lambda: get_session(factory),
             scraper_factory=_fake_scraper_factory,
-            queue_repo_factory=lambda session: ScrapeQueueRepository(session),
-            provenance_repo_factory=lambda session: ProvenanceRepository(session),
+            queue_repo_factory=lambda s: ScrapeQueueRepository(  # type: ignore
+                cast(AsyncSession, s)
+            ),
+            provenance_repo_factory=lambda session: ProvenanceRepository(
+                cast(AsyncSession, session)
+            ),
             provenance_factory=_provenance_factory,
             settings=scraping_settings,
         )

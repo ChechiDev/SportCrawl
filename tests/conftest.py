@@ -9,6 +9,7 @@ at the container database.
 from collections.abc import AsyncGenerator, Generator
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
@@ -80,5 +81,5 @@ def settings_override(postgres_container: PostgresContainer) -> DatabaseSettings
         port=int(parsed.port or 5432),
         name=str(parsed.database),
         user=str(parsed.username),
-        password=str(parsed.password or ""),
+        password=SecretStr(str(parsed.password or "")),
     )

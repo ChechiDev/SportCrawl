@@ -1,6 +1,6 @@
 [project]
 name = "sportcrawl"
-version = "0.10.0"
+version = "0.13.0"
 description = "Multi-sport data scraping infrastructure"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,7 +17,19 @@ dependencies = [
     "beautifulsoup4>=4.0",
     "lxml>=5.0",
     "pandas>=2.0",
+    "rich>=15.0.0",
 ]
+
+[project.scripts]
+sportcrawl = "cli.main:main"
+scrape-players = "scripts.scrape_players:main"
+scrape-player-info = "scripts.scrape_player_info:run"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["cli*", "core*", "config*", "domains*", "infrastructure*", "ports*", "scripts*"]
 
 [dependency-groups]
 dev = [
@@ -106,11 +118,14 @@ ignore_imports = [
     "infrastructure.work_server.runtime -> infrastructure.scraping.countries",
     "infrastructure.scraping.countries -> infrastructure.persistence.repositories.country",
     "infrastructure.scraping.countries -> infrastructure.persistence.session",
+    "infrastructure.work_server.runtime -> infrastructure.scraping.players",
+    "infrastructure.scraping.players -> infrastructure.persistence.repositories.player_discovery",
+    "infrastructure.scraping.players -> infrastructure.persistence.session",
 ]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.10.0"
+version = "0.13.0"
 version_files = ["pyproject.toml:version"]
 tag_format = "v$version"
 update_changelog_on_bump = false

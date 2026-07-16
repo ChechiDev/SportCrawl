@@ -85,9 +85,15 @@ def make_scraper_factory(
     """
     from core.exceptions.scraper import ScraperError
     from infrastructure.scraping.countries import CountryScraper
+    from infrastructure.scraping.players import PlayerListScraper
 
     def _factory(url: str) -> Any:
-        if "fbref.com/en/countries" in url:
+        # Player list pattern MUST be checked first — "/en/country/players/" is
+        # a strict subset of paths that also contain "/en/countr", so it must
+        # come before the country pattern to avoid routing collisions.
+        if "/en/country/players/" in url:
+            return PlayerListScraper(browser_engine, scraping, session_factory)
+        if "/en/countries" in url:
             return CountryScraper(browser_engine, scraping, session_factory)
         raise ScraperError(f"No scraper registered for URL: {url}")
 
@@ -153,7 +159,7 @@ async def serve(settings: Settings) -> None:
     from infrastructure.persistence.models.provenance import Provenance
     from infrastructure.persistence.repositories.provenance import ProvenanceRepository
     from infrastructure.persistence.repositories.scrape_queue import (
-        ScrapeQueueRepository,
+        ScrapeQueueJobRepository as ScrapeQueueRepository,
     )
     from infrastructure.persistence.session import get_session
 
