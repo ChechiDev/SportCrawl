@@ -467,7 +467,7 @@ async def main() -> None:
                     session_factory=session_factory,
                     fetch_gate=fetch_gate,
                     chrome_profile_base=settings.scraping.chrome_profile_dir,
-                    position_cache=dict(position_cache),
+                    position_cache=position_cache,
                     valid_countries=valid_countries,
                     country_name_cache=country_name_cache,
                     worker_status=worker_status,
