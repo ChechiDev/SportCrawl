@@ -16,6 +16,7 @@ fixture truncates sch_infra.scrape_queue rows after each test.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
@@ -47,7 +48,7 @@ async def _ws_engine(_integration_db_url: URL):
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def adapter(_ws_engine) -> ScrapeQueueWorkAdapter:
+async def adapter(_ws_engine) -> AsyncGenerator[ScrapeQueueWorkAdapter, None]:
     """Real ScrapeQueueWorkAdapter backed by the testcontainer Postgres.
 
     Cleans up all scrape_queue rows after each test to avoid cross-test
@@ -62,7 +63,7 @@ async def adapter(_ws_engine) -> ScrapeQueueWorkAdapter:
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def client(adapter: ScrapeQueueWorkAdapter) -> TestClient:
+async def client(adapter: ScrapeQueueWorkAdapter) -> AsyncGenerator[TestClient, None]:
     """Wired TestClient using the real adapter."""
     app = create_app(adapter, _TOKEN)
     test_client = TestClient(TestServer(app))

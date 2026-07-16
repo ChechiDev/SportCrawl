@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from infrastructure.persistence.models.scrape_queue import ScrapeQueue
 from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
 
 
@@ -24,6 +25,6 @@ class PlayerInfoQueueRepository(ScrapeQueueRepository):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, job_type="player_info")
 
-    async def claim_next(self, job_type: str = "player_info") -> object:  # type: ignore[override]
-        """Claim the next PENDING player_info job (job_type arg ignored; always 'player_info')."""
+    async def claim_next(self) -> ScrapeQueue | None:
+        """Claim the next PENDING player_info job."""
         return await super().claim_next()

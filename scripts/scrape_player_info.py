@@ -149,7 +149,7 @@ async def _worker(
         while True:
             async with get_session(session_factory) as session:
                 queue_repo = PlayerInfoQueueRepository(session)
-                job = await queue_repo.claim_next(job_type="player_info")
+                job = await queue_repo.claim_next()
                 await session.commit()
 
             if job is None:
