@@ -203,7 +203,7 @@ async def _worker(
                         player_id=_player_id_from_url(job.url),
                         player_info_url=job.url,
                     )
-                    page = await scraper.parse(html)
+                    page = scraper.parse(html)
 
                     if not page.players:
                         raise RuntimeError(
