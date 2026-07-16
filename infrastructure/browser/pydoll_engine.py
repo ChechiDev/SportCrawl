@@ -147,6 +147,8 @@ class PydollEngine(ScrapingEngine):
             _profile = self._profile_dir
             self._clear_profile_lock(_profile)
 
+            import os
+
             from pydoll.browser.options import ChromiumOptions
 
             opts = ChromiumOptions()  # type: ignore[no-untyped-call]
