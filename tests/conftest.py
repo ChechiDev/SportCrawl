@@ -13,6 +13,8 @@ from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+from pydantic import SecretStr
+
 from config.settings import DatabaseSettings
 
 # ---------------------------------------------------------------------------
@@ -80,5 +82,5 @@ def settings_override(postgres_container: PostgresContainer) -> DatabaseSettings
         port=int(parsed.port or 5432),
         name=str(parsed.database),
         user=str(parsed.username),
-        password=str(parsed.password or ""),
+        password=SecretStr(str(parsed.password or "")),
     )

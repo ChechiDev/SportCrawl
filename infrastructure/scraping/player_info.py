@@ -230,7 +230,7 @@ class PlayerInfoScraper:
         self._player_id = player_id
         self._player_info_url = player_info_url
 
-    async def parse(self, html: str) -> PlayerInfoPage:
+    def parse(self, html: str) -> PlayerInfoPage:
         soup = BeautifulSoup(html, "lxml")
 
         # Scope parsing to div#info > div#meta when available

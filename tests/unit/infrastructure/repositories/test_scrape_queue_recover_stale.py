@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
-from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
+from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueJobRepository as ScrapeQueueRepository
 
 # ---------------------------------------------------------------------------
 # Helpers

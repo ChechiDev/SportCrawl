@@ -57,7 +57,7 @@ class TestClaimNext:
         session.execute.return_value = result
 
         repo = PlayerInfoQueueRepository(session)
-        claimed = await repo.claim_next(job_type="player_info")
+        claimed = await repo.claim_next()
 
         assert claimed is not None
         assert claimed.job_type == "player_info"
@@ -72,7 +72,7 @@ class TestClaimNext:
         session.execute.return_value = result
 
         repo = PlayerInfoQueueRepository(session)
-        claimed = await repo.claim_next(job_type="player_info")
+        claimed = await repo.claim_next()
 
         assert claimed is None
 
