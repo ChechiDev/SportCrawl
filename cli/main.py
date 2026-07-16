@@ -14,7 +14,10 @@ import typer
 from config.settings import Settings
 from infrastructure.work_server.runtime import serve
 
+from cli.players import players_app
+
 app = typer.Typer(name="sportcrawl", help="Sportcrawl CLI")
+app.add_typer(players_app, name="players")
 
 
 @app.command("work-server")
