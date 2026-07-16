@@ -7,16 +7,13 @@ asyncio_mode = "auto" via pyproject.toml — no explicit @pytest.mark.asyncio.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, call
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
-from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
-
+from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -9,11 +9,10 @@ at the container database.
 from collections.abc import AsyncGenerator, Generator
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
-
-from pydantic import SecretStr
 
 from config.settings import DatabaseSettings
 

@@ -177,6 +177,9 @@ class TestWorkServerEndToEnd:
         import uuid as uuid_module
         from unittest.mock import AsyncMock, MagicMock
 
+        from pydantic import SecretStr
+        from sqlalchemy.ext.asyncio import AsyncSession
+
         from config.settings import ScrapingSettings
         from infrastructure.jobs.job_loop import JobLoop
         from infrastructure.persistence.models.provenance import (
@@ -190,8 +193,6 @@ class TestWorkServerEndToEnd:
             ScrapeQueueJobRepository as ScrapeQueueRepository,
         )
         from infrastructure.persistence.session import get_session
-        from pydantic import SecretStr
-        from sqlalchemy.ext.asyncio import AsyncSession
 
         url = _unique_url("e2e-done")
 
@@ -236,8 +237,12 @@ class TestWorkServerEndToEnd:
         job_loop = JobLoop(
             session_factory=lambda: get_session(factory),
             scraper_factory=_fake_scraper_factory,
-            queue_repo_factory=lambda session: ScrapeQueueRepository(cast(AsyncSession, session)),  # type: ignore[arg-type]
-            provenance_repo_factory=lambda session: ProvenanceRepository(cast(AsyncSession, session)),
+            queue_repo_factory=lambda session: ScrapeQueueRepository(  # type: ignore[arg-type]
+                cast(AsyncSession, session)
+            ),
+            provenance_repo_factory=lambda session: ProvenanceRepository(
+                cast(AsyncSession, session)
+            ),
             provenance_factory=_provenance_factory,
             settings=scraping_settings,
         )

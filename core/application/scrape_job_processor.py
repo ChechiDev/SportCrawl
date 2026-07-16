@@ -1,7 +1,7 @@
 """ScrapeJobProcessor — orchestrates parse → resolve FK → persist → mark done lifecycle.
 
 Extracted from the _worker god coroutine in scripts/scrape_player_info.py.
-Owns: parse HTML, resolve country/position FKs, persist player info, mark job done/failed.
+Owns: parse HTML, resolve country/position FKs, persist player info, mark done/failed.
 Does NOT own: browser engine lifetime, job claiming, or concurrency.
 """
 
@@ -11,9 +11,12 @@ import logging
 from typing import Protocol
 
 from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
-from infrastructure.persistence.models.scrape_queue import ScrapeQueue
 
 logger = logging.getLogger(__name__)
+
+
+class _Job(Protocol):
+    id: int
 
 
 class _Scraper(Protocol):
@@ -34,15 +37,14 @@ class _PlayerInfoRepo(Protocol):
 
 
 class ScrapeJobProcessor:
-    """Processes a single scrape job: parse → FK resolution → persist → mark done/failed.
+    """Processes a single scrape job: parse → FK resolution → persist → done/failed.
 
     Args:
         scraper: Object with a .parse(html) method returning PlayerInfoPage.
-        queue_repo: Repository for marking jobs done/failed (mark_done, mark_failed).
-        player_info_repo: Repository for persisting player info (upsert_player_info,
-            upsert_photo, upsert_position).
+        queue_repo: Repository for marking jobs done/failed.
+        player_info_repo: Repository for persisting player info.
         country_name_cache: Mapping of country_name → country_id for FK resolution.
-        position_cache: Mutable mapping of position_code → position_id (updated in place).
+        position_cache: Mutable mapping of position_code → position_id (in place).
         valid_countries: frozenset of valid country_id values for FK validation.
     """
 
@@ -62,7 +64,7 @@ class ScrapeJobProcessor:
         self._position_cache = position_cache
         self._valid_countries = valid_countries
 
-    async def process(self, job: ScrapeQueue, html: str) -> None:
+    async def process(self, job: _Job, html: str) -> None:
         """Parse, resolve FKs, persist, and mark the job done or failed.
 
         Args:
@@ -123,7 +125,9 @@ class ScrapeJobProcessor:
         for code in (raw.position_1, raw.position_2, raw.position_3):
             if code is not None:
                 if code not in self._position_cache:
-                    self._position_cache[code] = await self._player_info_repo.upsert_position(code)
+                    self._position_cache[code] = (
+                        await self._player_info_repo.upsert_position(code)
+                    )
                 pos_ids.append(self._position_cache[code])
             else:
                 pos_ids.append(None)
