@@ -186,7 +186,7 @@ class TestWorkServerEndToEnd:
             ProvenanceRepository,
         )
         from infrastructure.persistence.repositories.scrape_queue import (
-            ScrapeQueueRepository,
+            ScrapeQueueJobRepository as ScrapeQueueRepository,
         )
         from infrastructure.persistence.session import get_session
 

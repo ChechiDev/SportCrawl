@@ -151,10 +151,11 @@ async def test_worker_inserts_player_info_and_marks_done(
         MockEngine.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_engine_instance.fetch = AsyncMock(return_value="<html></html>")
 
-        # Configure scraper
-        mock_scraper_instance = AsyncMock()
+        # Configure scraper — parse is a regular (sync) method after Change 2
+        from unittest.mock import MagicMock
+        mock_scraper_instance = MagicMock()
         MockScraper.return_value = mock_scraper_instance
-        mock_scraper_instance.parse = AsyncMock(return_value=mock_page)
+        mock_scraper_instance.parse = MagicMock(return_value=mock_page)
 
         processed = await _worker(
             worker_id=1,
