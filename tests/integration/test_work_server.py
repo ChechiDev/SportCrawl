@@ -166,7 +166,6 @@ class TestWorkServerEndToEnd:
     async def test_jobloop_drains_pending_to_done(
         self,
         _ws_engine,
-        adapter: ScrapeQueueWorkAdapter,
         client: TestClient,
     ) -> None:
         """POST /jobs → JobLoop.run() → GET /jobs/{id} returns DONE.
@@ -206,7 +205,7 @@ class TestWorkServerEndToEnd:
         job_id = (await post_resp.json())["jobs"][0]["id"]
 
         # Build a fake scraper that "succeeds" without real network
-        def _fake_scraper_factory(scrape_url: str):
+        def _fake_scraper_factory(_scrape_url: str):
             scraper = MagicMock()
             scraper.fetch_and_parse = AsyncMock(return_value=None)
             scraper.last_html = "<html>fake</html>"
