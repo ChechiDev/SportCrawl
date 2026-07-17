@@ -15,6 +15,12 @@ import asyncio
 import logging
 
 import sqlalchemy as sa
+from rich.console import Console, Group
+from rich.live import Live
+from rich.logging import RichHandler
+from rich.markup import escape
+from rich.rule import Rule
+from rich.table import Table
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -28,7 +34,12 @@ from infrastructure.persistence.repositories.player_list_queue import (
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.players import PlayerListScraper
 
-logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+_console = Console(stderr=True)
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(message)s",
+    handlers=[RichHandler(console=_console, show_time=False, show_path=False)],
+)
 logger = logging.getLogger(__name__)
 
 _FBREF_BASE = "https://fbref.com"
@@ -41,6 +52,29 @@ COUNTRY_URLS: dict[str, str] = {
     "FRA": "https://fbref.com/en/country/players/FRA/France-Football",
     "ENG": "https://fbref.com/en/country/players/ENG/England-Football",
 }
+
+
+def _build_table(worker_status: dict[int, str], num_workers: int) -> Group:
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="bold green")
+    table.add_column()
+    for i in range(1, num_workers + 1):
+        table.add_row(
+            "RUN", escape(worker_status.get(i, f"[PL-{i}] starting crawl..."))
+        )
+    return Group(Rule(), table)
+
+
+async def _display_loop(
+    num_workers: int,
+    worker_status: dict[int, str],
+    stop_event: asyncio.Event,
+    live: Live,
+) -> None:
+    while not stop_event.is_set():
+        live.update(_build_table(worker_status, num_workers))
+        await asyncio.sleep(0.5)
+    live.update(_build_table(worker_status, num_workers))
 
 
 def _players_url(country_url: str) -> str:
@@ -109,6 +143,7 @@ async def _worker(
     fetch_gate: asyncio.Semaphore,
     profile_base: str,
     settings: Settings,
+    worker_status: dict[int, str],
 ) -> int:
     """Drain player_list scrape_queue jobs until empty.
 
@@ -133,7 +168,10 @@ async def _worker(
                 await session.commit()
 
             if job is None:
+                worker_status[worker_id] = f"[PL-{worker_id}] idle (queue empty)"
                 break
+
+            worker_status[worker_id] = f"[PL-{worker_id}] claimed {job.url}"
 
             try:
                 async with fetch_gate:
@@ -144,11 +182,15 @@ async def _worker(
                     await session.commit()
 
                 processed += 1
+                worker_status[worker_id] = (
+                    f"[PL-{worker_id}] done ({processed} jobs)"
+                )
 
             except Exception as exc:
                 logger.warning(
                     "[pl-worker-%d] job %d failed: %s", worker_id, job.id, exc
                 )
+                worker_status[worker_id] = f"[PL-{worker_id}] FAILED job {job.id}"
                 async with get_session(session_factory) as session:
                     await PlayerListQueueRepository(session).mark_failed(
                         job.id, str(exc)
@@ -189,7 +231,7 @@ async def main_all(workers: int = 1) -> None:
 
     countries = await _load_all_countries(session_factory)
     total = len(countries)
-    print(f"Seeding {total} countries into queue…")
+    logger.info("Seeding %d countries into queue…", total)
 
     await _seed_queue(session_factory, countries)
 
@@ -200,24 +242,38 @@ async def main_all(workers: int = 1) -> None:
         logger.info("Recovered %d stale player_list jobs back to PENDING", stale)
 
     fetch_gate = asyncio.Semaphore(1)
-    print(f"Launching {workers} worker(s)…")
+    logger.info("Launching %d worker(s)…", workers)
 
-    results = await asyncio.gather(
-        *[
-            _worker(
-                worker_id=i + 1,
-                session_factory=session_factory,
-                fetch_gate=fetch_gate,
-                profile_base=settings.scraping.chrome_profile_dir,
-                settings=settings,
-            )
-            for i in range(workers)
-        ],
-        return_exceptions=True,
-    )
+    worker_status: dict[int, str] = {}
+    stop_event = asyncio.Event()
+
+    with Live(
+        _build_table(worker_status, workers),
+        console=_console,
+        refresh_per_second=2,
+    ) as live:
+        display_task = asyncio.create_task(
+            _display_loop(workers, worker_status, stop_event, live)
+        )
+        results = await asyncio.gather(
+            *[
+                _worker(
+                    worker_id=i + 1,
+                    session_factory=session_factory,
+                    fetch_gate=fetch_gate,
+                    profile_base=settings.scraping.chrome_profile_dir,
+                    settings=settings,
+                    worker_status=worker_status,
+                )
+                for i in range(workers)
+            ],
+            return_exceptions=True,
+        )
+        stop_event.set()
+        await display_task
 
     grand_total = sum(r for r in results if isinstance(r, int))
-    print(f"\nDone. {grand_total:,} jobs processed across {workers} worker(s).")
+    logger.info("Done. %d jobs processed across %d worker(s).", grand_total, workers)
 
 
 def main() -> None:

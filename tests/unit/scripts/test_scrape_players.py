@@ -150,6 +150,7 @@ class TestWorker:
                 fetch_gate=fetch_gate,
                 profile_base="/tmp/chrome",
                 settings=settings,
+                worker_status={},
             )
 
         assert processed == 1
@@ -196,6 +197,7 @@ class TestWorker:
                 fetch_gate=fetch_gate,
                 profile_base="/tmp/chrome",
                 settings=settings,
+                worker_status={},
             )
 
         assert processed == 0
@@ -236,6 +238,7 @@ class TestWorker:
                 fetch_gate=fetch_gate,
                 profile_base="/tmp/chrome",
                 settings=settings,
+                worker_status={},
             )
 
         assert processed == 0
