@@ -105,12 +105,12 @@ class TestPlayerListScraperParse:
         ids = [p.player_id for p in page.players]
         assert "d70ce98e" in ids
 
-    async def test_parse_active_player_career_end_equals_career_start(self) -> None:
-        """parse() must set career_end == career_start for active players."""
+    async def test_parse_active_player_career_end_parsed_from_range(self) -> None:
+        """parse() must extract career_end from the year range (e.g. 2004-2026 → 2026)."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")
-        assert messi.career_end == messi.career_start
+        assert messi.career_end == 2026
 
     async def test_parse_retired_player_career_end_is_int(self) -> None:
         """parse() must set career_end to an int for retired players."""
@@ -152,12 +152,12 @@ class TestPlayerListScraperParse:
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         assert len(page.players) == 2
 
-    async def test_parse_player_url_is_absolute(self) -> None:
-        """parse() must produce an absolute URL for player_url."""
+    async def test_parse_player_url_is_relative(self) -> None:
+        """parse() must produce a relative URL for player_url (no domain prefix)."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")
-        assert messi.player_url.startswith("https://")
+        assert messi.player_url.startswith("/en/players/")
 
     async def test_parse_empty_table_returns_empty_list(self) -> None:
         """parse() with empty tbody must return a page with zero players."""

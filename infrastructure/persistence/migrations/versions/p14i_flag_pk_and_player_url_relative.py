@@ -24,10 +24,14 @@ def upgrade() -> None:
     op.drop_index("ix_flags_flag_id", table_name="tbl_flags", schema="sch_shared")
 
     # Drop existing PK constraint on id
-    op.drop_constraint("tbl_flags_pkey", "tbl_flags", schema="sch_shared", type_="primary")
+    op.drop_constraint(
+        "tbl_flags_pkey", "tbl_flags", schema="sch_shared", type_="primary"
+    )
 
     # Add new PK on flag_id
-    op.create_primary_key("tbl_flags_pkey", "tbl_flags", ["flag_id"], schema="sch_shared")
+    op.create_primary_key(
+        "tbl_flags_pkey", "tbl_flags", ["flag_id"], schema="sch_shared"
+    )
 
     # Drop the id column
     op.drop_column("tbl_flags", "id", schema="sch_shared")
@@ -65,7 +69,9 @@ def downgrade() -> None:
     )
 
     # Swap PK back to id
-    op.drop_constraint("tbl_flags_pkey", "tbl_flags", schema="sch_shared", type_="primary")
+    op.drop_constraint(
+        "tbl_flags_pkey", "tbl_flags", schema="sch_shared", type_="primary"
+    )
     op.create_primary_key("tbl_flags_pkey", "tbl_flags", ["id"], schema="sch_shared")
 
     # Restore the index on flag_id
