@@ -20,6 +20,7 @@ class PlayerInfoRawData(BaseModel):
 
     Attributes:
         player_id: FBRef slug (e.g. "abc123"), 8 chars typically.
+        full_name: Player display name from the page <h1> heading.
         fk_country_birth: country_id FK referencing tbl_countries (e.g. "ARG").
         country_birth_name: Raw country name extracted from the born paragraph text.
         national_team_name: Raw national team country name from the National Team link.
@@ -39,6 +40,7 @@ class PlayerInfoRawData(BaseModel):
     """
 
     player_id: str
+    full_name: str | None = None
     fk_country_birth: str | None = None
     country_birth_name: str | None = None
     national_team_name: str | None = None

@@ -66,6 +66,19 @@ def _meta_div(soup: BeautifulSoup | Tag) -> Tag | None:
     return None
 
 
+def _parse_full_name(soup: BeautifulSoup | Tag) -> str | None:
+    """Extract player full name from the h1 > span heading in div#meta."""
+    h1 = soup.find("h1")
+    if h1 and isinstance(h1, Tag):
+        span = h1.find("span")
+        if span and isinstance(span, Tag):
+            name = span.get_text(strip=True)
+            return name or None
+        name = h1.get_text(strip=True)
+        return name or None
+    return None
+
+
 def _parse_positions(
     soup: BeautifulSoup | Tag,
 ) -> tuple[str | None, str | None, str | None]:
@@ -237,6 +250,7 @@ class PlayerInfoScraper:
         meta = _meta_div(soup)
         scope: BeautifulSoup | Tag = meta if meta is not None else soup
 
+        full_name = _parse_full_name(scope)
         position_1, position_2, position_3 = _parse_positions(scope)
         player_foot = _parse_foot(scope)
         player_height, player_weight = _parse_height_weight(scope)
@@ -248,6 +262,7 @@ class PlayerInfoScraper:
 
         raw = PlayerInfoRawData(
             player_id=self._player_id,
+            full_name=full_name,
             player_info_url=self._player_info_url,
             fk_country_birth=None,
             country_birth_name=country_birth_name,

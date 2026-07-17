@@ -64,12 +64,19 @@ class ScrapeJobProcessor:
         self._position_cache = position_cache
         self._valid_countries = valid_countries
 
-    async def process(self, job: _Job, html: str) -> None:
+    async def process(
+        self, job: _Job, html: str
+    ) -> tuple[str, str | None] | None:
         """Parse, resolve FKs, persist, and mark the job done or failed.
 
         Args:
             job: The ScrapeQueue row being processed.
             html: Raw HTML fetched from the player profile URL.
+
+        Returns:
+            On success: (full_name, country_id) where country_id is
+            fk_national_team if available, else fk_country_birth.
+            On failure: None (error is logged and job is marked failed).
 
         Side effects:
             - Calls player_info_repo.upsert_player_info, upsert_photo, upsert_position
@@ -112,11 +119,15 @@ class ScrapeJobProcessor:
             await self._player_info_repo.upsert_photo(raw.player_id, raw.photo_url)
             await self._queue_repo.mark_done(job.id)
 
+            country_id = raw.fk_national_team or raw.fk_country_birth
+            return (raw.full_name or raw.player_id or "unknown", country_id)
+
         except Exception as exc:
             logger.error(
                 "job %d failed: %s", job.id, exc, exc_info=True
             )
             await self._queue_repo.mark_failed(job.id, str(exc))
+            return None
 
     async def _resolve_positions(
         self, raw: PlayerInfoRawData

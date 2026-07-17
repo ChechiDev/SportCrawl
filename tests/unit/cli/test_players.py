@@ -95,3 +95,35 @@ class TestPlayersStart:
         ):
             runner.invoke(players_app, ["--all"])
         mock_main_all.assert_called_once()
+
+    def test_workers_flag_forwarded_to_main_all(self):
+        """--workers N must be forwarded as workers=N to main_all (FR-8)."""
+        mock_main_all = AsyncMock()
+        with (
+            patch("cli.players.Settings", return_value=_make_settings()),
+            patch(
+                "cli.players.run_checks",
+                AsyncMock(return_value=[_passing_result()]),
+            ),
+            patch("cli.players.main_all", mock_main_all),
+        ):
+            runner.invoke(players_app, ["--all", "--workers", "4"])
+        mock_main_all.assert_called_once()
+        _, kwargs = mock_main_all.call_args
+        assert kwargs.get("workers") == 4
+
+    def test_default_workers_is_one(self):
+        """Omitting --workers must call main_all with workers=1."""
+        mock_main_all = AsyncMock()
+        with (
+            patch("cli.players.Settings", return_value=_make_settings()),
+            patch(
+                "cli.players.run_checks",
+                AsyncMock(return_value=[_passing_result()]),
+            ),
+            patch("cli.players.main_all", mock_main_all),
+        ):
+            runner.invoke(players_app, ["--all"])
+        mock_main_all.assert_called_once()
+        _, kwargs = mock_main_all.call_args
+        assert kwargs.get("workers") == 1

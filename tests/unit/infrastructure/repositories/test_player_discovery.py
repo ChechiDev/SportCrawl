@@ -29,13 +29,23 @@ def _make_player(player_id: str) -> PlayerRawData:
     )
 
 
-def _make_session() -> AsyncMock:
-    """Return an AsyncMock session whose execute() returns a usable result."""
+def _make_session(player_rowcount: int = 0) -> AsyncMock:
+    """Return an AsyncMock session whose execute() returns a usable result.
+
+    player_rowcount controls the rowcount on the first execute() call (Player insert).
+    Subsequent calls return a result with scalars().all() = [] for scrape_queue, etc.
+    """
     session = AsyncMock()
-    # scalars().all() returns empty list by default (for SELECT id FROM scrape_queue)
-    result = MagicMock()
-    result.scalars.return_value.all.return_value = []
-    session.execute.return_value = result
+
+    player_result = MagicMock()
+    player_result.rowcount = player_rowcount
+    player_result.scalars.return_value.all.return_value = []
+
+    other_result = MagicMock()
+    other_result.rowcount = 0
+    other_result.scalars.return_value.all.return_value = []
+
+    session.execute.side_effect = [player_result] + [other_result] * 10
     return session
 
 
@@ -98,10 +108,11 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         session = _make_session()
         rows = [_make_player("aabbccdd")]
 
-        # Simulate scrape_queue returning an id so PlayerQueueRef can be inserted
+        # Override side_effect so scrape_queue execute returns an id
         sq_result = MagicMock()
+        sq_result.rowcount = 0
         sq_result.scalars.return_value.all.return_value = [1]
-        session.execute.return_value = sq_result
+        session.execute.side_effect = [MagicMock(), sq_result] + [MagicMock()] * 10
 
         with _pg_insert_mock() as mock_pg_insert:
             repo = PlayerDiscoveryRepository(session)
@@ -115,8 +126,8 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         assert PlayerQueueRef in call_tables
 
     async def test_bulk_enqueue_returns_player_row_count(self) -> None:
-        """bulk_enqueue must return len(rows) — the number of players processed."""
-        session = _make_session()
+        """bulk_enqueue must return the actual inserted count from the Player INSERT."""
+        session = _make_session(player_rowcount=2)
         rows = [_make_player("aa000001"), _make_player("bb000002")]
 
         with _pg_insert_mock():
@@ -126,19 +137,27 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         assert result == 2
 
     async def test_bulk_enqueue_second_call_does_not_raise(self) -> None:
-        """Calling bulk_enqueue twice with the same rows must not raise (idempotent)."""
-        session = _make_session()
+        """Calling bulk_enqueue twice with the same rows must not raise (idempotent).
+
+        On repeat runs, ON CONFLICT DO NOTHING skips existing rows so the second
+        call returns 0 inserted — that is the correct idempotent behaviour.
+        """
+        # First call inserts 1 row; second call hits ON CONFLICT → rowcount 0.
+        session = _make_session(player_rowcount=1)
+        # Extend side_effect so the second bulk_enqueue call also has results.
+        from unittest.mock import MagicMock as _MM
+        extra = _MM()
+        extra.rowcount = 0
+        extra.scalars.return_value.all.return_value = []
+        session.execute.side_effect = list(session.execute.side_effect) + [extra] * 10
         rows = [_make_player("aabbccdd")]
 
         with _pg_insert_mock() as mock_pg_insert:
             repo = PlayerDiscoveryRepository(session)
             result_first = await repo.bulk_enqueue(rows, "ESP")
-            # Second call with same data — must not raise
             result_second = await repo.bulk_enqueue(rows, "ESP")
 
-        # Both calls return the same row count (idempotent result)
-        assert result_first == result_second == 1
-        # pg_insert was called for both invocations —
-        # call count is 2× that of a single call
+        assert result_first == 1
+        assert result_second == 0  # duplicate → ON CONFLICT DO NOTHING → 0 inserted
         assert mock_pg_insert.call_count % 2 == 0
-        assert mock_pg_insert.call_count >= 4  # at least Player + ScrapeQueue × 2 calls
+        assert mock_pg_insert.call_count >= 4

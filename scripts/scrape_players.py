@@ -5,6 +5,7 @@ Usage:
     uv run python scripts/scrape_players.py --country ARG
     uv run python scripts/scrape_players.py --url <FBREF_COUNTRY_PLAYERS_URL>
     uv run python scripts/scrape_players.py --all            # all 219 countries from DB
+    uv run python scripts/scrape_players.py --all --workers 3
 """
 
 from __future__ import annotations
@@ -12,21 +13,39 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import re
 
 import sqlalchemy as sa
+from rich.console import Console, Group
+from rich.live import Live
+from rich.logging import RichHandler
+from rich.markup import escape
+from rich.rule import Rule
+from rich.table import Table
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
-from core.exceptions.scraper import PageLoadError, RateLimitError
 from infrastructure.browser.pydoll_engine import PydollEngine
+from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.country import Country
+from infrastructure.persistence.repositories.player_list_queue import (
+    PlayerListQueueRepository,
+)
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.players import PlayerListScraper
 
-logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+_console = Console(stderr=True)
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(message)s",
+    handlers=[RichHandler(console=_console, show_time=False, show_path=False)],
+)
+logger = logging.getLogger(__name__)
 
 _FBREF_BASE = "https://fbref.com"
 _BASE_URL = "https://fbref.com/en/country/players/{code}/{code}-Football"
+_COUNTRY_CODE_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
 
 COUNTRY_URLS: dict[str, str] = {
     "ESP": "https://fbref.com/en/country/players/ESP/Spain-Football",
@@ -35,6 +54,29 @@ COUNTRY_URLS: dict[str, str] = {
     "FRA": "https://fbref.com/en/country/players/FRA/France-Football",
     "ENG": "https://fbref.com/en/country/players/ENG/England-Football",
 }
+
+
+def _build_table(worker_status: dict[int, str], num_workers: int) -> Group:
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="bold green")
+    table.add_column()
+    for i in range(1, num_workers + 1):
+        table.add_row(
+            "RUN", escape(worker_status.get(i, f"[Crawl-{i}] starting crawl..."))
+        )
+    return Group(Rule(), table)
+
+
+async def _display_loop(
+    num_workers: int,
+    worker_status: dict[int, str],
+    stop_event: asyncio.Event,
+    live: Live,
+) -> None:
+    while not stop_event.is_set():
+        live.update(_build_table(worker_status, num_workers))
+        await asyncio.sleep(0.5)
+    live.update(_build_table(worker_status, num_workers))
 
 
 def _players_url(country_url: str) -> str:
@@ -59,9 +101,119 @@ async def _load_all_countries(
         return [(row.country_id, _players_url(row.country_url)) for row in result]
 
 
+async def _seed_queue(
+    session_factory: async_sessionmaker[AsyncSession],
+    countries: list[tuple[str, str]],
+) -> int:
+    """Bulk-insert one scrape_queue row per country URL with job_type='player_list'.
+
+    ON CONFLICT DO NOTHING keeps the operation idempotent across restarts.
+
+    Returns:
+        Number of newly inserted rows (0 when all URLs already queued).
+    """
+    if not countries:
+        return 0
+
+    rows = [
+        {
+            "url": url,
+            "domain": "fbref.com",
+            "status": ScrapeStatus.PENDING,
+            "job_type": "player_list",
+        }
+        for _country_id, url in countries
+    ]
+
+    chunk_size = 8191
+    inserted = 0
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i : i + chunk_size]
+        stmt = pg_insert(ScrapeQueue).values(chunk)
+        stmt = stmt.on_conflict_do_nothing(index_elements=["url", "job_type"])
+        async with get_session(session_factory) as session:
+            result = await session.execute(stmt)
+            inserted += getattr(result, "rowcount", None) or 0
+            await session.commit()
+
+    return inserted
+
+
+async def _worker(
+    worker_id: int,
+    session_factory: async_sessionmaker[AsyncSession],
+    fetch_gate: asyncio.Semaphore,
+    profile_base: str,
+    settings: Settings,
+    worker_status: dict[int, str],
+    total_jobs: int = 0,
+    global_done: list[int] | None = None,
+) -> int:
+    """Drain player_list scrape_queue jobs until empty.
+
+    Each call gets its own isolated Chrome profile. Jobs are claimed atomically
+    via SELECT FOR UPDATE SKIP LOCKED. The fetch_gate semaphore ensures at most
+    one FBRef HTTP request is in flight across all workers.
+
+    Returns:
+        Number of jobs successfully processed.
+    """
+    profile_dir = f"{profile_base}-player-list-{worker_id}"
+    processed = 0
+
+    async with PydollEngine(
+        profile_dir=profile_dir, name=f"PlayerList-{worker_id}"
+    ) as engine:
+        scraper = PlayerListScraper(engine, settings.scraping, session_factory)
+
+        while True:
+            async with get_session(session_factory) as session:
+                job = await PlayerListQueueRepository(session).claim_next()
+                await session.commit()
+
+            if job is None:
+                worker_status[worker_id] = f"[Crawl-{worker_id}] idle (queue empty)"
+                break
+
+            country_match = _COUNTRY_CODE_RE.search(job.url)
+            country_code = country_match.group(1).upper() if country_match else job.url
+
+            try:
+                async with fetch_gate:
+                    page, _ = await scraper.scrape(job.url)
+
+                async with get_session(session_factory) as session:
+                    await PlayerListQueueRepository(session).mark_done(job.id)
+                    await session.commit()
+
+                processed += 1
+                if global_done is not None:
+                    global_done[0] += 1
+                n = global_done[0] if global_done else processed
+                progress = f"[{n}/{total_jobs}]" if total_jobs else f"[{n}]"
+                total_players = len(page.players)
+                label = f"[Crawl-{worker_id}] {progress} {country_code}"
+                worker_status[worker_id] = f"{label} {total_players} players"
+
+            except Exception as exc:
+                logger.warning(
+                    "[pl-worker-%d] job %d failed: %s", worker_id, job.id, exc
+                )
+                worker_status[worker_id] = (
+                    f"[Crawl-{worker_id}] {country_code} FAILED"
+                )
+                async with get_session(session_factory) as session:
+                    await PlayerListQueueRepository(session).mark_failed(
+                        job.id, str(exc)
+                    )
+                    await session.commit()
+
+    return processed
+
+
 async def scrape_one(scraper: PlayerListScraper, url: str) -> int:
-    page = await scraper.scrape(url)
-    return len(page.players)
+    _, inserted = await scraper.scrape(url)
+    return inserted
 
 
 async def main_single(url: str, verbose: bool = True) -> int:
@@ -69,47 +221,73 @@ async def main_single(url: str, verbose: bool = True) -> int:
     session_factory = create_session_factory(settings.db)
     async with PydollEngine() as engine:
         scraper = PlayerListScraper(engine, settings.scraping, session_factory)
-        page = await scraper.scrape(url)
-        count = len(page.players)
+        page, inserted = await scraper.scrape(url)
 
         if verbose:
             print(f"\ncountry_id : {page.country_id}")
-            print(f"players    : {count}")
+            print(f"players    : {len(page.players)}")
+            print(f"inserted   : {inserted}")
             print("\nFirst 10:")
             for p in page.players[:10]:
                 career = f"{p.career_start}–{p.career_end}"
                 print(f"  {p.player_id}  {p.full_name:<30}  {career}")
 
-        return count
+        return inserted
 
 
-async def main_all() -> None:
+async def main_all(workers: int = 1) -> None:
     settings = Settings()  # type: ignore[call-arg]
+    settings.db.pool_size = max(workers * 2, settings.db.pool_size)
     session_factory = create_session_factory(settings.db)
+
     countries = await _load_all_countries(session_factory)
     total = len(countries)
-    print(f"Scraping {total} countries…\n")
+    logger.info("Seeding %d countries into queue…", total)
 
-    grand_total = 0
-    failed: list[str] = []
+    await _seed_queue(session_factory, countries)
 
-    async with PydollEngine() as engine:
-        scraper = PlayerListScraper(engine, settings.scraping, session_factory)
+    async with get_session(session_factory) as session:
+        stale = await PlayerListQueueRepository(session).recover_stale()
+        await session.commit()
+    if stale:
+        logger.info("Recovered %d stale player_list jobs back to PENDING", stale)
 
-        for i, (country_id, url) in enumerate(countries, 1):
-            try:
-                count = await scrape_one(scraper, url)
-                grand_total += count
-                total_str = f"{grand_total:,}"
-                prefix = f"[{i:>3}/{total}] {country_id:<6}"
-                print(f"{prefix}  {count:>5} players  (total: {total_str})")
-            except (PageLoadError, RateLimitError) as exc:
-                failed.append(country_id)
-                print(f"[{i:>3}/{total}] {country_id:<6}  ERROR: {exc}")
+    fetch_gate = asyncio.Semaphore(1)
+    logger.info("Launching %d worker(s)…", workers)
 
-    print(f"\nDone. {grand_total:,} players across {total - len(failed)} countries.")
-    if failed:
-        print(f"Failed ({len(failed)}): {', '.join(failed)}")
+    worker_status: dict[int, str] = {}
+    global_done: list[int] = [0]
+    stop_event = asyncio.Event()
+
+    with Live(
+        _build_table(worker_status, workers),
+        console=_console,
+        refresh_per_second=2,
+    ) as live:
+        display_task = asyncio.create_task(
+            _display_loop(workers, worker_status, stop_event, live)
+        )
+        results = await asyncio.gather(
+            *[
+                _worker(
+                    worker_id=i + 1,
+                    session_factory=session_factory,
+                    fetch_gate=fetch_gate,
+                    profile_base=settings.scraping.chrome_profile_dir,
+                    settings=settings,
+                    worker_status=worker_status,
+                    total_jobs=total,
+                    global_done=global_done,
+                )
+                for i in range(workers)
+            ],
+            return_exceptions=True,
+        )
+        stop_event.set()
+        await display_task
+
+    grand_total = sum(r for r in results if isinstance(r, int))
+    logger.info("Done. %d jobs processed across %d worker(s).", grand_total, workers)
 
 
 def main() -> None:
@@ -126,10 +304,17 @@ def main() -> None:
     )
     group.add_argument("--all", action="store_true", dest="all_countries",
                        help="Scrape all countries from the database.")
+    parser.add_argument(
+        "--workers",
+        metavar="N",
+        type=int,
+        default=1,
+        help="Number of parallel workers (default: 1).",
+    )
     args = parser.parse_args()
 
     if args.all_countries:
-        asyncio.run(main_all())
+        asyncio.run(main_all(workers=args.workers))
     else:
         target_url = args.url or COUNTRY_URLS.get(
             args.country.upper(),
