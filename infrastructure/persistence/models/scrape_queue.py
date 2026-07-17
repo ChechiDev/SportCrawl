@@ -86,7 +86,7 @@ class ScrapeQueue(Base):
     job_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("url", name="uq_scrape_queue_url"),
+        UniqueConstraint("url", "job_type", name="uq_scrape_queue_url_job_type"),
         Index("ix_scrape_queue_domain_status", "domain", "status"),
         {"schema": "sch_infra"},
     )
@@ -105,4 +105,6 @@ class ScrapeQueue(Base):
 
         cfg = settings or _ScrapingSettings()
         domain = validate_scrape_url(url, cfg.allowed_hosts)
-        return cls(domain=domain, url=url, status=ScrapeStatus.PENDING)
+        return cls(
+            domain=domain, url=url, status=ScrapeStatus.PENDING, job_type="default"
+        )

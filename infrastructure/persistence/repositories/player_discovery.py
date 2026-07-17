@@ -102,6 +102,7 @@ class PlayerDiscoveryRepository:
                     "url": r.player_url,
                     "domain": _FBREF_DOMAIN,
                     "status": ScrapeStatus.PENDING,
+                    "job_type": "player_discovery",
                 }
                 for r in rows
             ]
@@ -109,7 +110,7 @@ class PlayerDiscoveryRepository:
             for chunk in _chunked(sq_values, _CHUNK_SIZE):
                 stmt_sq = pg_insert(ScrapeQueue).values(chunk)
                 stmt_sq = stmt_sq.on_conflict_do_update(
-                    index_elements=["url"],
+                    index_elements=["url", "job_type"],
                     # no-op update — forces RETURNING to include conflicting rows too
                     set_={"url": pg_insert(ScrapeQueue).excluded.url},
                 )

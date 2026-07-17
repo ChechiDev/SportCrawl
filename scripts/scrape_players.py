@@ -23,7 +23,7 @@ from infrastructure.persistence.models.shared.country import Country
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.players import PlayerListScraper
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 
 _FBREF_BASE = "https://fbref.com"
 _BASE_URL = "https://fbref.com/en/country/players/{code}/{code}-Football"
@@ -64,21 +64,23 @@ async def scrape_one(scraper: PlayerListScraper, url: str) -> int:
     return len(page.players)
 
 
-async def main_single(url: str) -> None:
+async def main_single(url: str, verbose: bool = True) -> int:
     settings = Settings()  # type: ignore[call-arg]
     session_factory = create_session_factory(settings.db)
     async with PydollEngine() as engine:
         scraper = PlayerListScraper(engine, settings.scraping, session_factory)
-
-        print(f"Fetching: {url}")
         page = await scraper.scrape(url)
+        count = len(page.players)
 
-        print(f"\ncountry_id : {page.country_id}")
-        print(f"players    : {len(page.players)}")
-        print("\nFirst 10:")
-        for p in page.players[:10]:
-            career = f"{p.career_start}–{p.career_end}"
-            print(f"  {p.player_id}  {p.full_name:<30}  {career}")
+        if verbose:
+            print(f"\ncountry_id : {page.country_id}")
+            print(f"players    : {count}")
+            print("\nFirst 10:")
+            for p in page.players[:10]:
+                career = f"{p.career_start}–{p.career_end}"
+                print(f"  {p.player_id}  {p.full_name:<30}  {career}")
+
+        return count
 
 
 async def main_all() -> None:

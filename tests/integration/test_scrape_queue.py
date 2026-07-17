@@ -154,9 +154,14 @@ class TestScrapeQueueUpsert:
 
         stmt = (
             pg_insert(ScrapeQueue)
-            .values(url=url, domain=domain, status=ScrapeStatus.PENDING)
+            .values(
+                url=url,
+                domain=domain,
+                status=ScrapeStatus.PENDING,
+                job_type="player_discovery",
+            )
             .on_conflict_do_update(
-                constraint="uq_scrape_queue_url",
+                constraint="uq_scrape_queue_url_job_type",
                 set_={"retry_count": ScrapeQueue.retry_count + 1},
             )
         )
@@ -183,9 +188,14 @@ class TestScrapeQueueUpsert:
 
         stmt = (
             pg_insert(ScrapeQueue)
-            .values(url=url, domain=domain, status=ScrapeStatus.PENDING)
+            .values(
+                url=url,
+                domain=domain,
+                status=ScrapeStatus.PENDING,
+                job_type="player_discovery",
+            )
             .on_conflict_do_update(
-                constraint="uq_scrape_queue_url",
+                constraint="uq_scrape_queue_url_job_type",
                 set_={"retry_count": ScrapeQueue.retry_count + 1},
             )
         )
@@ -203,10 +213,12 @@ class TestScrapeQueueUpsert:
     async def test_unique_constraint_blocks_plain_duplicate_insert(
         self, async_session: AsyncSession
     ) -> None:
-        """Plain INSERT of a duplicate URL raises IntegrityError (no ON CONFLICT)."""
+        """Plain INSERT of a duplicate (url, job_type) pair raises IntegrityError."""
         url = "https://fbref.com/plain-dup"
         row1 = ScrapeQueue.from_url(url=url)
+        row1.job_type = "player_discovery"
         row2 = ScrapeQueue.from_url(url=url)
+        row2.job_type = "player_discovery"
 
         async_session.add(row1)
         await async_session.flush()
