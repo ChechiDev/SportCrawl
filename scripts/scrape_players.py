@@ -178,7 +178,6 @@ async def _worker(
             country_match = _COUNTRY_CODE_RE.search(job.url)
             country_code = country_match.group(1).upper() if country_match else job.url
 
-
             try:
                 async with fetch_gate:
                     page, _ = await scraper.scrape(job.url)

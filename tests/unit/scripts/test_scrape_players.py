@@ -62,8 +62,9 @@ class TestSeedQueue:
         cm.__aexit__ = AsyncMock(return_value=False)
 
         with patch("scripts.scrape_players.get_session", return_value=cm):
-            countries = [("ARG", "https://fbref.com/en/country/players/ARG/Argentina-Football"),
-                         ("ESP", "https://fbref.com/en/country/players/ESP/Spain-Football")]
+            _arg = "https://fbref.com/en/country/players/ARG/Argentina-Football"
+            _esp = "https://fbref.com/en/country/players/ESP/Spain-Football"
+            countries = [("ARG", _arg), ("ESP", _esp)]
             count = await _seed_queue(MagicMock(), countries)
 
         assert count == 2
@@ -83,7 +84,8 @@ class TestSeedQueue:
         cm.__aexit__ = AsyncMock(return_value=False)
 
         with patch("scripts.scrape_players.get_session", return_value=cm):
-            countries = [("ARG", "https://fbref.com/en/country/players/ARG/Argentina-Football")]
+            _arg = "https://fbref.com/en/country/players/ARG/Argentina-Football"
+            countries = [("ARG", _arg)]
             count = await _seed_queue(MagicMock(), countries)
 
         # rowcount=0 means ON CONFLICT fired and nothing was inserted
