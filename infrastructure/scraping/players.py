@@ -90,9 +90,6 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
             player_id = href_match.group(1).lower()
             full_name = a_tag.get_text(strip=True)
 
-            # Active players have their name wrapped in <strong>
-            is_active = a_tag.find("strong") is not None
-
             # Build absolute player_url
             if href.startswith("http"):
                 player_url = href
@@ -107,17 +104,19 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
                 .replace("\xa0", " ")
             )
 
-            # Career dates from tail: "2004-2026 · FW,MF"
-            years_match = re.search(r"(\d{4})-(\d{4})", tail)
+            # Career dates from tail: "2004-2026 · FW,MF" or single year "2026 · FW"
+            years_match = re.search(r"(\d{4})(?:-(\d{4}))?", tail)
             if years_match is None:
                 logger.warning(
-                    "No career dates found for player",
+                    "No career dates found for player — tail=%r",
+                    tail,
                     extra={"url": player_url},
                 )
                 continue
 
             career_start = int(years_match.group(1))
-            career_end: int = career_start if is_active else int(years_match.group(2))
+            end_str = years_match.group(2)
+            career_end = int(end_str) if end_str else career_start
 
             players.append(
                 PlayerRawData(
