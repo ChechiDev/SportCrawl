@@ -136,9 +136,7 @@ The `--with-player-info` flag runs the player list scrape first, then automatica
 
 
 <details>
-<summary>
-## Scraping examples
-</summary>
+<summary><h3>Scraping usage examples</h3></summary>
 
 ### Scraping by country
 
@@ -216,9 +214,7 @@ uv run sportcrawl reset
 > This only clears scraped data (players, player info, flags, queue). It does not drop the schema or run a migration rollback.
 
 <details>
-<summary>
-## Reset database example
-</summary>
+<summary><h3>Reset database example</h3></summary>
 
 ```bash
 ❯ uv run sportcrawl reset    
