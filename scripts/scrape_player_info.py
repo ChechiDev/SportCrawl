@@ -340,7 +340,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
     settings = Settings()  # type: ignore[call-arg]
 
     # Ensure pool can serve all workers without starvation
-    settings.db.pool_size = max(workers * 2, settings.db.pool_size)
+    settings.db.pool_size = max(workers * 2, settings.db.pool_size)  # type: ignore[operator]
 
     session_factory = create_session_factory(settings.db)
 
@@ -386,12 +386,12 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
 
     t0 = time.monotonic()
     with Live(
-        _build_table(worker_status, workers),
+        _build_table(worker_status, workers),  # type: ignore[arg-type]
         console=_console,
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
-            _display_loop(workers, worker_status, stop_event, live)
+            _display_loop(workers, worker_status, stop_event, live)  # type: ignore[arg-type]
         )
         results = await asyncio.gather(
             *[
@@ -407,7 +407,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
                     total_jobs=already_done + pending_total,
                     already_done=already_done,
                 )
-                for i in range(workers)
+                for i in range(workers)  # type: ignore[arg-type]
             ]
         )
         stop_event.set()

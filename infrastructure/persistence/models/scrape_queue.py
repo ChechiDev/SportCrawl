@@ -105,4 +105,6 @@ class ScrapeQueue(Base):
 
         cfg = settings or _ScrapingSettings()
         domain = validate_scrape_url(url, cfg.allowed_hosts)
-        return cls(domain=domain, url=url, status=ScrapeStatus.PENDING)
+        return cls(
+            domain=domain, url=url, status=ScrapeStatus.PENDING, job_type="default"
+        )
