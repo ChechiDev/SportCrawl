@@ -60,8 +60,8 @@ async def _load_all_countries(
 
 
 async def scrape_one(scraper: PlayerListScraper, url: str) -> int:
-    page = await scraper.scrape(url)
-    return len(page.players)
+    _, inserted = await scraper.scrape(url)
+    return inserted
 
 
 async def main_single(url: str, verbose: bool = True) -> int:
@@ -69,18 +69,18 @@ async def main_single(url: str, verbose: bool = True) -> int:
     session_factory = create_session_factory(settings.db)
     async with PydollEngine() as engine:
         scraper = PlayerListScraper(engine, settings.scraping, session_factory)
-        page = await scraper.scrape(url)
-        count = len(page.players)
+        page, inserted = await scraper.scrape(url)
 
         if verbose:
             print(f"\ncountry_id : {page.country_id}")
-            print(f"players    : {count}")
+            print(f"players    : {len(page.players)}")
+            print(f"inserted   : {inserted}")
             print("\nFirst 10:")
             for p in page.players[:10]:
                 career = f"{p.career_start}–{p.career_end}"
                 print(f"  {p.player_id}  {p.full_name:<30}  {career}")
 
-        return count
+        return inserted
 
 
 async def main_all() -> None:

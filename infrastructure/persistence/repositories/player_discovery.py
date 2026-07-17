@@ -89,12 +89,14 @@ class PlayerDiscoveryRepository:
                 for r in rows
             ]
 
+            inserted_count = 0
             for chunk in _chunked(player_values, _CHUNK_SIZE):
                 stmt_player = pg_insert(Player).values(chunk)
                 stmt_player = stmt_player.on_conflict_do_nothing(
                     index_elements=["player_id"]
                 )
-                await self._session.execute(stmt_player)
+                raw = await self._session.execute(stmt_player)
+                inserted_count += raw.rowcount  # type: ignore[attr-defined]
 
             # 2. ScrapeQueue upsert with RETURNING — collect IDs across all chunks
             sq_values = [
@@ -150,4 +152,4 @@ class PlayerDiscoveryRepository:
                 cause=exc,
             ) from exc
 
-        return len(rows)
+        return inserted_count
