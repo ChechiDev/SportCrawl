@@ -20,7 +20,7 @@
 
 ---
 
-## Description
+# Description
 
 SportCrawl is an async scraping infrastructure built to extract structured football data from [FBRef.com](https://fbref.com) and persist it in a relational PostgreSQL database, ready for analysis, reporting, or downstream consumption.
 
@@ -47,7 +47,7 @@ FBRef is the most complete public source of football statistics, but it has no A
 
 # Installation
 
-### Prerequisites
+## Prerequisites
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) — package manager
@@ -55,7 +55,7 @@ FBRef is the most complete public source of football statistics, but it has no A
 - Google Chrome — for the scraping engine
 - *(Optional)* A PostgreSQL client — [pgAdmin](https://www.pgadmin.org/), [TablePlus](https://tableplus.com/), or `psql` to inspect the data
 
-### Clone and install
+## Clone and install
 
 ```bash
 git clone https://github.com/ChechiDev/SportCrawl.git
@@ -63,7 +63,7 @@ cd SportCrawl
 uv sync
 ```
 
-### Environment
+## Environment
 
 Copy the example env file and fill in your values:
 
@@ -83,7 +83,7 @@ docker compose up -d
 
 SportCrawl is driven entirely from the CLI. All commands run a **preflight check** before scraping — verifying the database connection, schema version, and seed data. If anything is missing, it's fixed automatically before the scrape starts.
 
-### Scrape countries
+## Scrape countries
 
 Fetches all countries and confederations from FBRef and seeds the database. This is required before scraping players.
 
@@ -91,7 +91,7 @@ Fetches all countries and confederations from FBRef and seeds the database. This
 uv run sportcrawl countries start
 ```
 
-### Scrape players
+## Scrape players
 
 Scrapes the player roster for one or more countries.
 
@@ -122,7 +122,7 @@ uv run sportcrawl players start --all --workers 5
 
 > The scraper supports up to 25 parallel workers. For best results and to avoid rate limiting, **1–5 workers is recommended**.
 
-### Scrape single player info
+## Scrape Single player info
 
 Scrapes individual player profiles — bio, nationality, positions, and career history.
 
@@ -136,9 +136,11 @@ The `--with-player-info` flag runs the player list scrape first, then automatica
 
 
 <details>
-<summary>Scraping examples</summary>
+<summary>
+## Scraping examples
+</summary>
 
-#### Scraping by country
+### Scraping by country
 
 ```bash
 ❯ uv run sportcrawl players start --country ARG,ESP --workers 3 
@@ -169,7 +171,7 @@ Step 2 — Scraping players
   OK   ESP: 10,943 players inserted.
 ```
 
-#### Scraping for all players by country
+### Scraping for all players by country
 
 ```bash
 ❯ uv run sportcrawl players start --all --workers 3
@@ -203,7 +205,7 @@ RUN  [Crawl-3] [2/219] ALG 579 players
 ```
 </details>
 
-### Reset
+## Reset Database
 
 Truncates all scraped data from the database. Useful for testing or starting fresh.
 
@@ -213,7 +215,10 @@ uv run sportcrawl reset
 
 > This only clears scraped data (players, player info, flags, queue). It does not drop the schema or run a migration rollback.
 
-#### Reset example
+<details>
+<summary>
+## Reset database example
+</summary>
 
 ```bash
 ❯ uv run sportcrawl reset    
@@ -241,3 +246,4 @@ Continue? [y/N]: y
 
 Reset complete. Ready to scrape from scratch.
 ```
+</details>
