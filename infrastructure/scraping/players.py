@@ -36,7 +36,9 @@ logger = logging.getLogger(__name__)
 
 _PLAYER_HREF_RE = re.compile(r"/en/players/([a-z0-9]{8})/", re.IGNORECASE)
 _COUNTRY_CODE_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
+_EXPECTED_COUNT_RE = re.compile(r"(\d+)\s+Players", re.IGNORECASE)
 _FBREF_BASE = "https://fbref.com"
+_MIN_PARSE_RATIO = 0.90
 
 
 class PlayerListScraper(BaseScraper[PlayerListPage]):
@@ -160,8 +162,19 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
                 logger.info("Fetching URL", extra={"url": url, "attempt": attempt})
                 html = await self._engine.fetch(url)
                 self._last_html = html
-                # Pass country_id explicitly — no instance-state side-effect
                 page = await self.parse(html, country_id)
+
+                # Validate against the "N Players" header FBRef injects.
+                # If the page was partially rendered we get far fewer rows —
+                # treat it as a transient load failure so the retry fires.
+                expected_match = _EXPECTED_COUNT_RE.search(html)
+                if expected_match:
+                    expected = int(expected_match.group(1))
+                    actual = len(page.players)
+                    if actual < expected * _MIN_PARSE_RATIO:
+                        raise PageLoadError(
+                            f"Incomplete render: got {actual}/{expected} players"
+                        )
                 break
             except (PageLoadError, RateLimitError) as exc:
                 last_error = exc
