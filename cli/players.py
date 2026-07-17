@@ -121,7 +121,7 @@ async def _run(
     step = 2 if not skip_preflight and seed_failed else 1
     console.print(f"[bold]Step {step} — Scraping players[/bold]")
     if all_countries:
-        await main_all()
+        await main_all(workers=workers)
     elif country:
         code = country.upper()
         url = f"{_FBREF_BASE}/{code}/{code}-Football"
