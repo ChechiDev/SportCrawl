@@ -99,17 +99,22 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
             else:
                 player_url = f"{_FBREF_BASE}{href}"
 
-            # Collect text nodes of <p> — NavigableString subclasses str
-            tail_parts: list[str] = []
-            for child in p_tag.children:
-                if isinstance(child, str):
-                    tail_parts.append(child)
-            tail = "".join(tail_parts).replace("\xa0", " ")
+            # Strip the player name from the full <p> text to isolate the date portion.
+            # next_sibling is unreliable — FBRef often puts a bare newline there.
+            tail = (
+                p_tag.get_text(separator=" ")
+                .replace(full_name, "", 1)
+                .replace("\xa0", " ")
+            )
 
             # Career dates from tail: "2004-2026 · FW,MF"
             years_match = re.search(r"(\d{4})-(\d{4})", tail)
             if years_match is None:
-                continue  # career dates are required; skip row if absent
+                logger.warning(
+                    "No career dates found for player",
+                    extra={"url": player_url},
+                )
+                continue
 
             career_start = int(years_match.group(1))
             career_end: int = career_start if is_active else int(years_match.group(2))
@@ -189,7 +194,7 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
 
         return page
 
-    async def persist(self, page: PlayerListPage, country_id: str) -> None:
+    async def persist(self, page: PlayerListPage, country_id: str) -> int:
         """Bulk-enqueue a parsed PlayerListPage into the database.
 
         Opens its own session, inserts all rows via PlayerDiscoveryRepository,
@@ -198,21 +203,26 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
         Args:
             page: A PlayerListPage produced by parse().
             country_id: FBRef country code to associate rows with.
+
+        Returns:
+            Number of player rows actually inserted (skips ON CONFLICT duplicates).
         """
         async with get_session(self._session_factory) as session:
             repo = PlayerDiscoveryRepository(session)
-            await repo.bulk_enqueue(page.players, country_id)
+            inserted = await repo.bulk_enqueue(page.players, country_id)
             await session.commit()
+        return inserted
 
-    async def scrape(self, url: str) -> PlayerListPage:
-        """Full pipeline: fetch HTML → parse → persist → return page.
+    async def scrape(self, url: str) -> tuple[PlayerListPage, int]:
+        """Full pipeline: fetch HTML → parse → persist → return page and inserted count.
 
         Args:
             url: The FBRef country player-list URL to fetch.
 
         Returns:
-            PlayerListPage with all parsed and persisted player rows.
+            Tuple of (PlayerListPage, inserted_count) where inserted_count is the
+            number of new rows written to tbl_players (excludes ON CONFLICT skips).
         """
         page = await self.fetch_and_parse(url)
-        await self.persist(page, page.country_id)
-        return page
+        inserted = await self.persist(page, page.country_id)
+        return page, inserted
