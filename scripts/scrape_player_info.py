@@ -183,7 +183,7 @@ async def _worker(
                             position_cache=position_cache,
                             valid_countries=valid_countries,
                         )
-                        await processor.process(job, html)
+                        result = await processor.process(job, html)
                         await session.commit()
 
                     success = True
@@ -194,8 +194,10 @@ async def _worker(
                         if total_jobs
                         else f"[{global_done}]"
                     )
+                    full_name = result[0] if result else "unknown"
+                    country_id = result[1] if result and result[1] else "???"
                     worker_status[worker_id] = (
-                        f"[Crawl-{worker_id}] {progress} scraped: {processed}"
+                        f"[Crawl-{worker_id}] {progress} {country_id} {full_name}"
                     )
 
                 except (

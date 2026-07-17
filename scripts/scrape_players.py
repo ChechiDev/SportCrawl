@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import re
 
 import sqlalchemy as sa
 from rich.console import Console, Group
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 _FBREF_BASE = "https://fbref.com"
 _BASE_URL = "https://fbref.com/en/country/players/{code}/{code}-Football"
+_COUNTRY_CODE_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
 
 COUNTRY_URLS: dict[str, str] = {
     "ESP": "https://fbref.com/en/country/players/ESP/Spain-Football",
@@ -60,7 +62,7 @@ def _build_table(worker_status: dict[int, str], num_workers: int) -> Group:
     table.add_column()
     for i in range(1, num_workers + 1):
         table.add_row(
-            "RUN", escape(worker_status.get(i, f"[PL-{i}] starting crawl..."))
+            "RUN", escape(worker_status.get(i, f"[Crawl-{i}] starting crawl..."))
         )
     return Group(Rule(), table)
 
@@ -144,6 +146,8 @@ async def _worker(
     profile_base: str,
     settings: Settings,
     worker_status: dict[int, str],
+    total_jobs: int = 0,
+    global_done: list[int] | None = None,
 ) -> int:
     """Drain player_list scrape_queue jobs until empty.
 
@@ -168,29 +172,37 @@ async def _worker(
                 await session.commit()
 
             if job is None:
-                worker_status[worker_id] = f"[PL-{worker_id}] idle (queue empty)"
+                worker_status[worker_id] = f"[Crawl-{worker_id}] idle (queue empty)"
                 break
 
-            worker_status[worker_id] = f"[PL-{worker_id}] claimed {job.url}"
+            country_match = _COUNTRY_CODE_RE.search(job.url)
+            country_code = country_match.group(1).upper() if country_match else job.url
+
 
             try:
                 async with fetch_gate:
-                    await scraper.scrape(job.url)
+                    page, _ = await scraper.scrape(job.url)
 
                 async with get_session(session_factory) as session:
                     await PlayerListQueueRepository(session).mark_done(job.id)
                     await session.commit()
 
                 processed += 1
-                worker_status[worker_id] = (
-                    f"[PL-{worker_id}] done ({processed} jobs)"
-                )
+                if global_done is not None:
+                    global_done[0] += 1
+                n = global_done[0] if global_done else processed
+                progress = f"[{n}/{total_jobs}]" if total_jobs else f"[{n}]"
+                total_players = len(page.players)
+                label = f"[Crawl-{worker_id}] {progress} {country_code}"
+                worker_status[worker_id] = f"{label} {total_players} players"
 
             except Exception as exc:
                 logger.warning(
                     "[pl-worker-%d] job %d failed: %s", worker_id, job.id, exc
                 )
-                worker_status[worker_id] = f"[PL-{worker_id}] FAILED job {job.id}"
+                worker_status[worker_id] = (
+                    f"[Crawl-{worker_id}] {country_code} FAILED"
+                )
                 async with get_session(session_factory) as session:
                     await PlayerListQueueRepository(session).mark_failed(
                         job.id, str(exc)
@@ -245,6 +257,7 @@ async def main_all(workers: int = 1) -> None:
     logger.info("Launching %d worker(s)…", workers)
 
     worker_status: dict[int, str] = {}
+    global_done: list[int] = [0]
     stop_event = asyncio.Event()
 
     with Live(
@@ -264,6 +277,8 @@ async def main_all(workers: int = 1) -> None:
                     profile_base=settings.scraping.chrome_profile_dir,
                     settings=settings,
                     worker_status=worker_status,
+                    total_jobs=total,
+                    global_done=global_done,
                 )
                 for i in range(workers)
             ],

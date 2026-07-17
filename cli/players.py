@@ -43,7 +43,9 @@ def _build_dsn(settings: Settings) -> str:
 
 @players_app.command("start")
 def players_start(
-    country: str | None = typer.Option(None, "--country", "-c"),
+    country: str | None = typer.Option(
+        None, "--country", "-c", help="Comma-separated codes, e.g. ESP,ARG"
+    ),
     all_countries: bool = typer.Option(False, "--all", "-a"),
     with_player_info: bool = typer.Option(False, "--with-player-info"),
     workers: int = typer.Option(1, "--workers", "-w"),
@@ -123,11 +125,12 @@ async def _run(
     if all_countries:
         await main_all(workers=workers)
     elif country:
-        code = country.upper()
-        url = f"{_FBREF_BASE}/{code}/{code}-Football"
-        count = await main_single(url, verbose=False)
-        msg = f"  [bold green]OK  [/bold green] {code}: {count:,} new players inserted."
-        console.print(msg)
+        codes = [c.strip().upper() for c in country.split(",") if c.strip()]
+        for code in codes:
+            url = f"{_FBREF_BASE}/{code}/{code}-Football"
+            count = await main_single(url, verbose=False)
+            msg = f"  [bold green]OK  [/bold green] {code}: {count:,} players inserted."
+            console.print(msg)
     else:
         console.print("[red]Specify --country or --all.[/red]")
         raise typer.Exit(code=1)
