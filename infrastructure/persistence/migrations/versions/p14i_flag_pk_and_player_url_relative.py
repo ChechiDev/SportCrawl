@@ -74,5 +74,8 @@ def downgrade() -> None:
     )
     op.create_primary_key("tbl_flags_pkey", "tbl_flags", ["id"], schema="sch_shared")
 
-    # Restore the index on flag_id
-    op.create_index("ix_flags_flag_id", "tbl_flags", ["flag_id"], schema="sch_shared")
+    # IF NOT EXISTS: p14j downgrade may have already recreated this index
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_flags_flag_id"
+        " ON sch_shared.tbl_flags (flag_id)"
+    )
