@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="https://raw.githubusercontent.com/ChechiDev/SportCrawl/main/assets/images/sportcrawl-logo-wip.png" alt="SportCrawl Logo" width="320" />
+
 # SportCrawl
 
 <p>
@@ -16,6 +18,8 @@
 </p>
 
 </div>
+
+---
 
 Async scraping infrastructure for football data from [fbref.com](https://fbref.com). SportCrawl extracts match, player, club, and competition statistics and persists them in PostgreSQL, with built-in anti-bot evasion via a real Chrome browser session.
 
