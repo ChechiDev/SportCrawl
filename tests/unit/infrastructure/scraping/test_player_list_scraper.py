@@ -106,7 +106,7 @@ class TestPlayerListScraperParse:
         assert "d70ce98e" in ids
 
     async def test_parse_active_player_career_end_parsed_from_range(self) -> None:
-        """parse() must extract career_end from the year range (e.g. 2004-2026 → 2026)."""
+        """parse() must extract career_end from the year range (2004-2026 → 2026)."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")
