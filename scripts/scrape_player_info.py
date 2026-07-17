@@ -340,7 +340,9 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
     settings = Settings()  # type: ignore[call-arg]
 
     # Ensure pool can serve all workers without starvation
-    settings.db.pool_size = max(workers * 2, settings.db.pool_size)  # type: ignore[operator]
+    settings.db.pool_size = max(  # type: ignore[operator]
+        workers * 2, settings.db.pool_size
+    )
 
     session_factory = create_session_factory(settings.db)
 
@@ -391,7 +393,9 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
-            _display_loop(workers, worker_status, stop_event, live)  # type: ignore[arg-type]
+            _display_loop(  # type: ignore[arg-type]
+                workers, worker_status, stop_event, live
+            )
         )
         results = await asyncio.gather(
             *[
