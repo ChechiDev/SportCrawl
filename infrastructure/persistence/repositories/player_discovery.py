@@ -102,6 +102,7 @@ class PlayerDiscoveryRepository:
                     "url": r.player_url,
                     "domain": _FBREF_DOMAIN,
                     "status": ScrapeStatus.PENDING,
+                    "job_type": "player_discovery",
                 }
                 for r in rows
             ]

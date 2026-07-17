@@ -38,7 +38,8 @@ async def _run_migrations(console: Console) -> None:
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        console.print(f"  [bold red]FAIL[/bold red] Migration failed:\n{stderr.decode()}")
+        msg = f"  [bold red]FAIL[/bold red] Migration failed:\n{stderr.decode()}"
+        console.print(msg)
         raise SystemExit(1)
     console.print("  [bold green]OK  [/bold green] Migrations applied.")
 
@@ -58,7 +59,7 @@ async def run_checks(dsn: str, phase: str, console: Console) -> list[CheckResult
     ]
 
     for fn in check_fns:
-        result = await fn()
+        result = await fn()  # type: ignore[no-untyped-call]
         render_check(result, console)
         results.append(result)
         if not result.passed and result.fatal:

@@ -13,7 +13,6 @@ from core.preflight.checks import (
     check_tables_exist,
 )
 
-
 DSN = "postgresql://user:pass@localhost:5432/testdb"
 
 

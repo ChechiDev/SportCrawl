@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 
 from core.preflight.result import CheckResult
 

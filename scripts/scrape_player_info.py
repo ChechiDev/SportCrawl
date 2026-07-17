@@ -331,7 +331,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
                 "before launching workers."
             ),
         )
-        args = parser.parse_args()
+        parser.parse_args()
         if workers is None:
             workers = workers
         if seed is None:

@@ -11,10 +11,9 @@ import asyncio
 
 import typer
 
+from cli.players import players_app
 from config.settings import Settings
 from infrastructure.work_server.runtime import serve
-
-from cli.players import players_app
 
 app = typer.Typer(name="sportcrawl", help="Sportcrawl CLI")
 app.add_typer(players_app, name="players")
@@ -93,7 +92,7 @@ def reset_db(
 
 
 async def _do_reset(console: object) -> None:
-    import asyncpg
+    import asyncpg  # type: ignore[import-untyped]
 
     from config.settings import Settings
 
@@ -122,15 +121,15 @@ async def _do_reset(console: object) -> None:
             await conn.execute(
                 f"TRUNCATE {schema}.{table} RESTART IDENTITY CASCADE"
             )
-            console.print(f"  [bold green]OK  [/bold green] {schema}.{table} truncated")  # type: ignore[union-attr]
+            console.print(f"  [bold green]OK  [/bold green] {schema}.{table} truncated")  # type: ignore[attr-defined]
         await conn.execute(
             "INSERT INTO sch_shared.tbl_gender (gender) VALUES ('M'), ('F')"
         )
-        console.print("  [bold green]OK  [/bold green] sch_shared.tbl_gender re-seeded")  # type: ignore[union-attr]
+        console.print("  [bold green]OK  [/bold green] sch_shared.tbl_gender re-seeded")  # type: ignore[attr-defined]
     finally:
         await conn.close()
 
-    console.print(  # type: ignore[union-attr]
+    console.print(  # type: ignore[attr-defined]
         "\n[green]Reset complete. Ready to scrape from scratch.[/green]"
     )
 

@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 import typer
 from rich.console import Console
 
@@ -30,7 +29,8 @@ async def _seed_countries(settings: Settings) -> None:
     async with PydollEngine() as engine:
         scraper = CountryScraper(engine, settings.scraping, session_factory)
         page = await scraper.scrape(_COUNTRIES_URL)
-        console.print(f"  [bold green]OK  [/bold green] {len(page.countries)} countries persisted.")
+        n = len(page.countries)
+        console.print(f"  [bold green]OK  [/bold green] {n} countries persisted.")
 
 
 def _build_dsn(settings: Settings) -> str:
@@ -43,7 +43,7 @@ def _build_dsn(settings: Settings) -> str:
 
 @players_app.command("start")
 def players_start(
-    country: Optional[str] = typer.Option(None, "--country", "-c"),
+    country: str | None = typer.Option(None, "--country", "-c"),
     all_countries: bool = typer.Option(False, "--all", "-a"),
     with_player_info: bool = typer.Option(False, "--with-player-info"),
     workers: int = typer.Option(1, "--workers", "-w"),
@@ -64,7 +64,7 @@ def players_start(
 
 
 async def _run(
-    country: Optional[str],
+    country: str | None,
     all_countries: bool,
     with_player_info: bool,
     workers: int,
@@ -85,7 +85,10 @@ async def _run(
             console.print(_Rule())
             console.print("  No countries in DB — running country scraper first...")
             await _seed_countries(settings)
-            console.print("  [bold green]OK  [/bold green] Countries seeded. Re-running checks...\n")
+            console.print(
+                "  [bold green]OK  [/bold green] Countries seeded."
+                " Re-running checks...\n"
+            )
             results = await run_checks(dsn, "players", console)
 
         from core.preflight.renderer import render_summary
@@ -123,7 +126,8 @@ async def _run(
         code = country.upper()
         url = f"{_FBREF_BASE}/{code}/{code}-Football"
         count = await main_single(url, verbose=False)
-        console.print(f"  [bold green]OK  [/bold green] {code}: {count:,} players scraped.")
+        msg = f"  [bold green]OK  [/bold green] {code}: {count:,} players scraped."
+        console.print(msg)
     else:
         console.print("[red]Specify --country or --all.[/red]")
         raise typer.Exit(code=1)

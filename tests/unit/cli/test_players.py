@@ -8,7 +8,6 @@ from typer.testing import CliRunner
 from cli.players import players_app
 from core.preflight.result import CheckResult
 
-
 runner = CliRunner()
 
 
