@@ -73,6 +73,7 @@ async def _run(
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
     dsn = _build_dsn(settings)
+    seed_failed = None
 
     if not skip_preflight:
         results = await run_checks(dsn, "players", console)
@@ -83,12 +84,10 @@ async def _run(
         if seed_failed and "countries" in seed_failed.detail:
             from rich.rule import Rule as _Rule
             console.print(_Rule())
-            console.print("  No countries in DB — running country scraper first...")
+            console.print("  No countries in DB — running country scraper first...\n")
+            console.print("[bold]Step 1 — Scraping countries[/bold]")
             await _seed_countries(settings)
-            console.print(
-                "  [bold green]OK  [/bold green] Countries seeded."
-                " Re-running checks...\n"
-            )
+            console.print(_Rule())
             results = await run_checks(dsn, "players", console)
 
         from core.preflight.renderer import render_summary
@@ -119,14 +118,15 @@ async def _run(
 
     _FBREF_BASE = "https://fbref.com/en/country/players"
 
-    console.print("[bold]Step 1 — Scraping players[/bold]")
+    step = 2 if not skip_preflight and seed_failed else 1
+    console.print(f"[bold]Step {step} — Scraping players[/bold]")
     if all_countries:
         await main_all()
     elif country:
         code = country.upper()
         url = f"{_FBREF_BASE}/{code}/{code}-Football"
         count = await main_single(url, verbose=False)
-        msg = f"  [bold green]OK  [/bold green] {code}: {count:,} players scraped."
+        msg = f"  [bold green]OK  [/bold green] {code}: {count:,} new players inserted."
         console.print(msg)
     else:
         console.print("[red]Specify --country or --all.[/red]")
