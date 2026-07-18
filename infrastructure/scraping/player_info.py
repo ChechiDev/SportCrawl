@@ -182,13 +182,53 @@ def _parse_country_birth_name(soup: BeautifulSoup | Tag) -> str | None:
 def _parse_national_team_name(soup: BeautifulSoup | Tag) -> str | None:
     """Extract national team country name from the National Team paragraph."""
     for strong in soup.find_all("strong"):
-        if "National Team" in strong.get_text():
+        if strong.get_text(strip=True) in ("National Team:", "National Team"):
             p = strong.find_parent("p")
             if p and isinstance(p, Tag):
                 a = p.find("a", href=re.compile(r"^/en/country/"))
                 if a and isinstance(a, Tag):
                     return a.get_text(strip=True) or None
     return None
+
+
+def _parse_citizenship_name(soup: BeautifulSoup | Tag) -> str | None:
+    """Extract citizenship country name from the Citizenship paragraph."""
+    for strong in soup.find_all("strong"):
+        if "Citizenship" in strong.get_text():
+            p = strong.find_parent("p")
+            if p and isinstance(p, Tag):
+                a = p.find("a", href=re.compile(r"^/en/country/"))
+                if a and isinstance(a, Tag):
+                    return a.get_text(strip=True) or None
+    return None
+
+
+def _parse_youth_nat_team_name(soup: BeautifulSoup | Tag) -> str | None:
+    """Extract youth national team name from paragraph.
+    """
+    for strong in soup.find_all("strong"):
+        if "Youth National Team" in strong.get_text():
+            p = strong.find_parent("p")
+            if p and isinstance(p, Tag):
+                a = p.find("a", href=re.compile(r"^/en/country/"))
+                if a and isinstance(a, Tag):
+                    return a.get_text(strip=True) or None
+    return None
+
+
+def _parse_club(soup: BeautifulSoup | Tag) -> tuple[str | None, str | None]:
+    """Extract club name and URL from the Club paragraph."""
+    for strong in soup.find_all("strong"):
+        if strong.get_text(strip=True) == "Club:":
+            p = strong.find_parent("p")
+            if p and isinstance(p, Tag):
+                a = p.find("a")
+                if a and isinstance(a, Tag):
+                    name = a.get_text(strip=True) or None
+                    href = a.get("href")
+                    url = str(href) if href else None
+                    return name, url
+    return None, None
 
 
 def _parse_wages_expires(soup: BeautifulSoup | Tag) -> tuple[int | None, date | None]:
@@ -224,12 +264,14 @@ def _parse_wages_expires(soup: BeautifulSoup | Tag) -> tuple[int | None, date | 
 
 
 def _parse_photo(soup: BeautifulSoup | Tag) -> str | None:
-    """Extract player photo URL."""
-    img = soup.find("img", id="player_photo")
-    if img and isinstance(img, Tag):
-        src = img.get("src")
-        if src:
-            return str(src)
+    """Extract player photo URL from div.media-item > img."""
+    div = soup.find("div", class_="media-item")
+    if div and isinstance(div, Tag):
+        img = div.find("img")
+        if img and isinstance(img, Tag):
+            src = img.get("src")
+            if src:
+                return str(src)
     return None
 
 
@@ -257,6 +299,9 @@ class PlayerInfoScraper:
         player_born, city_name = _parse_birth(scope)
         country_birth_name = _parse_country_birth_name(scope)
         national_team_name = _parse_national_team_name(scope)
+        citizenship_name = _parse_citizenship_name(scope)
+        youth_nat_team_name = _parse_youth_nat_team_name(scope)
+        club_name, club_url = _parse_club(scope)
         player_wages, player_expires = _parse_wages_expires(scope)
         photo_url = _parse_photo(soup)
 
@@ -268,6 +313,10 @@ class PlayerInfoScraper:
             country_birth_name=country_birth_name,
             national_team_name=national_team_name,
             fk_national_team=None,
+            citizenship_name=citizenship_name,
+            youth_nat_team_name=youth_nat_team_name,
+            club_name=club_name,
+            club_url=club_url,
             city_name=city_name,
             player_born=player_born,
             player_height=player_height,

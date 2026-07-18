@@ -76,7 +76,7 @@ class TestPlayersStart:
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
-            patch("cli.players.main_single", mock_main_single),
+            patch("cli.players.main_countries", mock_main_single),
         ):
             runner.invoke(players_app, ["--country", "ARG"])
         mock_main_single.assert_called_once()

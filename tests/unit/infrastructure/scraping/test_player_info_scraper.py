@@ -127,3 +127,26 @@ class TestPlayerInfoScraperParse:
         result = scraper.parse(_WAGES_ZERO_HTML)
 
         assert result.players[0].player_wages == 0
+
+    def test_parse_extracts_citizenship_name(self) -> None:
+        """Extract citizenship name from Citizenship paragraph."""
+        scraper = _make_scraper()
+        result = scraper.parse(_PROFILE_HTML)
+
+        assert result.players[0].citizenship_name == "Spain"
+
+    def test_parse_extracts_youth_nat_team_name(self) -> None:
+        """Extract youth national team name from paragraph."""
+        scraper = _make_scraper()
+        result = scraper.parse(_PROFILE_HTML)
+
+        assert result.players[0].youth_nat_team_name == "Spain"
+
+    def test_parse_extracts_club(self) -> None:
+        """_parse_club() must return club_name and club_url from the Club paragraph."""
+        scraper = _make_scraper()
+        result = scraper.parse(_PROFILE_HTML)
+
+        player = result.players[0]
+        assert player.club_name == "Valle Egués"
+        assert player.club_url == "/en/squads/0e08d4eb/Valle-Egues-Stats"

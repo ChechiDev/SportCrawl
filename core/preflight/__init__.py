@@ -18,7 +18,7 @@ from core.preflight.checks import (
 from core.preflight.renderer import render_check
 from core.preflight.result import CheckResult
 
-REQUIRED_HEAD = "p14j"
+REQUIRED_HEAD = "p14m"
 
 MINIMUM_REVISION: dict[str, str] = {
     "countries": "p10d_add_fk_ondelete",

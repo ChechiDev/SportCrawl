@@ -105,12 +105,24 @@ class ScrapeJobProcessor:
                 raw.fk_national_team = self._country_name_cache.get(
                     raw.national_team_name
                 )
+            if raw.citizenship_name is not None:
+                raw.fk_citizenship = self._country_name_cache.get(
+                    raw.citizenship_name
+                )
+            if raw.youth_nat_team_name is not None:
+                raw.fk_youth_nat_team = self._country_name_cache.get(
+                    raw.youth_nat_team_name
+                )
 
             # Validate resolved FK country IDs against the allowed set
             if raw.fk_country_birth not in self._valid_countries:
                 raw.fk_country_birth = None
             if raw.fk_national_team not in self._valid_countries:
                 raw.fk_national_team = None
+            if raw.fk_citizenship not in self._valid_countries:
+                raw.fk_citizenship = None
+            if raw.fk_youth_nat_team not in self._valid_countries:
+                raw.fk_youth_nat_team = None
 
             # Resolve position codes to surrogate IDs
             pos_ids = await self._resolve_positions(raw)
@@ -126,7 +138,10 @@ class ScrapeJobProcessor:
             logger.error(
                 "job %d failed: %s", job.id, exc, exc_info=True
             )
-            await self._queue_repo.mark_failed(job.id, str(exc))
+            try:
+                await self._queue_repo.mark_failed(job.id, str(exc))
+            except Exception:
+                pass
             return None
 
     async def _resolve_positions(

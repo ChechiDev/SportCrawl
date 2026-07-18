@@ -90,6 +90,30 @@ class PlayerInfo(Base):
     player_foot: Mapped[str | None] = mapped_column(String(20), nullable=True)
     player_wages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     player_expires: Mapped[date | None] = mapped_column(Date, nullable=True)
+    fk_citizenship: Mapped[str | None] = mapped_column(
+        String(10),
+        ForeignKey(
+            "sch_shared.tbl_countries.country_id",
+            ondelete="SET NULL",
+            name="tbl_player_info_fk_citizenship_fkey",
+        ),
+        nullable=True,
+    )
+    fk_youth_nat_team: Mapped[str | None] = mapped_column(
+        String(10),
+        ForeignKey(
+            "sch_shared.tbl_countries.country_id",
+            ondelete="SET NULL",
+            name="tbl_player_info_fk_youth_nat_team_fkey",
+        ),
+        nullable=True,
+    )
+    club_name: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )  # TODO: migrate to fk_club when tbl_clubs exists
+    club_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )  # TODO: migrate to fk_club when tbl_clubs exists
     player_info_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -104,5 +128,7 @@ class PlayerInfo(Base):
         Index("ix_player_info_fk_ply_pos_1", "fk_ply_pos_1"),
         Index("ix_player_info_fk_ply_pos_2", "fk_ply_pos_2"),
         Index("ix_player_info_fk_ply_pos_3", "fk_ply_pos_3"),
+        Index("ix_player_info_fk_citizenship", "fk_citizenship"),
+        Index("ix_player_info_fk_youth_nat_team", "fk_youth_nat_team"),
         {"schema": "sch_shared"},
     )

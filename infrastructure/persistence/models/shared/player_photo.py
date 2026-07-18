@@ -29,7 +29,10 @@ class PlayerPhoto(Base):
         ),
         primary_key=True,
     )
-    player_photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    player_photo_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

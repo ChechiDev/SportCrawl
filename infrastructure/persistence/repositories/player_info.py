@@ -104,6 +104,8 @@ class PlayerInfoRepository:
                 "player_id": raw.player_id,
                 "fk_country_birth": raw.fk_country_birth,
                 "fk_national_team": raw.fk_national_team,
+                "fk_citizenship": raw.fk_citizenship,
+                "fk_youth_nat_team": raw.fk_youth_nat_team,
                 "city_name": raw.city_name,
                 "player_born": raw.player_born,
                 "player_height": raw.player_height,
@@ -115,6 +117,8 @@ class PlayerInfoRepository:
                 "player_wages": raw.player_wages,
                 "player_expires": raw.player_expires,
                 "player_info_url": raw.player_info_url,
+                "club_name": raw.club_name,
+                "club_url": raw.club_url,
             }
             stmt = pg_insert(PlayerInfo).values(**values)
             stmt = stmt.on_conflict_do_update(
@@ -122,6 +126,8 @@ class PlayerInfoRepository:
                 set_={
                     "fk_country_birth": stmt.excluded.fk_country_birth,
                     "fk_national_team": stmt.excluded.fk_national_team,
+                    "fk_citizenship": stmt.excluded.fk_citizenship,
+                    "fk_youth_nat_team": stmt.excluded.fk_youth_nat_team,
                     "city_name": stmt.excluded.city_name,
                     "player_born": stmt.excluded.player_born,
                     "player_height": stmt.excluded.player_height,
@@ -133,6 +139,8 @@ class PlayerInfoRepository:
                     "player_wages": stmt.excluded.player_wages,
                     "player_expires": stmt.excluded.player_expires,
                     "player_info_url": stmt.excluded.player_info_url,
+                    "club_name": stmt.excluded.club_name,
+                    "club_url": stmt.excluded.club_url,
                     "updated_at": func.now(),
                 },
             )
