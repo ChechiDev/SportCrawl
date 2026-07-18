@@ -246,7 +246,14 @@ class PydollEngine(ScrapingEngine):
         logger.debug("Fetching URL: %s", url)
 
         try:
-            await tab.go_to(url)
+            try:
+                await tab.go_to(url)
+            except KeyError as exc:
+                raise PageLoadError(
+                    f"CDP navigation response missing expected key for {url}: {exc}",
+                    url=url,
+                    cause=exc,
+                ) from exc
             # pydoll page_source stubs lack Awaitable annotation
             content: str = await self._wait_for_challenge(tab, url)
             if (
@@ -265,8 +272,11 @@ class PydollEngine(ScrapingEngine):
             if browser is not None:
                 try:
                     await browser.stop()  # type: ignore[no-untyped-call]
-                except Exception:
-                    logger.debug("browser.stop() raised during error cleanup; ignoring")
+                except Exception as stop_exc:
+                    logger.debug(
+                        "browser.stop() raised during error cleanup: %s",
+                        stop_exc,
+                    )
             self._browser = None
             self._tab = None
             raise PageLoadError(

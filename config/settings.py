@@ -39,6 +39,7 @@ class ScrapingSettings(BaseModel):
     request_timeout: int = 30
     work_server_url: str = "http://localhost:9731"
     work_server_token: SecretStr = SecretStr("")
+    fbref_base_url: str = "https://fbref.com"
     allowed_hosts: list[str] = ["fbref.com"]
     max_concurrent_requests: int = 3
     request_delay_min: float = Field(default=3.0, ge=0.0)

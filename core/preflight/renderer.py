@@ -14,7 +14,5 @@ def render_check(result: CheckResult, console: Console) -> None:
 
 
 def render_summary(results: list[CheckResult], console: Console) -> None:
-    from rich.rule import Rule
     passed = sum(1 for r in results if r.passed)
     console.print(f"\n  {passed}/{len(results)} checks passed")
-    console.print(Rule())

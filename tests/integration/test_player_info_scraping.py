@@ -165,7 +165,8 @@ async def test_worker_inserts_player_info_and_marks_done(
             position_cache={},
             valid_countries=frozenset(),
             country_name_cache={},
-            worker_status={},
+            worker_labels={},
+            worker_counts={},
         )
 
     assert processed == 1

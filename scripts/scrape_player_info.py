@@ -19,7 +19,6 @@ from rich.console import Console, Group
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
-from rich.rule import Rule
 from rich.table import Table
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -38,10 +37,11 @@ from infrastructure.persistence.session import create_session_factory, get_sessi
 from infrastructure.scraping.player_info import PlayerInfoScraper
 
 _console = Console(stderr=True)
+_log_console = Console(stderr=True, highlight=False)
 logging.basicConfig(
     level=logging.WARNING,
     format="%(message)s",
-    handlers=[RichHandler(console=_console, show_time=False, show_path=False)],
+    handlers=[RichHandler(console=_log_console, show_time=False, show_path=False)],
 )
 logger = logging.getLogger(__name__)
 
@@ -87,27 +87,45 @@ async def _load_country_name_cache(
 # ---------------------------------------------------------------------------
 
 
-def _build_table(worker_status: dict[int, str], num_workers: int) -> Group:
+def _build_table(
+    worker_labels: dict[int, str],
+    worker_counts: dict[int, int],
+    num_workers: int,
+    already_done: int,
+    total_jobs: int,
+) -> Group:
+    global_done = already_done + sum(worker_counts.values())
+    total_str = f"{global_done}/{total_jobs}" if total_jobs else str(global_done)
     table = Table.grid(padding=(0, 2))
     table.add_column(style="bold green")
     table.add_column()
     for i in range(1, num_workers + 1):
-        table.add_row(
-            "RUN", escape(worker_status.get(i, f"[Crawl-{i}] starting crawl..."))
-        )
-    return Group(Rule(), table)
+        own = worker_counts.get(i, 0)
+        label = worker_labels.get(i, "starting crawl...")
+        row = f"[Crawl-{i}] [{own} | {total_str}] {label}"
+        table.add_row("RUN", escape(row))
+    return Group(table)
 
 
 async def _display_loop(
     num_workers: int,
-    worker_status: dict[int, str],
+    worker_labels: dict[int, str],
+    worker_counts: dict[int, int],
+    already_done: int,
+    total_jobs: int,
     stop_event: asyncio.Event,
     live: Live,
 ) -> None:
     while not stop_event.is_set():
-        live.update(_build_table(worker_status, num_workers))
+        table = _build_table(
+            worker_labels, worker_counts, num_workers, already_done, total_jobs
+        )
+        live.update(table)
         await asyncio.sleep(0.5)
-    live.update(_build_table(worker_status, num_workers))
+    table = _build_table(
+        worker_labels, worker_counts, num_workers, already_done, total_jobs
+    )
+    live.update(table)
 
 
 async def _worker(
@@ -118,9 +136,9 @@ async def _worker(
     position_cache: dict[str, int],
     valid_countries: frozenset[str],
     country_name_cache: dict[str, str],
-    worker_status: dict[int, str],
-    total_jobs: int = 0,
-    already_done: int = 0,
+    worker_labels: dict[int, str],
+    worker_counts: dict[int, int],
+    fbref_base_url: str = "https://fbref.com",
 ) -> int:
     """Process player_info jobs from scrape_queue until the queue is empty.
 
@@ -138,6 +156,10 @@ async def _worker(
     """
     processed = 0
 
+    startup_delay = random.uniform(3.0, 15.0)
+    worker_labels[worker_id] = f"waiting {startup_delay:.1f}s before start..."
+    await asyncio.sleep(startup_delay)
+
     try:
         profile_dir = f"{chrome_profile_base}-{worker_id}"
         engine_ctx = PydollEngine(profile_dir=profile_dir, name=f"Crawl-{worker_id}")
@@ -145,6 +167,7 @@ async def _worker(
         logger.error("[worker-%d] engine init failed: %s", worker_id, exc)
         return 0
 
+    worker_labels[worker_id] = "starting crawl..."
     async with engine_ctx as engine:
         while True:
             async with get_session(session_factory) as session:
@@ -161,7 +184,7 @@ async def _worker(
             while attempt < 3 and not success:
                 try:
                     async with fetch_gate:
-                        html = await engine.fetch(job.url)
+                        html = await engine.fetch(fbref_base_url + job.url)
                     # cooldown outside gate so other workers don't block waiting
                     await asyncio.sleep(random.uniform(5, 15))
                     if not html:
@@ -188,42 +211,26 @@ async def _worker(
 
                     success = True
                     processed += 1
-                    global_done = already_done + processed
-                    progress = (
-                        f"[{global_done}/{total_jobs}]"
-                        if total_jobs
-                        else f"[{global_done}]"
-                    )
+                    worker_counts[worker_id] = processed
                     full_name = result[0] if result else "unknown"
-                    country_id = result[1] if result and result[1] else "???"
-                    worker_status[worker_id] = (
-                        f"[Crawl-{worker_id}] {progress} {country_id} {full_name}"
-                    )
+                    worker_labels[worker_id] = full_name
 
                 except (
                     PageLoadError, RateLimitError, BrowserException, RuntimeError
                 ) as exc:
                     attempt += 1
-                    logger.warning(
-                        "[worker-%d] job %d attempt %d failed: %s",
-                        worker_id, job.id, attempt, exc,
-                        exc_info=True,
-                    )
                     is_terminal = isinstance(exc, BrowserException) or attempt >= 3
                     if is_terminal:
+                        worker_labels[worker_id] = f"FAILED job {job.id} — {exc}"
                         async with get_session(session_factory) as session:
                             q_repo = PlayerInfoQueueRepository(session)
                             await q_repo.mark_failed(job.id, str(exc))
                             await session.commit()
                     else:
+                        worker_labels[worker_id] = f"WARNING retrying ({attempt}/3)"
                         await asyncio.sleep(2)
-                    # Browser is unrecoverable — exit worker so the job can be
-                    # retried by recover_stale() on the next run
                     if isinstance(exc, BrowserException):
-                        logger.error(
-                            "[worker-%d] browser failure — shutting down worker",
-                            worker_id,
-                        )
+                        worker_labels[worker_id] = "browser failure — shutting down"
                         return processed
 
             if not success:
@@ -333,11 +340,11 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
                 "before launching workers."
             ),
         )
-        parser.parse_args()
+        args = parser.parse_args()
         if workers is None:
-            workers = workers
+            workers = args.workers
         if seed is None:
-            seed = seed
+            seed = args.seed
 
     settings = Settings()  # type: ignore[call-arg]
 
@@ -353,6 +360,14 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         await session.commit()
     if stale:
         logger.info("Recovered %d stale jobs back to PENDING", stale)
+
+    # Recover any permanently FAILED rows so they are retried this run
+    async with get_session(session_factory) as session:
+        queue_repo = PlayerInfoQueueRepository(session)
+        failed = await queue_repo.recover_failed()
+        await session.commit()
+    if failed:
+        logger.info("Recovered %d failed jobs back to PENDING", failed)
 
     if seed:
         seeded = await _seed_queue(session_factory)
@@ -383,17 +398,32 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         workers, already_done, pending_total, already_done + pending_total,
     )
 
-    worker_status: dict[int, str] = {}
+    worker_labels: dict[int, str] = {}
+    worker_counts: dict[int, int] = {}
     stop_event = asyncio.Event()
 
     t0 = time.monotonic()
     with Live(
-        _build_table(worker_status, workers),
+        _build_table(
+            worker_labels,
+            worker_counts,
+            workers,
+            already_done,
+            already_done + pending_total,
+        ),
         console=_console,
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
-            _display_loop(workers, worker_status, stop_event, live)
+            _display_loop(
+                workers,
+                worker_labels,
+                worker_counts,
+                already_done,
+                already_done + pending_total,
+                stop_event,
+                live,
+            )
         )
         results = await asyncio.gather(
             *[
@@ -405,17 +435,18 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
                     position_cache=position_cache,
                     valid_countries=valid_countries,
                     country_name_cache=country_name_cache,
-                    worker_status=worker_status,
-                    total_jobs=already_done + pending_total,
-                    already_done=already_done,
+                    worker_labels=worker_labels,
+                    worker_counts=worker_counts,
+                    fbref_base_url=settings.scraping.fbref_base_url,
                 )
                 for i in range(workers)
-            ]
+            ],
+            return_exceptions=True,
         )
         stop_event.set()
         await display_task
     elapsed = time.monotonic() - t0
-    total = sum(results)
+    total = sum(r for r in results if isinstance(r, int))
     rate = total / elapsed if elapsed > 0 else 0
     eta_hours = (pending_total - total) / (rate * 3600) if rate > 0 else float("inf")
     logger.info(

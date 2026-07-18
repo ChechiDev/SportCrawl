@@ -57,6 +57,12 @@ class PlayerInfoRawData(BaseModel):
     player_expires: date | None = None
     player_info_url: str
     photo_url: str | None = None
+    citizenship_name: str | None = None
+    youth_nat_team_name: str | None = None
+    club_name: str | None = None
+    club_url: str | None = None
+    fk_citizenship: str | None = None
+    fk_youth_nat_team: str | None = None
 
 
 class PlayerInfoPage(BaseModel):
