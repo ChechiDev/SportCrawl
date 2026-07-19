@@ -236,7 +236,7 @@ async def _worker(
                         except Exception as exc:
                             if isinstance(exc, _BrowserException):
                                 worker_labels[worker_id] = (
-                                    "[bold red]BROWSER ERROR — restarting[/bold red]"
+                                    "[bold red]BROWSER ERROR — Restarting[/bold red]"
                                 )
                                 try:
                                     async with get_session(session_factory) as session:
@@ -275,18 +275,18 @@ async def _worker(
                 restart_count += 1
                 if restart_count >= max_restarts:
                     worker_labels[worker_id] = (
-                        "[bold red]BROWSER FAILED — giving up[/bold red]"
+                        "[bold red]BROWSER FAILED — Giving up[/bold red]"
                     )
                     return processed
                 msg = (
                     f"[bold red]BROWSER START FAILED"
-                    f" — retry {restart_count}/{max_restarts}[/bold red]"
+                    f" — Retry {restart_count}/{max_restarts}[/bold red]"
                 )
                 worker_labels[worker_id] = msg
                 await asyncio.sleep(10)
                 continue
             worker_labels[worker_id] = (
-                "[bold red]UNEXPECTED ERROR — restarting[/bold red]"
+                "[bold red]UNEXPECTED ERROR — Restarting[/bold red]"
             )
             await asyncio.sleep(5)
             continue
