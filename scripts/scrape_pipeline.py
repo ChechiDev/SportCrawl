@@ -17,17 +17,32 @@ import argparse
 import asyncio
 import logging
 
-# Configure logging BEFORE importing scrape_players / scrape_player_info so that
-# their module-level logging.basicConfig calls are no-ops (basicConfig is a no-op
-# when handlers already exist). This ensures all log output routes through the
-# single _console attached to the Rich Live display.
+import sqlalchemy as sa
 from rich.console import Console, Group
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from config.settings import Settings
+from infrastructure.persistence.repositories.player_info_queue import (
+    PlayerInfoQueueRepository,
+)
+from infrastructure.persistence.repositories.player_list_queue import (
+    PlayerListQueueRepository,
+)
+from infrastructure.persistence.session import create_session_factory, get_session
+from scripts.scrape_player_info import _load_country_ids, _load_country_name_cache
+from scripts.scrape_player_info import _seed_queue as _seed_player_info_queue
+from scripts.scrape_player_info import _worker as _player_info_worker
+from scripts.scrape_players import _load_all_countries
+from scripts.scrape_players import _seed_queue as _seed_player_list_queue
+from scripts.scrape_players import _worker as _player_list_worker
+
+# force=True resets any handlers set by scrape_players / scrape_player_info at
+# import time so all log output routes through the single Live-display console.
 _console = Console(stderr=True)
 logging.basicConfig(
     level=logging.WARNING,
@@ -40,44 +55,11 @@ logging.basicConfig(
             rich_tracebacks=False,
         )
     ],
+    force=True,
 )
 for _noisy in ("pydoll", "websockets", "asyncio"):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
-
-import sqlalchemy as sa  # noqa: E402
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E402
-
-from config.settings import Settings  # noqa: E402
-from infrastructure.persistence.repositories.player_info_queue import (  # noqa: E402
-    PlayerInfoQueueRepository,
-)
-from infrastructure.persistence.repositories.player_list_queue import (  # noqa: E402
-    PlayerListQueueRepository,
-)
-from infrastructure.persistence.session import (  # noqa: E402
-    create_session_factory,
-    get_session,
-)
-from scripts.scrape_player_info import (  # noqa: E402
-    _load_country_ids,
-    _load_country_name_cache,
-)
-from scripts.scrape_player_info import (  # noqa: E402
-    _seed_queue as _seed_player_info_queue,
-)
-from scripts.scrape_player_info import (  # noqa: E402
-    _worker as _player_info_worker,
-)
-from scripts.scrape_players import (  # noqa: E402
-    _load_all_countries,
-)
-from scripts.scrape_players import (  # noqa: E402
-    _seed_queue as _seed_player_list_queue,
-)
-from scripts.scrape_players import (  # noqa: E402
-    _worker as _player_list_worker,
-)
 
 
 # ---------------------------------------------------------------------------
