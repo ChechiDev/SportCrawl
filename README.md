@@ -141,32 +141,35 @@ The `--with-player-info` flag runs the player list scrape first, then automatica
 ### Scraping by country
 
 ```bash
-❯ uv run sportcrawl players start --country ARG,ESP --workers 3 
+❯ uv run sportcrawl players start --all --with-player-info --workers 5
+Preflight — Checking requirements
   OK    DB reachable: Connected successfully.
   OK    Alembic initialized: alembic_version table found.
-  OK    Alembic revision: DB at revision p14j (>= p11e).
+  OK    Alembic revision: DB at revision p14m (>= p11e).
   OK    Schemas exist: sch_infra and sch_shared found.
   OK    Tables exist: All 8 tables found for phase 'players'.
   FAIL  Seed data: No countries found. Seed data required for phase 'players'.
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  No countries in DB — running country scraper first...
 
 Step 1 — Scraping countries
-  OK   219 countries persisted.
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  OK    DB reachable: Connected successfully.
-  OK    Alembic initialized: alembic_version table found.
-  OK    Alembic revision: DB at revision p14j (>= p11e).
-  OK    Schemas exist: sch_infra and sch_shared found.
-  OK    Tables exist: All 8 tables found for phase 'players'.
-  OK    Seed data: 219 countries found.
-  OK    Stale queue: No stale jobs found.
+  OK  Seed data: 219 countries found.
+  OK  Stale queue: No stale jobs found.
 
   7/7 checks passed
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Step 2 — Scraping players
-  OK   ARG: 5,483 players inserted.
-  OK   ESP: 10,943 players inserted.
+
+Scraping Players and Single player info
+Step 2 — Scraping Players
+RUN  [Crawl-1] [12 | 62/219] DJI: 118 players  
+RUN  [Crawl-2] [12 | 62/219] DEN: 2,358 players
+RUN  [Crawl-3] [13 | 62/219] DOM: 306 players  
+RUN  [Crawl-4] [13 | 62/219] DMA: 136 players  
+RUN  [Crawl-5] [12 | 62/219] CIV: 878 players  
+
+Step 3 — Scraping Single player info
+RUN  [Crawl-1] [41 | 204/48755] Player Name
+RUN  [Crawl-2] [42 | 204/48755] Player Name
+RUN  [Crawl-3] [41 | 204/48755] Player Name
+RUN  [Crawl-4] [39 | 204/48755] Player Name
+RUN  [Crawl-5] [41 | 204/48755] Player Name
 ```
 
 ### Scraping for all players by country
