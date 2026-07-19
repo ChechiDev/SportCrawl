@@ -246,8 +246,8 @@ async def _worker(
                                         await q_repo.mark_failed(job.id, str(exc))
                                         await session.commit()
                                 except Exception as mark_err:
-                                    logger.error(
-                                        "[worker-%d] mark_failed error: %s", worker_id, mark_err  # noqa: E501
+                                    worker_labels[worker_id] = (
+                                        f"mark_failed error: {mark_err}"
                                     )
                                 browser_restart = True
                                 break
@@ -260,22 +260,21 @@ async def _worker(
                                         await q_repo.mark_failed(job.id, str(exc))
                                         await session.commit()
                                 except Exception as mark_err:
-                                    logger.error(
-                                        "[worker-%d] Failed to mark job %d as failed: %s",  # noqa: E501
-                                        worker_id, job.id, mark_err,
+                                    worker_labels[worker_id] = (
+                                        f"FAILED mark job {job.id}: {mark_err}"
                                     )
                             else:
-                                worker_labels[worker_id] = f"WARNING retrying ({attempt}/3)"  # noqa: E501
+                                worker_labels[worker_id] = (
+                                    f"WARNING retrying ({attempt}/3)"
+                                )
                                 await asyncio.sleep(2)
 
                     if browser_restart:
                         break
 
                     if not success:
-                        logger.error(
-                            "[worker-%d] job %d exhausted retries, giving up",
-                            worker_id,
-                            job.id,
+                        worker_labels[worker_id] = (
+                            f"FAILED job {job.id} — exhausted retries"
                         )
 
         except Exception:
