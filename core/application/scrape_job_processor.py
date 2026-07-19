@@ -25,7 +25,7 @@ class _Scraper(Protocol):
 
 class _QueueRepo(Protocol):
     async def mark_done(self, job_id: int) -> None: ...
-    async def mark_failed(self, job_id: int, reason: str) -> None: ...
+    async def mark_failed(self, job_id: int, error: str) -> None: ...
 
 
 class _PlayerInfoRepo(Protocol):
@@ -33,7 +33,7 @@ class _PlayerInfoRepo(Protocol):
         self, raw: PlayerInfoRawData, pos_ids: tuple[int | None, int | None, int | None]
     ) -> None: ...
     async def upsert_photo(self, player_id: str, photo_url: str | None) -> None: ...
-    async def upsert_position(self, code: str) -> int: ...
+    async def upsert_position(self, position_code: str) -> int: ...
 
 
 class ScrapeJobProcessor:
@@ -136,12 +136,17 @@ class ScrapeJobProcessor:
 
         except Exception as exc:
             logger.error(
-                "job %d failed: %s", job.id, exc, exc_info=True
+                "job %d failed: %s", job.id, exc, exc_info=False
             )
             try:
                 await self._queue_repo.mark_failed(job.id, str(exc))
-            except Exception:
-                pass
+            except Exception as mark_err:
+                logger.error(
+                    "Failed to mark job %d as failed: %s",
+                    job.id,
+                    mark_err,
+                    exc_info=False,
+                )
             return None
 
     async def _resolve_positions(

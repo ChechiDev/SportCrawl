@@ -272,15 +272,22 @@ class JobLoop:
                     )
                     await session.rollback()
 
-                    async with self._session_factory() as fail_session:
-                        fail_queue_repo = self._queue_repo_factory(fail_session)
-                        fail_row = await fail_queue_repo.get(row_id)
-                        if fail_row is None:
-                            return
-                        new_status = await fail_queue_repo.mark_failed(
-                            fail_row, str(exc), self._settings.max_queue_retries
+                    try:
+                        async with self._session_factory() as fail_session:
+                            fail_queue_repo = self._queue_repo_factory(fail_session)
+                            fail_row = await fail_queue_repo.get(row_id)
+                            if fail_row is None:
+                                return
+                            new_status = await fail_queue_repo.mark_failed(
+                                fail_row, str(exc), self._settings.max_queue_retries
+                            )
+                            await fail_session.commit()
+                    except Exception as mark_err:
+                        logger.error(
+                            "Failed to mark job %s as failed: %s",
+                            row_id, mark_err, exc_info=False,
                         )
-                        await fail_session.commit()
+                        return
 
                     logger.info(
                         "Job marked failed",
