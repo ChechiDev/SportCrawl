@@ -173,8 +173,8 @@ async def _worker(
         browser_started = False
         try:
             async with PydollEngine(
-                    profile_dir=profile_dir, name=f"Crawl-{worker_id}"
-                ) as engine:
+                profile_dir=profile_dir, name=f"Crawl-{worker_id}"
+            ) as engine:
                 browser_started = True
                 restart_count = 0  # reset on successful start
                 worker_labels[worker_id] = "starting crawl..."

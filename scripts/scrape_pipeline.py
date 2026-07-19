@@ -17,42 +17,16 @@ import argparse
 import asyncio
 import logging
 
-import sqlalchemy as sa
+# Configure logging BEFORE importing scrape_players / scrape_player_info so that
+# their module-level logging.basicConfig calls are no-ops (basicConfig is a no-op
+# when handlers already exist). This ensures all log output routes through the
+# single _console attached to the Rich Live display.
 from rich.console import Console, Group
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from config.settings import Settings
-from infrastructure.persistence.repositories.player_info_queue import (
-    PlayerInfoQueueRepository,
-)
-from infrastructure.persistence.repositories.player_list_queue import (
-    PlayerListQueueRepository,
-)
-from infrastructure.persistence.session import create_session_factory, get_session
-from scripts.scrape_player_info import (
-    _load_country_ids,
-    _load_country_name_cache,
-)
-from scripts.scrape_player_info import (
-    _seed_queue as _seed_player_info_queue,
-)
-from scripts.scrape_player_info import (
-    _worker as _player_info_worker,
-)
-from scripts.scrape_players import (
-    _load_all_countries,
-)
-from scripts.scrape_players import (
-    _seed_queue as _seed_player_list_queue,
-)
-from scripts.scrape_players import (
-    _worker as _player_list_worker,
-)
 
 _console = Console(stderr=True)
 logging.basicConfig(
@@ -70,6 +44,40 @@ logging.basicConfig(
 for _noisy in ("pydoll", "websockets", "asyncio"):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
+
+import sqlalchemy as sa  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E402
+
+from config.settings import Settings  # noqa: E402
+from infrastructure.persistence.repositories.player_info_queue import (  # noqa: E402
+    PlayerInfoQueueRepository,
+)
+from infrastructure.persistence.repositories.player_list_queue import (  # noqa: E402
+    PlayerListQueueRepository,
+)
+from infrastructure.persistence.session import (  # noqa: E402
+    create_session_factory,
+    get_session,
+)
+from scripts.scrape_player_info import (  # noqa: E402
+    _load_country_ids,
+    _load_country_name_cache,
+)
+from scripts.scrape_player_info import (  # noqa: E402
+    _seed_queue as _seed_player_info_queue,
+)
+from scripts.scrape_player_info import (  # noqa: E402
+    _worker as _player_info_worker,
+)
+from scripts.scrape_players import (  # noqa: E402
+    _load_all_countries,
+)
+from scripts.scrape_players import (  # noqa: E402
+    _seed_queue as _seed_player_list_queue,
+)
+from scripts.scrape_players import (  # noqa: E402
+    _worker as _player_list_worker,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +190,23 @@ async def _display_loop(
 # ---------------------------------------------------------------------------
 
 
+async def _player_info_reseeder(
+    session_factory: async_sessionmaker[AsyncSession],
+    step2_done: asyncio.Event,
+) -> None:
+    """Re-seed player_info queue every 30s while step 2 is still running.
+
+    Step 2 continuously adds new players to tbl_players. Without periodic
+    re-seeding, step 3 workers exhaust the initial seed and stall waiting for
+    step 2 to finish even though new jobs are available.
+    """
+    while not step2_done.is_set():
+        await asyncio.sleep(30)
+        await _seed_player_info_queue(session_factory)
+    # Final seed after step 2 completes so no player is missed.
+    await _seed_player_info_queue(session_factory)
+
+
 async def _trigger_watcher(
     session_factory: async_sessionmaker[AsyncSession],
     trigger_count: int,
@@ -211,7 +236,6 @@ async def _trigger_watcher(
             return
 
         await asyncio.sleep(poll_interval)
-
 
 
 # ---------------------------------------------------------------------------
@@ -356,11 +380,16 @@ async def main(
             result = await session.execute(
                 sa.text(
                     "SELECT count(*) FROM sch_infra.scrape_queue"
-                    " WHERE job_type='player_info' AND status='PENDING'"
+                    " WHERE job_type='player_info'"
                 )
             )
-            s3_pending = int(result.scalar() or 0)
-        s3_total = s3_already_done + s3_pending
+            s3_total_ref[0] = int(result.scalar() or 0)
+
+        # Re-seed every 30s so step 3 workers pick up players added by step 2
+        # while it is still running (without this, workers stall on empty queue).
+        reseeder_task = asyncio.create_task(
+            _player_info_reseeder(session_factory, step2_done)
+        )
 
         # --- Step 3 workers — run concurrently with remaining step 2 work ---
         s3_tasks = [
@@ -382,9 +411,10 @@ async def main(
             for i in range(workers)
         ]
 
-        # Wait for step 2, signal done, then wait for step 3
+        # Wait for step 2, signal done, let reseeder do its final seed, drain step 3
         s2_results = await asyncio.gather(*s2_tasks, return_exceptions=True)
         step2_done.set()
+        await reseeder_task  # waits for final seed after step2_done is set
         s3_results = await asyncio.gather(*s3_tasks, return_exceptions=True)
 
         trigger_task.cancel()
@@ -404,9 +434,9 @@ async def main(
 def run() -> None:
     parser = argparse.ArgumentParser(
         description=(
-        "Pipeline: scrape players (step 2) then player info (step 3) "
-        "concurrently."
-    )
+            "Pipeline: scrape players (step 2) then player info (step 3) "
+            "concurrently."
+        )
     )
     parser.add_argument(
         "--workers",

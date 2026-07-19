@@ -85,7 +85,7 @@ class _XvfbManager:
                 stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
-            logger.warning(
+            logger.debug(
                 "Xvfb not found — Chrome will use existing DISPLAY or run headless"
             )
             return
@@ -169,12 +169,13 @@ class PydollEngine(ScrapingEngine):
             # Required on Linux/WSL2 — Chrome sandbox needs kernel namespaces
             opts.add_argument("--no-sandbox")
             opts.add_argument("--disable-dev-shm-usage")
+            opts.add_argument("--log-level=3")
 
             if _EXTENSION_PATH.exists():
                 opts.add_argument(f"--load-extension={_EXTENSION_PATH}")
                 logger.debug("[%s] Chrome extension loaded successfully", self._name)
             else:
-                logger.warning("Chrome extension not found at %s", _EXTENSION_PATH)
+                logger.debug("Chrome extension not found at %s", _EXTENSION_PATH)
 
             self._browser = Chrome(options=opts)
             self._tab = await self._browser.start()

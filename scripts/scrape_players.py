@@ -213,52 +213,55 @@ async def _worker(
                         else job.url
                     )
 
-                    try:
-                        async with fetch_gate:
-                            page, _ = await scraper.scrape(job.url)
+                    from pydoll.exceptions import BrowserException as _BrowserException
 
-                        async with get_session(session_factory) as session:
-                            await PlayerListQueueRepository(session).mark_done(job.id)
-                            await session.commit()
-
-                        processed += 1
-                        worker_counts[worker_id] = processed
-                        total_players = len(page.players)
-                        worker_labels[worker_id] = f"{country_code}: {total_players:,} players"  # noqa: E501
-
-                    except Exception as exc:
-                        from pydoll.exceptions import (
-                            BrowserException as _BrowserException,
-                        )
-                        if isinstance(exc, _BrowserException):
-                            worker_labels[worker_id] = "browser error — restarting"
-                            try:
-                                async with get_session(session_factory) as session:
-                                    await PlayerListQueueRepository(
-                        session
-                    ).mark_failed(
-                                        job.id, str(exc)
-                                    )
-                                    await session.commit()
-                            except Exception as mark_err:
-                                logger.error(
-                                    "[worker-%d] mark_failed error: %s", worker_id, mark_err  # noqa: E501
-                                )
-                            break
-                        worker_labels[worker_id] = f"FAILED job {job.id} — {exc}"
+                    max_attempts = 3
+                    browser_restart = False
+                    for attempt in range(1, max_attempts + 1):
                         try:
+                            async with fetch_gate:
+                                page, _ = await scraper.scrape(job.url)
+
                             async with get_session(session_factory) as session:
-                                await PlayerListQueueRepository(
-                        session
-                    ).mark_failed(
-                                    job.id, str(exc)
-                                )
+                                repo = PlayerListQueueRepository(session)
+                                await repo.mark_done(job.id)
                                 await session.commit()
-                        except Exception as mark_err:
-                            logger.error(
-                                "[worker-%d] Failed to mark job %d as failed: %s",
-                                worker_id, job.id, mark_err, exc_info=False,
-                            )
+
+                            processed += 1
+                            worker_counts[worker_id] = processed
+                            total_players = len(page.players)
+                            worker_labels[worker_id] = f"{country_code}: {total_players:,} players"  # noqa: E501
+                            break
+
+                        except Exception as exc:
+                            if isinstance(exc, _BrowserException):
+                                worker_labels[worker_id] = "browser error — restarting"
+                                try:
+                                    async with get_session(session_factory) as session:
+                                        repo = PlayerListQueueRepository(session)
+                                        await repo.mark_failed(job.id, str(exc))
+                                        await session.commit()
+                                except Exception:
+                                    pass
+                                browser_restart = True
+                                break
+
+                            if attempt < max_attempts:
+                                lbl = f"RETRY {attempt}/{max_attempts} — {country_code}"
+                                worker_labels[worker_id] = lbl
+                                await asyncio.sleep(2)
+                            else:
+                                try:
+                                    async with get_session(session_factory) as session:
+                                        repo = PlayerListQueueRepository(session)
+                                        await repo.mark_failed(job.id, str(exc))
+                                        await session.commit()
+                                except Exception:
+                                    pass
+                                worker_labels[worker_id] = f"FAILED — {country_code}"
+
+                    if browser_restart:
+                        break
 
         except Exception:
             if not browser_started:
