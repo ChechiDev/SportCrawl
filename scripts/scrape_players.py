@@ -38,8 +38,17 @@ _console = Console(stderr=True)
 logging.basicConfig(
     level=logging.WARNING,
     format="%(message)s",
-    handlers=[RichHandler(console=_console, show_time=False, show_path=False)],
+    handlers=[
+        RichHandler(
+            console=_console,
+            show_time=False,
+            show_path=False,
+            rich_tracebacks=False,
+        ),
+    ],
 )
+for _noisy in ("pydoll", "websockets", "asyncio"):
+    logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
 _FBREF_BASE = "https://fbref.com"
@@ -177,44 +186,93 @@ async def _worker(
     profile_dir = f"{profile_base}-player-list-{worker_id}"
     processed = 0
 
-    async with PydollEngine(
-        profile_dir=profile_dir, name=f"PlayerList-{worker_id}"
-    ) as engine:
-        scraper = PlayerListScraper(engine, settings.scraping, session_factory)
+    max_restarts = 5
+    restart_count = 0
+    while True:
+        browser_started = False
+        try:
+            async with PydollEngine(
+                profile_dir=profile_dir, name=f"PlayerList-{worker_id}"
+            ) as engine:
+                browser_started = True
+                restart_count = 0  # reset on successful start
+                scraper = PlayerListScraper(engine, settings.scraping, session_factory)
 
-        while True:
-            async with get_session(session_factory) as session:
-                job = await PlayerListQueueRepository(session).claim_next()
-                await session.commit()
+                while True:
+                    async with get_session(session_factory) as session:
+                        job = await PlayerListQueueRepository(session).claim_next()
+                        await session.commit()
 
-            if job is None:
-                break
+                    if job is None:
+                        return processed
 
-            country_match = _COUNTRY_CODE_RE.search(job.url)
-            country_code = country_match.group(1).upper() if country_match else job.url
-
-            try:
-                async with fetch_gate:
-                    page, _ = await scraper.scrape(job.url)
-
-                async with get_session(session_factory) as session:
-                    await PlayerListQueueRepository(session).mark_done(job.id)
-                    await session.commit()
-
-                processed += 1
-                worker_counts[worker_id] = processed
-                total_players = len(page.players)
-                worker_labels[worker_id] = f"{country_code}: {total_players:,} players"
-
-            except Exception as exc:
-                worker_labels[worker_id] = f"FAILED job {job.id} — {exc}"
-                async with get_session(session_factory) as session:
-                    await PlayerListQueueRepository(session).mark_failed(
-                        job.id, str(exc)
+                    country_match = _COUNTRY_CODE_RE.search(job.url)
+                    country_code = (
+                        country_match.group(1).upper()
+                        if country_match
+                        else job.url
                     )
-                    await session.commit()
 
-    return processed
+                    try:
+                        async with fetch_gate:
+                            page, _ = await scraper.scrape(job.url)
+
+                        async with get_session(session_factory) as session:
+                            await PlayerListQueueRepository(session).mark_done(job.id)
+                            await session.commit()
+
+                        processed += 1
+                        worker_counts[worker_id] = processed
+                        total_players = len(page.players)
+                        worker_labels[worker_id] = f"{country_code}: {total_players:,} players"  # noqa: E501
+
+                    except Exception as exc:
+                        from pydoll.exceptions import (
+                            BrowserException as _BrowserException,
+                        )
+                        if isinstance(exc, _BrowserException):
+                            worker_labels[worker_id] = "browser error — restarting"
+                            try:
+                                async with get_session(session_factory) as session:
+                                    await PlayerListQueueRepository(
+                        session
+                    ).mark_failed(
+                                        job.id, str(exc)
+                                    )
+                                    await session.commit()
+                            except Exception as mark_err:
+                                logger.error(
+                                    "[worker-%d] mark_failed error: %s", worker_id, mark_err  # noqa: E501
+                                )
+                            break
+                        worker_labels[worker_id] = f"FAILED job {job.id} — {exc}"
+                        try:
+                            async with get_session(session_factory) as session:
+                                await PlayerListQueueRepository(
+                        session
+                    ).mark_failed(
+                                    job.id, str(exc)
+                                )
+                                await session.commit()
+                        except Exception as mark_err:
+                            logger.error(
+                                "[worker-%d] Failed to mark job %d as failed: %s",
+                                worker_id, job.id, mark_err, exc_info=False,
+                            )
+
+        except Exception:
+            if not browser_started:
+                restart_count += 1
+                if restart_count >= max_restarts:
+                    worker_labels[worker_id] = "browser failed — giving up"
+                    return processed
+                msg = f"browser start failed — retry {restart_count}/{max_restarts}"
+                worker_labels[worker_id] = msg
+                await asyncio.sleep(10)
+                continue
+            worker_labels[worker_id] = "unexpected error — restarting"
+            await asyncio.sleep(5)
+            continue
 
 
 async def scrape_one(scraper: PlayerListScraper, url: str) -> int:

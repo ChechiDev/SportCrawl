@@ -88,6 +88,12 @@ class ScrapeQueue(Base):
     __table_args__ = (
         UniqueConstraint("url", "job_type", name="uq_scrape_queue_url_job_type"),
         Index("ix_scrape_queue_domain_status", "domain", "status"),
+        Index(
+            "ix_scrape_queue_pending_job_type",
+            "job_type",
+            "id",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
         {"schema": "sch_infra"},
     )
 

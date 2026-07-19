@@ -179,6 +179,65 @@ class PydollEngine(ScrapingEngine):
             self._browser = Chrome(options=opts)
             self._tab = await self._browser.start()
 
+    async def navigate(self, url: str) -> None:
+        """Navigate the browser tab to *url* without waiting for a challenge.
+
+        Intended to be called under a fetch gate so only the network request is
+        serialized.  Call wait_for_challenge() afterwards (outside the gate) to
+        poll until Cloudflare's JS challenge resolves.
+
+        Raises:
+            PageLoadError: If CDP navigation fails.
+        """
+        await self._ensure_browser()
+        tab = self._tab
+        try:
+            await tab.go_to(url)
+        except KeyError as exc:
+            raise PageLoadError(
+                f"CDP navigation response missing expected key for {url}: {exc}",
+                url=url,
+                cause=exc,
+            ) from exc
+        except (PydollException, OSError, ConnectionError) as exc:
+            browser = self._browser
+            if browser is not None:
+                try:
+                    await browser.stop()  # type: ignore[no-untyped-call]
+                except Exception as stop_exc:
+                    logger.debug(
+                        "browser.stop() raised during error cleanup: %s", stop_exc
+                    )
+            self._browser = None
+            self._tab = None
+            raise PageLoadError(
+                f"Failed to navigate to {url}: {exc}", url=url, cause=exc
+            ) from exc
+
+    async def wait_for_challenge(self, url: str) -> str:
+        """Poll page_source until the Cloudflare challenge resolves.
+
+        Must be called after navigate().  Runs outside the fetch gate so the
+        120-second polling window does not block other workers.
+
+        Returns:
+            The HTML source of the fully-loaded destination page.
+
+        Raises:
+            PageLoadError: If the challenge does not resolve within the timeout,
+                or if the tab is not available.
+            RateLimitError: If the resolved page signals rate limiting.
+        """
+        if self._tab is None:
+            raise PageLoadError("No active tab — call navigate() first", url=url)
+        content: str = await self._wait_for_challenge(self._tab, url)
+        if (
+            "too many requests" in content.lower()
+            or "rate limit" in content.lower()
+        ):
+            raise RateLimitError(f"Rate limit detected at {url}", url=url)
+        return content
+
     async def _wait_for_challenge(self, tab: Any, url: str) -> str:
         """Poll page_source until the Cloudflare challenge resolves.
 

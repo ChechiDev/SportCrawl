@@ -63,6 +63,26 @@ def scrape_players(
         raise typer.Exit(code=1)
 
 
+@app.command("pipeline")
+def pipeline(
+    workers: int = typer.Option(
+        1, "--workers", "-w",
+        help="Number of parallel workers per step (default: 1).",
+    ),
+    trigger_count: int = typer.Option(
+        100, "--trigger-count",
+        help="Minimum players in DB before Step 3 starts (default: 100).",
+    ),
+) -> None:
+    """Run Step 2 (players) and Step 3 (player info) concurrently."""
+    from scripts.scrape_pipeline import main as pipeline_main
+
+    asyncio.run(pipeline_main(
+        workers=workers,
+        trigger_count=trigger_count,
+    ))
+
+
 @app.command("reset")
 def reset_db(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),

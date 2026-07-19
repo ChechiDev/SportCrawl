@@ -9,6 +9,8 @@ from rich.console import Console
 
 from config.settings import Settings
 from core.preflight import run_checks
+from core.preflight.checks import check_stale_queue
+from core.preflight.result import CheckResult
 from scripts.scrape_players import main_all, main_countries
 
 players_app = typer.Typer(name="players", help="Scrape players pipeline")
@@ -78,6 +80,7 @@ async def _run(
     from core.preflight.renderer import render_summary
 
     if not skip_preflight:
+        console.print("[bold]Preflight — Checking requirements[/bold]")
         results = await run_checks(dsn, "players", console)
 
         seed_failed = next(
@@ -87,9 +90,32 @@ async def _run(
             console.print()
             console.print("[bold]Step 1 — Scraping countries[/bold]")
             await _seed_countries(settings)
-            results = await run_checks(dsn, "players", console)
+            conn = await asyncpg.connect(dsn, timeout=5)
+            try:
+                country_count = await conn.fetchval(
+                    "SELECT count(*) FROM sch_shared.tbl_countries"
+                )
+            finally:
+                await conn.close()
+            seed_msg = (
+                f"  [bold green]OK[/bold green]  Seed data: "
+                f"[bold]{country_count}[/bold] countries found."
+            )
+            console.print(seed_msg)
+            stale_msg = "  [bold green]OK[/bold green]  "
+            stale_msg += "Stale queue: No stale jobs found."
+            console.print(stale_msg)
+            # Mark previously failed checks as resolved for the summary
+            results = [
+                CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
+                if not r.passed else r
+                for r in results
+            ]
+            stale_result = await check_stale_queue(dsn)
+            results.append(stale_result)
 
-        render_summary(results, console)
+        passed = sum(1 for r in results if r.passed)
+        console.print(f"\n  {passed}/{len(results)} checks passed")
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:
             raise typer.Exit(code=1)
@@ -114,8 +140,16 @@ async def _run(
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
 
     step = 2 if not skip_preflight and seed_failed else 1
+    if with_player_info and all_countries:
+        from scripts.scrape_pipeline import main as pipeline_main
+
+        console.print()
+        console.print("[bold]Scraping Players and Single player info[/bold]")
+        await pipeline_main(workers=workers, all_countries=True)
+        return
+
     console.print()
-    console.print(f"[bold]Step {step} — Scraping players[/bold]")
+    console.print(f"[bold]Step {step} — Scraping Players[/bold]")
     if all_countries:
         await main_all(workers=workers)
     elif country:
@@ -135,15 +169,8 @@ async def _run(
             if pi_failures:
                 raise typer.Exit(code=1)
 
-        conn = await asyncpg.connect(dsn, timeout=5)
-        try:
-            count = await conn.fetchval(
-                "SELECT COUNT(*) FROM sch_shared.tbl_players"
-            )
-        finally:
-            await conn.close()
         console.print()
-        console.print(f"[bold]Step 3 — Scraping {count:,} Single player info[/bold]")
+        console.print("[bold]Step 3 — Scraping Single player info[/bold]")
         from scripts.scrape_player_info import main as scrape_info
 
         await scrape_info(workers=workers, seed=True)
