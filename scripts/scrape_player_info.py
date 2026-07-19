@@ -106,8 +106,8 @@ def _build_table(
     for i in range(1, num_workers + 1):
         own = worker_counts.get(i, 0)
         label = worker_labels.get(i, "starting crawl...")
-        row = f"[Crawl-{i}] [{own} | {total_str}] {label}"
-        table.add_row("RUN", escape(row))
+        base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
+        table.add_row("RUN", base + label)
     return Group(table)
 
 
@@ -232,14 +232,16 @@ async def _worker(
                             processed += 1
                             worker_counts[worker_id] = processed
                             full_name = result[0] if result else "unknown"
-                            worker_labels[worker_id] = full_name
+                            worker_labels[worker_id] = escape(full_name or "unknown")
 
                         except (
                             PageLoadError, RateLimitError, BrowserException, RuntimeError  # noqa: E501
                         ) as exc:
                             attempt += 1
                             if isinstance(exc, BrowserException):
-                                worker_labels[worker_id] = "browser error — restarting"
+                                worker_labels[worker_id] = (
+                                    "[bold red]browser error — restarting[/bold red]"
+                                )
                                 try:
                                     async with get_session(session_factory) as session:
                                         q_repo = PlayerInfoQueueRepository(session)
@@ -247,13 +249,17 @@ async def _worker(
                                         await session.commit()
                                 except Exception as mark_err:
                                     worker_labels[worker_id] = (
-                                        f"mark_failed error: {mark_err}"
+                                        "[bold red]mark_failed error: "
+                                        f"{escape(str(mark_err))}[/bold red]"
                                     )
                                 browser_restart = True
                                 break
                             is_terminal = attempt >= 3
                             if is_terminal:
-                                worker_labels[worker_id] = f"FAILED job {job.id} — {exc}"  # noqa: E501
+                                worker_labels[worker_id] = (
+                                    f"[bold red]FAILED job {job.id}"
+                                    f" — {escape(str(exc))}[/bold red]"
+                                )
                                 try:
                                     async with get_session(session_factory) as session:
                                         q_repo = PlayerInfoQueueRepository(session)
@@ -261,11 +267,13 @@ async def _worker(
                                         await session.commit()
                                 except Exception as mark_err:
                                     worker_labels[worker_id] = (
-                                        f"FAILED mark job {job.id}: {mark_err}"
+                                        f"[bold red]FAILED mark job {job.id}: "
+                                        f"{escape(str(mark_err))}[/bold red]"
                                     )
                             else:
                                 worker_labels[worker_id] = (
-                                    f"WARNING retrying ({attempt}/3)"
+                                    "[bold orange1]WARNING retrying"
+                                    f" ({attempt}/3)[/bold orange1]"
                                 )
                                 await asyncio.sleep(2)
 
@@ -274,20 +282,28 @@ async def _worker(
 
                     if not success:
                         worker_labels[worker_id] = (
-                            f"FAILED job {job.id} — exhausted retries"
+                            f"[bold red]FAILED job {job.id}"
+                            " — exhausted retries[/bold red]"
                         )
 
         except Exception:
             if not browser_started:
                 restart_count += 1
                 if restart_count >= max_restarts:
-                    worker_labels[worker_id] = "browser failed — giving up"
+                    worker_labels[worker_id] = (
+                        "[bold red]browser failed — giving up[/bold red]"
+                    )
                     return processed
-                msg = f"browser start failed — retry {restart_count}/{max_restarts}"
+                msg = (
+                    "[bold red]browser start failed"
+                    f" — retry {restart_count}/{max_restarts}[/bold red]"
+                )
                 worker_labels[worker_id] = msg
                 await asyncio.sleep(10)
                 continue
-            worker_labels[worker_id] = "unexpected error — restarting"
+            worker_labels[worker_id] = (
+                "[bold red]unexpected error — restarting[/bold red]"
+            )
             await asyncio.sleep(5)
             continue
 
