@@ -16,11 +16,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import time
 
 import sqlalchemy as sa
 from rich.console import Console, Group
 from rich.live import Live
-from rich.logging import RichHandler
 from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
@@ -44,17 +44,49 @@ from scripts.scrape_players import _worker as _player_list_worker
 # force=True resets any handlers set by scrape_players / scrape_player_info at
 # import time so all log output routes through the single Live-display console.
 _console = Console(stderr=True)
+
+
+class _NotificationBuffer:
+    """Thread-safe store for log messages with a TTL (default 5 s).
+
+    Messages older than *ttl* seconds are silently dropped on the next read.
+    """
+
+    def __init__(self, ttl: float = 5.0) -> None:
+        self._entries: list[tuple[float, str]] = []
+        self._ttl = ttl
+
+    def add(self, msg: str) -> None:
+        self._entries.append((time.monotonic(), msg))
+
+    def active(self) -> list[str]:
+        now = time.monotonic()
+        self._entries = [(t, m) for t, m in self._entries if now - t < self._ttl]
+        return [m for _, m in self._entries]
+
+
+class _BufferHandler(logging.Handler):
+    """Logging handler that routes records into a _NotificationBuffer."""
+
+    def __init__(self, buf: _NotificationBuffer) -> None:
+        super().__init__()
+        self._buf = buf
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._buf.add(self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
+_notifications = _NotificationBuffer(ttl=5.0)
+
+_buf_handler = _BufferHandler(_notifications)
+_buf_handler.setFormatter(logging.Formatter("%(levelname)s  %(message)s"))
+
 logging.basicConfig(
     level=logging.WARNING,
-    format="%(message)s",
-    handlers=[
-        RichHandler(
-            console=_console,
-            show_time=False,
-            show_path=False,
-            rich_tracebacks=False,
-        )
-    ],
+    handlers=[_buf_handler],
     force=True,
 )
 for _noisy in ("pydoll", "websockets", "asyncio"):
@@ -106,6 +138,12 @@ def _build_unified_display(
         ("3", "bold cyan"),
         (f" — Scraping Single player info{s3_suffix}", "bold"),
     )
+    # --- Notifications (TTL 5 s) ---
+    notes = _notifications.active()
+    note_renderables: list[Text] = [
+        Text(f"  {msg}", style="dim yellow") for msg in notes
+    ]
+
     if s3_ready:
         s3_table = Table.grid(padding=(0, 2))
         s3_table.add_column(style="bold green")
@@ -115,8 +153,18 @@ def _build_unified_display(
             label = s3_labels.get(i, "Starting crawl...")
             base = escape(f"[Crawl-{i}] [{own} | {s3_total_str}] ")
             s3_table.add_row("RUN", base + label)
+        if note_renderables:
+            return Group(
+                s2_header, s2_table, Text(""), s3_header, s3_table,
+                Text(""), *note_renderables,
+            )
         return Group(s2_header, s2_table, Text(""), s3_header, s3_table)
 
+    if note_renderables:
+        return Group(
+            s2_header, s2_table, Text(""), s3_header,
+            Text(""), *note_renderables,
+        )
     return Group(s2_header, s2_table, Text(""), s3_header)
 
 
