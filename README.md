@@ -136,7 +136,7 @@ The `--with-player-info` flag runs the player list scrape first, then automatica
 
 
 <details>
-<summary><h3>Scraping usage examples</h3></summary>
+<summary><h3>Scraping usage example</h3></summary>
 
 ### Scraping by country
 
@@ -172,38 +172,6 @@ RUN  [Crawl-4] [39 | 204/48755] Player Name
 RUN  [Crawl-5] [41 | 204/48755] Player Name
 ```
 
-### Scraping for all players by country
-
-```bash
-❯ uv run sportcrawl players start --all --workers 3
-  OK    DB reachable: Connected successfully.
-  OK    Alembic initialized: alembic_version table found.
-  OK    Alembic revision: DB at revision p14j (>= p11e).
-  OK    Schemas exist: sch_infra and sch_shared found.
-  OK    Tables exist: All 8 tables found for phase 'players'.
-  FAIL  Seed data: No countries found. Seed data required for phase 'players'.
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  No countries in DB — running country scraper first...
-
-Step 1 — Scraping countries
-  OK   219 countries persisted.
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  OK    DB reachable: Connected successfully.
-  OK    Alembic initialized: alembic_version table found.
-  OK    Alembic revision: DB at revision p14j (>= p11e).
-  OK    Schemas exist: sch_infra and sch_shared found.
-  OK    Tables exist: All 8 tables found for phase 'players'.
-  OK    Seed data: 219 countries found.
-  OK    Stale queue: No stale jobs found.
-
-  7/7 checks passed
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Step 2 — Scraping players
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-RUN  [Crawl-1] [4/219] ASA 55 players 
-RUN  [Crawl-2] [3/219] ALB 599 players
-RUN  [Crawl-3] [2/219] ALG 579 players
-```
 </details>
 
 ## Reset Database
