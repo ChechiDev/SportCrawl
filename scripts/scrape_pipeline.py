@@ -92,7 +92,7 @@ def _build_unified_display(
     s2_table.add_column()
     for i in range(1, s2_workers + 1):
         own = s2_counts.get(i, 0)
-        label = s2_labels.get(i, "starting crawl...")
+        label = s2_labels.get(i, "Starting crawl...")
         base = escape(f"[Crawl-{i}] [{own} | {s2_total_str}] ")
         s2_table.add_row("RUN", base + label)
 
@@ -112,7 +112,7 @@ def _build_unified_display(
         s3_table.add_column()
         for i in range(1, s3_workers + 1):
             own = s3_counts.get(i, 0)
-            label = s3_labels.get(i, "starting crawl...")
+            label = s3_labels.get(i, "Starting crawl...")
             base = escape(f"[Crawl-{i}] [{own} | {s3_total_str}] ")
             s3_table.add_row("RUN", base + label)
         return Group(s2_header, s2_table, Text(""), s3_header, s3_table)

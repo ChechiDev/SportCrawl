@@ -78,7 +78,7 @@ def _build_table(
     table.add_column()
     for i in range(1, num_workers + 1):
         own = worker_counts.get(i, 0)
-        label = worker_labels.get(i, "starting crawl...")
+        label = worker_labels.get(i, "Starting crawl...")
         base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
         table.add_row("RUN", base + label)
     return Group(table)
@@ -236,7 +236,7 @@ async def _worker(
                         except Exception as exc:
                             if isinstance(exc, _BrowserException):
                                 worker_labels[worker_id] = (
-                                    "[bold red]browser error — restarting[/bold red]"
+                                    "[bold red]BROWSER ERROR — restarting[/bold red]"
                                 )
                                 try:
                                     async with get_session(session_factory) as session:
@@ -275,18 +275,18 @@ async def _worker(
                 restart_count += 1
                 if restart_count >= max_restarts:
                     worker_labels[worker_id] = (
-                        "[bold red]browser failed — giving up[/bold red]"
+                        "[bold red]BROWSER FAILED — giving up[/bold red]"
                     )
                     return processed
                 msg = (
-                    f"[bold red]browser start failed"
+                    f"[bold red]BROWSER START FAILED"
                     f" — retry {restart_count}/{max_restarts}[/bold red]"
                 )
                 worker_labels[worker_id] = msg
                 await asyncio.sleep(10)
                 continue
             worker_labels[worker_id] = (
-                "[bold red]unexpected error — restarting[/bold red]"
+                "[bold red]UNEXPECTED ERROR — restarting[/bold red]"
             )
             await asyncio.sleep(5)
             continue

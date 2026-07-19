@@ -105,7 +105,7 @@ def _build_table(
     table.add_column()
     for i in range(1, num_workers + 1):
         own = worker_counts.get(i, 0)
-        label = worker_labels.get(i, "starting crawl...")
+        label = worker_labels.get(i, "Starting crawl...")
         base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
         table.add_row("RUN", base + label)
     return Group(table)
@@ -162,7 +162,7 @@ async def _worker(
     processed = 0
 
     startup_delay = random.uniform(3.0, 15.0)
-    worker_labels[worker_id] = f"waiting {startup_delay:.1f}s before start..."
+    worker_labels[worker_id] = f"Waiting {startup_delay:.1f}s before start..."
     await asyncio.sleep(startup_delay)
 
     profile_dir = f"{chrome_profile_base}-{worker_id}"
@@ -177,7 +177,7 @@ async def _worker(
             ) as engine:
                 browser_started = True
                 restart_count = 0  # reset on successful start
-                worker_labels[worker_id] = "starting crawl..."
+                worker_labels[worker_id] = "Starting crawl..."
 
                 while True:
                     async with get_session(session_factory) as session:
@@ -188,7 +188,7 @@ async def _worker(
                     if job is None:
                         if step2_done is None or step2_done.is_set():
                             return processed
-                        worker_labels[worker_id] = "waiting for step 2..."
+                        worker_labels[worker_id] = "Waiting for step 2..."
                         await asyncio.sleep(10)
                         continue
 
@@ -240,7 +240,7 @@ async def _worker(
                             attempt += 1
                             if isinstance(exc, BrowserException):
                                 worker_labels[worker_id] = (
-                                    "[bold red]browser error — restarting[/bold red]"
+                                    "[bold red]BROWSER ERROR — restarting[/bold red]"
                                 )
                                 try:
                                     async with get_session(session_factory) as session:
@@ -272,7 +272,7 @@ async def _worker(
                                     )
                             else:
                                 worker_labels[worker_id] = (
-                                    "[bold orange1]WARNING retrying"
+                                    "[bold orange1]WARNING — retrying"
                                     f" ({attempt}/3)[/bold orange1]"
                                 )
                                 await asyncio.sleep(2)
@@ -291,18 +291,18 @@ async def _worker(
                 restart_count += 1
                 if restart_count >= max_restarts:
                     worker_labels[worker_id] = (
-                        "[bold red]browser failed — giving up[/bold red]"
+                        "[bold red]BROWSER FAILED — giving up[/bold red]"
                     )
                     return processed
                 msg = (
-                    "[bold red]browser start failed"
+                    "[bold red]BROWSER START FAILED"
                     f" — retry {restart_count}/{max_restarts}[/bold red]"
                 )
                 worker_labels[worker_id] = msg
                 await asyncio.sleep(10)
                 continue
             worker_labels[worker_id] = (
-                "[bold red]unexpected error — restarting[/bold red]"
+                "[bold red]UNEXPECTED ERROR — restarting[/bold red]"
             )
             await asyncio.sleep(5)
             continue
