@@ -137,7 +137,8 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
             for attempt in range(1, max_attempts + 1):
                 try:
                     async with self._fetch_gate:
-                        page, _ = await self._scraper.scrape(job.url)  # type: ignore[union-attr]
+                        scraper = self._scraper  # type: ignore[union-attr]
+                        page, _ = await scraper.scrape(job.url)
 
                     async with get_session(self._session_factory) as session:
                         repo = PlayerListQueueRepository(session)
