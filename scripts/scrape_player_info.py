@@ -12,6 +12,7 @@ import asyncio
 import logging
 import random
 import time
+from typing import Any
 
 import sqlalchemy as sa
 from pydoll.exceptions import BrowserException
@@ -98,7 +99,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
     def __init__(
         self,
         worker_id: int,
-        session_factory: async_sessionmaker,
+        session_factory: async_sessionmaker[AsyncSession],
         fetch_gate: asyncio.Semaphore,
         profile_base: str,
         worker_labels: dict[int, str],
@@ -131,12 +132,15 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
     def engine_name(self) -> str:
         return f"Crawl-{self._worker_id}"
 
+    def _build_engine(self) -> PydollEngine:
+        return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
+
     async def startup_delay(self) -> None:
         delay = random.uniform(3.0, 15.0)
         self._labels[self._worker_id] = f"Waiting {delay:.1f}s before start..."
         await asyncio.sleep(delay)
 
-    async def run_claim_loop(self, engine: PydollEngine) -> bool:
+    async def run_claim_loop(self, engine: Any) -> bool:
         """Process player_info jobs for one browser session.
 
         Returns True when queue is empty and step2 is done (stop).
@@ -231,7 +235,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                                 self._worker_id, job.id, mark_err,
                             )
                     else:
-                        self._labels[self._worker_id] = f"warning — retrying ({attempt}/3)"
+                        self._labels[self._worker_id] = (
+                            f"warning — retrying ({attempt}/3)"
+                        )
                         await asyncio.sleep(2)
 
             if browser_restart:

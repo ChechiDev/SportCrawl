@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import logging
 import re
+from typing import Any
 
 import sqlalchemy as sa
 from rich.console import Console
@@ -70,7 +71,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
     def __init__(
         self,
         worker_id: int,
-        session_factory: async_sessionmaker,
+        session_factory: async_sessionmaker[AsyncSession],
         fetch_gate: asyncio.Semaphore,
         profile_base: str,
         worker_labels: dict[int, str],
@@ -98,12 +99,15 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
     def engine_name(self) -> str:
         return f"PlayerList-{self._worker_id}"
 
-    async def on_browser_ready(self, engine: PydollEngine) -> None:
+    def _build_engine(self) -> PydollEngine:
+        return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
+
+    async def on_browser_ready(self, engine: Any) -> None:
         self._scraper = PlayerListScraper(
             engine, self._settings.scraping, self._session_factory
         )
 
-    async def run_claim_loop(self, engine: PydollEngine) -> bool:  # noqa: ARG002
+    async def run_claim_loop(self, engine: Any) -> bool:  # noqa: ARG002
         """Drain player_list jobs for one browser session.
 
         Returns True when queue is empty (stop), False on BrowserException (restart).
@@ -193,7 +197,7 @@ def _players_url(country_url: str) -> str:
 async def _load_all_countries(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> list[tuple[str, str, str]]:
-    """Return (country_id, player_list_url, country_name) for every country in the DB."""
+    """Return (country_id, player_list_url, country_name) for every country."""
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.select(Country.country_id, Country.country_url, Country.country_name)
@@ -286,7 +290,10 @@ async def main_all(workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_infra.scrape_queue WHERE job_type='player_list' AND status='DONE'")
+            sa.text(
+                "SELECT count(*) FROM sch_infra.scrape_queue"
+                " WHERE job_type='player_list' AND status='DONE'"
+            )
         )
         initial_db_count = int(result.scalar() or 0)
 
@@ -300,7 +307,9 @@ async def main_all(workers: int = 1) -> None:
     stop_event = asyncio.Event()
 
     with Live(
-        build_worker_table(worker_labels, worker_counts, workers, initial_db_count, total),
+        build_worker_table(
+            worker_labels, worker_counts, workers, initial_db_count, total
+        ),
         console=_console,
         refresh_per_second=2,
     ) as live:
@@ -349,7 +358,9 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
                 Country.country_id.in_(upper_codes)
             )
         )
-        code_to_name: dict[str, str] = {row.country_id: row.country_name for row in result}
+        code_to_name: dict[str, str] = {
+            row.country_id: row.country_name for row in result
+        }
 
     countries = [
         (code, _BASE_URL.format(code=code), code_to_name.get(code, code))
@@ -371,7 +382,10 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_infra.scrape_queue WHERE job_type='player_list' AND status='DONE'")
+            sa.text(
+                "SELECT count(*) FROM sch_infra.scrape_queue"
+                " WHERE job_type='player_list' AND status='DONE'"
+            )
         )
         initial_db_count = int(result.scalar() or 0)
 
@@ -384,7 +398,9 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     stop_event = asyncio.Event()
 
     with Live(
-        build_worker_table(worker_labels, worker_counts, workers, initial_db_count, total),
+        build_worker_table(
+            worker_labels, worker_counts, workers, initial_db_count, total
+        ),
         console=_console,
         refresh_per_second=2,
     ) as live:

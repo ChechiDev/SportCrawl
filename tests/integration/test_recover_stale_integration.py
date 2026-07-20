@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.repositories.scrape_queue import (
     ScrapeQueueJobRepository as ScrapeQueueRepository,
+)
+from infrastructure.persistence.repositories.scrape_queue import (
     ScrapeQueueRepository as BaseQueueRepository,
 )
 
@@ -155,7 +157,7 @@ class TestRecoverAllStale:
     async def test_resets_all_in_progress_rows_unconditionally(
         self, async_session: AsyncSession
     ) -> None:
-        """recover_all_stale resets IN_PROGRESS rows regardless of how long they were locked."""
+        """recover_all_stale resets IN_PROGRESS rows regardless of lock age."""
         repo = BaseQueueRepository(async_session, job_type=_JOB_TYPE)
 
         # One row locked long ago, one locked just now
@@ -203,7 +205,7 @@ class TestRecoverAllStale:
     async def test_returns_zero_when_no_in_progress_rows(
         self, async_session: AsyncSession
     ) -> None:
-        """recover_all_stale returns 0 when there are no IN_PROGRESS rows for the job_type."""
+        """recover_all_stale returns 0 when no IN_PROGRESS rows exist for job_type."""
         repo = BaseQueueRepository(async_session, job_type=_JOB_TYPE)
 
         reset_count = await repo.recover_all_stale()

@@ -35,12 +35,14 @@ from infrastructure.persistence.repositories.player_list_queue import (
     PlayerListQueueRepository,
 )
 from infrastructure.persistence.session import create_session_factory, get_session
-from scripts.scrape_player_info import _load_country_ids, _load_country_name_cache
+from scripts.scrape_player_info import (
+    PlayerInfoWorker,
+    _load_country_ids,
+    _load_country_name_cache,
+)
 from scripts.scrape_player_info import _seed_queue as _seed_player_info_queue
-from scripts.scrape_player_info import PlayerInfoWorker
-from scripts.scrape_players import _load_all_countries
+from scripts.scrape_players import PlayerListWorker, _load_all_countries
 from scripts.scrape_players import _seed_queue as _seed_player_list_queue
-from scripts.scrape_players import PlayerListWorker
 
 # force=True resets any handlers set by scrape_players / scrape_player_info at
 # import time so all log output routes through the single Live-display console.

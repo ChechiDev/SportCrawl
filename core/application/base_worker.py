@@ -16,27 +16,28 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from pydoll.exceptions import BrowserException as _BrowserException
 
-from infrastructure.browser.pydoll_engine import PydollEngine
+@runtime_checkable
+class _BrowserEngine(Protocol):
+    async def __aenter__(self) -> Any: ...
+    async def __aexit__(self, *args: Any) -> Any: ...
 
-TJob = TypeVar("TJob")
 
-
-class BaseWorker(ABC, Generic[TJob]):
+class BaseWorker[TJob](ABC):
     """Abstract worker that owns the outer browser-restart loop.
 
     Subclasses must implement:
-        profile_dir  — path to an isolated Chrome profile for this worker
-        engine_name  — display name passed to PydollEngine
+        profile_dir     — path to an isolated Chrome profile for this worker
+        engine_name     — display name passed to the browser engine
+        _build_engine() — factory that returns an async context manager engine
         run_claim_loop(engine) — the full inner job-claim-and-process loop
 
     Optional hooks (default no-op):
-        startup_delay()         — called once before the restart loop starts
+        startup_delay()          — called once before the restart loop starts
         on_browser_ready(engine) — called after browser starts, before run_claim_loop
     """
 
@@ -69,14 +70,18 @@ class BaseWorker(ABC, Generic[TJob]):
     @property
     @abstractmethod
     def engine_name(self) -> str:
-        """Display name passed to PydollEngine for this worker."""
+        """Display name passed to the browser engine for this worker."""
+
+    @abstractmethod
+    def _build_engine(self) -> Any:
+        """Return an async context manager that yields the browser engine."""
 
     # -------------------------------------------------------------------------
     # Abstract: the ENTIRE inner claim loop
     # -------------------------------------------------------------------------
 
     @abstractmethod
-    async def run_claim_loop(self, engine: PydollEngine) -> bool:
+    async def run_claim_loop(self, engine: Any) -> bool:
         """Drain jobs for one browser session.
 
         Returns:
@@ -98,7 +103,7 @@ class BaseWorker(ABC, Generic[TJob]):
         """Called once before the outer restart loop. Default: no-op."""
         return None
 
-    async def on_browser_ready(self, _engine: PydollEngine) -> None:
+    async def on_browser_ready(self, _engine: Any) -> None:
         """Called after browser starts, before run_claim_loop. Default: no-op."""
         return None
 
@@ -117,10 +122,7 @@ class BaseWorker(ABC, Generic[TJob]):
         while True:
             browser_started = False
             try:
-                async with PydollEngine(
-                    profile_dir=self.profile_dir,
-                    name=self.engine_name,
-                ) as engine:
+                async with self._build_engine() as engine:
                     browser_started = True
                     restart_count = 0  # ADR-4: reset on every successful browser start
                     await self.on_browser_ready(engine)
@@ -141,10 +143,8 @@ class BaseWorker(ABC, Generic[TJob]):
                     )
                     await asyncio.sleep(10)
                     continue
-                # Error after browser was running (e.g. BrowserException from on_browser_ready,
-                # or truly unexpected error escaping run_claim_loop) — restart browser.
-                if not isinstance(exc, _BrowserException):
-                    logger.error(exc, exc_info=True)
+                # Error after browser was running — log and restart browser.
+                logger.error(exc, exc_info=True)
                 self._labels[self._worker_id] = "unexpected error — restarting"
                 await asyncio.sleep(5)
                 continue
