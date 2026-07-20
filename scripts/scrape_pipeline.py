@@ -37,10 +37,10 @@ from infrastructure.persistence.repositories.player_list_queue import (
 from infrastructure.persistence.session import create_session_factory, get_session
 from scripts.scrape_player_info import _load_country_ids, _load_country_name_cache
 from scripts.scrape_player_info import _seed_queue as _seed_player_info_queue
-from scripts.scrape_player_info import _worker as _player_info_worker
+from scripts.scrape_player_info import PlayerInfoWorker
 from scripts.scrape_players import _load_all_countries
 from scripts.scrape_players import _seed_queue as _seed_player_list_queue
-from scripts.scrape_players import _worker as _player_list_worker
+from scripts.scrape_players import PlayerListWorker
 
 # force=True resets any handlers set by scrape_players / scrape_player_info at
 # import time so all log output routes through the single Live-display console.
@@ -421,15 +421,16 @@ async def main(
         # --- Step 2 workers — run as background tasks so step 3 can start mid-way ---
         s2_tasks = [
             asyncio.create_task(
-                _player_list_worker(
+                PlayerListWorker(
                     worker_id=i + 1,
                     session_factory=session_factory,
                     fetch_gate=s2_fetch_gate,
                     profile_base=settings.scraping.chrome_profile_dir,
-                    settings=settings,
                     worker_labels=s2_labels,
                     worker_counts=s2_counts,
-                )
+                    settings=settings,
+                    url_to_name=None,
+                ).run()
             )
             for i in range(workers)
         ]
@@ -466,19 +467,19 @@ async def main(
         # --- Step 3 workers — run concurrently with remaining step 2 work ---
         s3_tasks = [
             asyncio.create_task(
-                _player_info_worker(
+                PlayerInfoWorker(
                     worker_id=i + 1,
                     session_factory=session_factory,
                     fetch_gate=s3_fetch_gate,
-                    chrome_profile_base=settings.scraping.chrome_profile_dir,
+                    profile_base=settings.scraping.chrome_profile_dir,
+                    worker_labels=s3_labels,
+                    worker_counts=s3_counts,
                     position_cache=position_cache,
                     valid_countries=valid_countries,
                     country_name_cache=country_name_cache,
-                    worker_labels=s3_labels,
-                    worker_counts=s3_counts,
                     fbref_base_url=settings.scraping.fbref_base_url,
                     step2_done=step2_done,
-                )
+                ).run()
             )
             for i in range(workers)
         ]

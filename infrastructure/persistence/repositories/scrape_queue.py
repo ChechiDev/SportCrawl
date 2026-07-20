@@ -15,7 +15,7 @@ import logging
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -96,6 +96,31 @@ class ScrapeQueueRepository:
             else:
                 row.status = ScrapeStatus.PENDING
             await self._session.flush()
+
+    async def recover_all_stale(self) -> int:
+        """Reset ALL IN_PROGRESS rows with this job_type unconditionally.
+
+        Intended for startup recovery: any job left IN_PROGRESS at boot was
+        interrupted and must be retried regardless of how long it has been locked.
+
+        Returns:
+            Number of rows reset to PENDING.
+
+        Raises:
+            RepositoryError: if the UPDATE fails.
+        """
+        async with repo_error_context("recover_all_stale", "recover_all_stale failed"):
+            stmt = (
+                update(ScrapeQueue)
+                .where(
+                    ScrapeQueue.job_type == self._job_type,
+                    ScrapeQueue.status == ScrapeStatus.IN_PROGRESS,
+                )
+                .values(status=ScrapeStatus.PENDING, locked_at=None)
+                .returning(ScrapeQueue.id)
+            )
+            result = await self._session.execute(stmt)
+            return len(result.fetchall())
 
     async def recover_stale(self, cutoff_minutes: int = 30) -> int:
         """Reset IN_PROGRESS rows with this job_type older than the cutoff."""
