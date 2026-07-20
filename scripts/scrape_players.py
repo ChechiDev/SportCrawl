@@ -14,19 +14,19 @@ import argparse
 import asyncio
 import logging
 import re
+from typing import Any
 
 import sqlalchemy as sa
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
 from rich.logging import RichHandler
-from rich.markup import escape
-from rich.padding import Padding
-from rich.table import Table
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
+from core.application.base_worker import BaseWorker
 from infrastructure.browser.pydoll_engine import PydollEngine
+from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.country import Country
 from infrastructure.persistence.repositories.player_list_queue import (
@@ -65,45 +65,124 @@ COUNTRY_URLS: dict[str, str] = {
 }
 
 
-def _build_table(
-    worker_labels: dict[int, str],
-    worker_counts: dict[int, int],
-    num_workers: int,
-    already_done: int,
-    total_jobs: int,
-) -> Group:
-    global_done = already_done + sum(worker_counts.values())
-    total_str = f"{global_done}/{total_jobs}" if total_jobs else str(global_done)
-    table = Table.grid(padding=(0, 2))
-    table.add_column(style="bold green")
-    table.add_column()
-    for i in range(1, num_workers + 1):
-        own = worker_counts.get(i, 0)
-        label = worker_labels.get(i, "Starting crawl...")
-        base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
-        table.add_row("RUN", base + label)
-    return Group(Padding(table, pad=(0, 0, 0, 2)))
+class PlayerListWorker(BaseWorker["ScrapeQueue"]):
+    """Worker that drains player_list scrape_queue jobs until the queue is empty."""
 
-
-async def _display_loop(
-    num_workers: int,
-    worker_labels: dict[int, str],
-    worker_counts: dict[int, int],
-    already_done: int,
-    total_jobs: int,
-    stop_event: asyncio.Event,
-    live: Live,
-) -> None:
-    while not stop_event.is_set():
-        table = _build_table(
-            worker_labels, worker_counts, num_workers, already_done, total_jobs
+    def __init__(
+        self,
+        worker_id: int,
+        session_factory: async_sessionmaker[AsyncSession],
+        fetch_gate: asyncio.Semaphore,
+        profile_base: str,
+        worker_labels: dict[int, str],
+        worker_counts: dict[int, int],
+        settings: Settings,
+        url_to_name: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            worker_id=worker_id,
+            session_factory=session_factory,
+            fetch_gate=fetch_gate,
+            profile_base=profile_base,
+            worker_labels=worker_labels,
+            worker_counts=worker_counts,
         )
-        live.update(table)
-        await asyncio.sleep(0.5)
-    table = _build_table(
-        worker_labels, worker_counts, num_workers, already_done, total_jobs
-    )
-    live.update(table)
+        self._settings = settings
+        self._url_to_name = url_to_name or {}
+        self._scraper: PlayerListScraper | None = None
+
+    @property
+    def profile_dir(self) -> str:
+        return f"{self._profile_base}-player-list-{self._worker_id}"
+
+    @property
+    def engine_name(self) -> str:
+        return f"PlayerList-{self._worker_id}"
+
+    def _build_engine(self) -> PydollEngine:
+        return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
+
+    async def on_browser_ready(self, engine: Any) -> None:
+        self._scraper = PlayerListScraper(
+            engine, self._settings.scraping, self._session_factory
+        )
+
+    async def run_claim_loop(self, engine: Any) -> bool:  # noqa: ARG002
+        """Drain player_list jobs for one browser session.
+
+        Returns True when queue is empty (stop), False on BrowserException (restart).
+        """
+        from pydoll.exceptions import BrowserException as _BrowserException
+
+        while True:
+            async with get_session(self._session_factory) as session:
+                job = await PlayerListQueueRepository(session).claim_next()
+                await session.commit()
+
+            if job is None:
+                return True
+
+            country_match = _COUNTRY_CODE_RE.search(job.url)
+            country_code = (
+                country_match.group(1).upper() if country_match else job.url
+            )
+            country_display = (
+                (self._url_to_name.get(job.url) or country_code).title()
+                if self._url_to_name
+                else country_code
+            )
+
+            max_attempts = 3
+            browser_restart = False
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    async with self._fetch_gate:
+                        assert self._scraper is not None
+                        page, _ = await self._scraper.scrape(job.url)
+
+                    async with get_session(self._session_factory) as session:
+                        repo = PlayerListQueueRepository(session)
+                        await repo.mark_done(job.id)
+                        await session.commit()
+
+                    self._processed += 1
+                    self._counts[self._worker_id] = self._processed
+                    total_players = len(page.players)
+                    self._labels[self._worker_id] = (
+                        f"{country_display}: {total_players:,} players"
+                    )
+                    break
+
+                except Exception as exc:
+                    if isinstance(exc, _BrowserException):
+                        self._labels[self._worker_id] = "browser error — restarting"
+                        try:
+                            async with get_session(self._session_factory) as session:
+                                repo = PlayerListQueueRepository(session)
+                                await repo.mark_failed(job.id, str(exc))
+                                await session.commit()
+                        except Exception:
+                            pass
+                        browser_restart = True
+                        break
+
+                    if attempt < max_attempts:
+                        self._labels[self._worker_id] = (
+                            f"retry {attempt}/{max_attempts} — {country_display}"
+                        )
+                        await asyncio.sleep(2)
+                    else:
+                        try:
+                            async with get_session(self._session_factory) as session:
+                                repo = PlayerListQueueRepository(session)
+                                await repo.mark_failed(job.id, str(exc))
+                                await session.commit()
+                        except Exception:
+                            pass
+                        self._labels[self._worker_id] = f"failed — {country_display}"
+
+            if browser_restart:
+                return False
 
 
 def _players_url(country_url: str) -> str:
@@ -119,7 +198,7 @@ def _players_url(country_url: str) -> str:
 async def _load_all_countries(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> list[tuple[str, str, str]]:
-    """Return (country_id, player_list_url, country_name) for every country in the DB."""
+    """Return (country_id, player_list_url, country_name) for every country."""
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.select(Country.country_id, Country.country_url, Country.country_name)
@@ -169,125 +248,6 @@ async def _seed_queue(
     return inserted
 
 
-async def _worker(
-    worker_id: int,
-    session_factory: async_sessionmaker[AsyncSession],
-    fetch_gate: asyncio.Semaphore,
-    profile_base: str,
-    settings: Settings,
-    worker_labels: dict[int, str],
-    worker_counts: dict[int, int],
-    url_to_name: dict[str, str] | None = None,
-) -> int:
-    """Drain player_list scrape_queue jobs until empty.
-
-    Each call gets its own isolated Chrome profile. Jobs are claimed atomically
-    via SELECT FOR UPDATE SKIP LOCKED. The fetch_gate semaphore ensures at most
-    one FBRef HTTP request is in flight across all workers.
-
-    Returns:
-        Number of jobs successfully processed.
-    """
-    profile_dir = f"{profile_base}-player-list-{worker_id}"
-    processed = 0
-
-    max_restarts = 5
-    restart_count = 0
-    while True:
-        browser_started = False
-        try:
-            async with PydollEngine(
-                profile_dir=profile_dir, name=f"PlayerList-{worker_id}"
-            ) as engine:
-                browser_started = True
-                restart_count = 0  # reset on successful start
-                scraper = PlayerListScraper(engine, settings.scraping, session_factory)
-
-                while True:
-                    async with get_session(session_factory) as session:
-                        job = await PlayerListQueueRepository(session).claim_next()
-                        await session.commit()
-
-                    if job is None:
-                        return processed
-
-                    country_match = _COUNTRY_CODE_RE.search(job.url)
-                    country_code = (
-                        country_match.group(1).upper()
-                        if country_match
-                        else job.url
-                    )
-                    country_display = (
-                        (url_to_name.get(job.url) or country_code).title()
-                        if url_to_name
-                        else country_code
-                    )
-
-                    from pydoll.exceptions import BrowserException as _BrowserException
-
-                    max_attempts = 3
-                    browser_restart = False
-                    for attempt in range(1, max_attempts + 1):
-                        try:
-                            async with fetch_gate:
-                                page, _ = await scraper.scrape(job.url)
-
-                            async with get_session(session_factory) as session:
-                                repo = PlayerListQueueRepository(session)
-                                await repo.mark_done(job.id)
-                                await session.commit()
-
-                            processed += 1
-                            worker_counts[worker_id] = processed
-                            total_players = len(page.players)
-                            worker_labels[worker_id] = f"{country_display}: {total_players:,} players"  # noqa: E501
-                            break
-
-                        except Exception as exc:
-                            if isinstance(exc, _BrowserException):
-                                worker_labels[worker_id] = "browser error — restarting"
-                                try:
-                                    async with get_session(session_factory) as session:
-                                        repo = PlayerListQueueRepository(session)
-                                        await repo.mark_failed(job.id, str(exc))
-                                        await session.commit()
-                                except Exception:
-                                    pass
-                                browser_restart = True
-                                break
-
-                            if attempt < max_attempts:
-                                worker_labels[worker_id] = f"retry {attempt}/{max_attempts} — {country_display}"
-                                await asyncio.sleep(2)
-                            else:
-                                try:
-                                    async with get_session(session_factory) as session:
-                                        repo = PlayerListQueueRepository(session)
-                                        await repo.mark_failed(job.id, str(exc))
-                                        await session.commit()
-                                except Exception:
-                                    pass
-                                worker_labels[worker_id] = f"failed — {country_display}"
-
-                    if browser_restart:
-                        break
-
-        except Exception:
-            if not browser_started:
-                restart_count += 1
-                if restart_count >= max_restarts:
-                    worker_labels[worker_id] = "browser failed — giving up"
-                    return processed
-                worker_labels[worker_id] = f"browser start failed — retry {restart_count}/{max_restarts}"
-                await asyncio.sleep(10)
-                continue
-            worker_labels[worker_id] = (
-                "unexpected error — restarting"
-            )
-            await asyncio.sleep(5)
-            continue
-
-
 async def scrape_one(scraper: PlayerListScraper, url: str) -> int:
     _, inserted = await scraper.scrape(url)
     return inserted
@@ -331,7 +291,10 @@ async def main_all(workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_infra.scrape_queue WHERE job_type='player_list' AND status='DONE'")
+            sa.text(
+                "SELECT count(*) FROM sch_infra.scrape_queue"
+                " WHERE job_type='player_list' AND status='DONE'"
+            )
         )
         initial_db_count = int(result.scalar() or 0)
 
@@ -345,28 +308,30 @@ async def main_all(workers: int = 1) -> None:
     stop_event = asyncio.Event()
 
     with Live(
-        _build_table(worker_labels, worker_counts, workers, initial_db_count, total),
+        build_worker_table(
+            worker_labels, worker_counts, workers, initial_db_count, total
+        ),
         console=_console,
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
-            _display_loop(
+            run_display_loop(
                 workers, worker_labels, worker_counts,
                 initial_db_count, total, stop_event, live,
             )
         )
         results = await asyncio.gather(
             *[
-                _worker(
+                PlayerListWorker(
                     worker_id=i + 1,
                     session_factory=session_factory,
                     fetch_gate=fetch_gate,
                     profile_base=settings.scraping.chrome_profile_dir,
-                    settings=settings,
                     worker_labels=worker_labels,
                     worker_counts=worker_counts,
+                    settings=settings,
                     url_to_name=url_to_name,
-                )
+                ).run()
                 for i in range(workers)
             ],
             return_exceptions=True,
@@ -394,7 +359,9 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
                 Country.country_id.in_(upper_codes)
             )
         )
-        code_to_name: dict[str, str] = {row.country_id: row.country_name for row in result}
+        code_to_name: dict[str, str] = {
+            row.country_id: row.country_name for row in result
+        }
 
     countries = [
         (code, _BASE_URL.format(code=code), code_to_name.get(code, code))
@@ -416,7 +383,10 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_infra.scrape_queue WHERE job_type='player_list' AND status='DONE'")
+            sa.text(
+                "SELECT count(*) FROM sch_infra.scrape_queue"
+                " WHERE job_type='player_list' AND status='DONE'"
+            )
         )
         initial_db_count = int(result.scalar() or 0)
 
@@ -429,28 +399,30 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     stop_event = asyncio.Event()
 
     with Live(
-        _build_table(worker_labels, worker_counts, workers, initial_db_count, total),
+        build_worker_table(
+            worker_labels, worker_counts, workers, initial_db_count, total
+        ),
         console=_console,
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
-            _display_loop(
+            run_display_loop(
                 workers, worker_labels, worker_counts,
                 initial_db_count, total, stop_event, live,
             )
         )
         results = await asyncio.gather(
             *[
-                _worker(
+                PlayerListWorker(
                     worker_id=i + 1,
                     session_factory=session_factory,
                     fetch_gate=fetch_gate,
                     profile_base=settings.scraping.chrome_profile_dir,
-                    settings=settings,
                     worker_labels=worker_labels,
                     worker_counts=worker_counts,
+                    settings=settings,
                     url_to_name=url_to_name,
-                )
+                ).run()
                 for i in range(workers)
             ],
             return_exceptions=True,

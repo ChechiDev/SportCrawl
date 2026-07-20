@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.player import Player
-from scripts.scrape_player_info import _worker
+from scripts.scrape_player_info import PlayerInfoWorker
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -137,37 +137,42 @@ async def test_worker_inserts_player_info_and_marks_done(
 
     with (
         patch(
-            "scripts.scrape_player_info.PydollEngine",
-        ) as MockEngine,
+            "scripts.scrape_player_info.PlayerInfoWorker._build_engine",
+        ) as mock_build_engine,
         patch(
             "scripts.scrape_player_info.PlayerInfoScraper",
         ) as MockScraper,
     ):
-        # Configure engine context manager
-        mock_engine_instance = AsyncMock()
-        MockEngine.return_value.__aenter__ = AsyncMock(
-            return_value=mock_engine_instance
-        )
-        MockEngine.return_value.__aexit__ = AsyncMock(return_value=False)
-        mock_engine_instance.fetch = AsyncMock(return_value="<html></html>")
-
-        # Configure scraper — parse is a regular (sync) method after Change 2
+        # Configure engine as async context manager yielding a mock engine
         from unittest.mock import MagicMock
+        mock_engine_instance = AsyncMock()
+        mock_engine_instance.navigate = AsyncMock()
+        mock_engine_instance.wait_for_challenge = AsyncMock(
+            return_value="<html></html>"
+        )
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_engine_instance)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_build_engine.return_value = mock_ctx
+
+        # Configure scraper — parse is a regular (sync) method
         mock_scraper_instance = MagicMock()
         MockScraper.return_value = mock_scraper_instance
         mock_scraper_instance.parse = MagicMock(return_value=mock_page)
 
-        processed = await _worker(
+        worker = PlayerInfoWorker(
             worker_id=1,
             session_factory=factory,
             fetch_gate=asyncio.Semaphore(1),
-            chrome_profile_base="/tmp/test-chrome",
+            profile_base="/tmp/test-chrome",
+            worker_labels={},
+            worker_counts={},
             position_cache={},
             valid_countries=frozenset(),
             country_name_cache={},
-            worker_labels={},
-            worker_counts={},
         )
+        processed = await worker.run()
 
     assert processed == 1
 

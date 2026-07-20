@@ -12,22 +12,23 @@ import asyncio
 import logging
 import random
 import time
+from typing import Any
 
 import sqlalchemy as sa
 from pydoll.exceptions import BrowserException
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
-from rich.padding import Padding
-from rich.table import Table
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
+from core.application.base_worker import BaseWorker
 from core.application.scrape_job_processor import ScrapeJobProcessor
 from core.exceptions.scraper import PageLoadError, RateLimitError
 from infrastructure.browser.pydoll_engine import PydollEngine
+from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.player import Player
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
@@ -88,207 +89,165 @@ async def _load_country_name_cache(
 
 
 # ---------------------------------------------------------------------------
-# Worker coroutine
+# Worker class
 # ---------------------------------------------------------------------------
 
 
-def _build_table(
-    worker_labels: dict[int, str],
-    worker_counts: dict[int, int],
-    num_workers: int,
-    already_done: int,
-    total_jobs: int,
-) -> Group:
-    global_done = already_done + sum(worker_counts.values())
-    total_str = f"{global_done}/{total_jobs}" if total_jobs else str(global_done)
-    table = Table.grid(padding=(0, 2))
-    table.add_column(style="bold green")
-    table.add_column()
-    for i in range(1, num_workers + 1):
-        own = worker_counts.get(i, 0)
-        label = worker_labels.get(i, "Starting crawl...")
-        base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
-        table.add_row("RUN", base + label)
-    return Group(Padding(table, pad=(0, 0, 0, 2)))
+class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
+    """Worker that processes player_info jobs from scrape_queue until empty."""
 
-
-async def _display_loop(
-    num_workers: int,
-    worker_labels: dict[int, str],
-    worker_counts: dict[int, int],
-    already_done: int,
-    total_jobs: int,
-    stop_event: asyncio.Event,
-    live: Live,
-) -> None:
-    while not stop_event.is_set():
-        table = _build_table(
-            worker_labels, worker_counts, num_workers, already_done, total_jobs
+    def __init__(
+        self,
+        worker_id: int,
+        session_factory: async_sessionmaker[AsyncSession],
+        fetch_gate: asyncio.Semaphore,
+        profile_base: str,
+        worker_labels: dict[int, str],
+        worker_counts: dict[int, int],
+        position_cache: dict[str, int],
+        valid_countries: frozenset[str],
+        country_name_cache: dict[str, str],
+        fbref_base_url: str = "https://fbref.com",
+        step2_done: asyncio.Event | None = None,
+    ) -> None:
+        super().__init__(
+            worker_id=worker_id,
+            session_factory=session_factory,
+            fetch_gate=fetch_gate,
+            profile_base=profile_base,
+            worker_labels=worker_labels,
+            worker_counts=worker_counts,
         )
-        live.update(table)
-        await asyncio.sleep(0.5)
-    table = _build_table(
-        worker_labels, worker_counts, num_workers, already_done, total_jobs
-    )
-    live.update(table)
+        self._position_cache = position_cache
+        self._valid_countries = valid_countries
+        self._country_name_cache = country_name_cache
+        self._fbref_base_url = fbref_base_url
+        self._step2_done = step2_done
 
+    @property
+    def profile_dir(self) -> str:
+        return f"{self._profile_base}-{self._worker_id}"
 
-async def _worker(
-    worker_id: int,
-    session_factory: async_sessionmaker[AsyncSession],
-    fetch_gate: asyncio.Semaphore,
-    chrome_profile_base: str,
-    position_cache: dict[str, int],
-    valid_countries: frozenset[str],
-    country_name_cache: dict[str, str],
-    worker_labels: dict[int, str],
-    worker_counts: dict[int, int],
-    fbref_base_url: str = "https://fbref.com",
-    step2_done: asyncio.Event | None = None,
-) -> int:
-    """Process player_info jobs from scrape_queue until the queue is empty.
+    @property
+    def engine_name(self) -> str:
+        return f"Crawl-{self._worker_id}"
 
-    Owns: browser engine lifetime, job claiming loop, HTML fetch, progress display.
-    Delegates: parse → FK resolution → persist → mark done/failed to ScrapeJobProcessor.
+    def _build_engine(self) -> PydollEngine:
+        return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
 
-    Args:
-        worker_id: Integer identifier for this worker (1-based). Used to
-            isolate Chrome profile directories so multiple workers can
-            run concurrently without SingletonLock conflicts.
-        session_factory: Async SQLAlchemy session factory.
+    async def startup_delay(self) -> None:
+        delay = random.uniform(3.0, 15.0)
+        self._labels[self._worker_id] = f"Waiting {delay:.1f}s before start..."
+        await asyncio.sleep(delay)
 
-    Returns:
-        Number of jobs successfully processed.
-    """
-    processed = 0
+    async def run_claim_loop(self, engine: Any) -> bool:
+        """Process player_info jobs for one browser session.
 
-    startup_delay = random.uniform(3.0, 15.0)
-    worker_labels[worker_id] = f"Waiting {startup_delay:.1f}s before start..."
-    await asyncio.sleep(startup_delay)
+        Returns True when queue is empty and step2 is done (stop).
+        Returns False on BrowserException (restart browser).
+        """
+        self._labels[self._worker_id] = "Starting crawl..."
 
-    profile_dir = f"{chrome_profile_base}-{worker_id}"
+        while True:
+            async with get_session(self._session_factory) as session:
+                queue_repo = PlayerInfoQueueRepository(session)
+                job = await queue_repo.claim_next()
+                await session.commit()
 
-    max_restarts = 5
-    restart_count = 0
-    while True:
-        browser_started = False
-        try:
-            async with PydollEngine(
-                profile_dir=profile_dir, name=f"Crawl-{worker_id}"
-            ) as engine:
-                browser_started = True
-                restart_count = 0  # reset on successful start
-                worker_labels[worker_id] = "Starting crawl..."
-
-                while True:
-                    async with get_session(session_factory) as session:
-                        queue_repo = PlayerInfoQueueRepository(session)
-                        job = await queue_repo.claim_next()
-                        await session.commit()
-
-                    if job is None:
-                        if step2_done is None or step2_done.is_set():
-                            return processed
-                        worker_labels[worker_id] = "Waiting for step 2..."
-                        await asyncio.sleep(10)
-                        continue
-
-                    attempt = 0
-                    success = False
-                    browser_restart = False
-
-                    while attempt < 3 and not success:
-                        try:
-                            async with fetch_gate:
-                                await engine.navigate(fbref_base_url + job.url)
-                            # Challenge polling and cooldown run outside gate so other
-                            # workers are not blocked during Cloudflare resolution.
-                            html = await engine.wait_for_challenge(
-                                fbref_base_url + job.url
-                            )
-                            await asyncio.sleep(random.uniform(5, 15))
-                            if not html:
-                                raise RuntimeError("empty HTML response")
-
-                            scraper = PlayerInfoScraper(
-                                player_id=_player_id_from_url(job.url),
-                                player_info_url=job.url,
-                            )
-
-                            async with get_session(session_factory) as session:
-                                info_repo = PlayerInfoRepository(session)
-                                q_repo = PlayerInfoQueueRepository(session)
-                                processor = ScrapeJobProcessor(
-                                    scraper=scraper,
-                                    queue_repo=q_repo,
-                                    player_info_repo=info_repo,
-                                    country_name_cache=country_name_cache,
-                                    position_cache=position_cache,
-                                    valid_countries=valid_countries,
-                                )
-                                result = await processor.process(job, html)
-                                await session.commit()
-
-                            success = True
-                            processed += 1
-                            worker_counts[worker_id] = processed
-                            full_name = result[0] if result else "unknown"
-                            worker_labels[worker_id] = escape(full_name or "unknown")
-
-                        except (
-                            PageLoadError, RateLimitError, BrowserException, RuntimeError  # noqa: E501
-                        ) as exc:
-                            attempt += 1
-                            if isinstance(exc, BrowserException):
-                                worker_labels[worker_id] = "browser error — restarting"
-                                try:
-                                    async with get_session(session_factory) as session:
-                                        q_repo = PlayerInfoQueueRepository(session)
-                                        await q_repo.mark_failed(job.id, str(exc))
-                                        await session.commit()
-                                except Exception as mark_err:
-                                    logger.error(
-                                        "[worker-%d] mark_failed error: %s", worker_id, mark_err
-                                    )
-                                browser_restart = True
-                                break
-                            is_terminal = attempt >= 3
-                            if is_terminal:
-                                worker_labels[worker_id] = f"failed job {job.id} — {exc}"
-                                try:
-                                    async with get_session(session_factory) as session:
-                                        q_repo = PlayerInfoQueueRepository(session)
-                                        await q_repo.mark_failed(job.id, str(exc))
-                                        await session.commit()
-                                except Exception as mark_err:
-                                    logger.error(
-                                        "[worker-%d] failed to mark job %d as failed: %s",
-                                        worker_id, job.id, mark_err,
-                                    )
-                            else:
-                                worker_labels[worker_id] = f"warning — retrying ({attempt}/3)"
-                                await asyncio.sleep(2)
-
-                    if browser_restart:
-                        break
-
-                    if not success:
-                        logger.error(
-                            "[worker-%d] job %d exhausted retries, giving up", worker_id, job.id
-                        )
-
-        except Exception:
-            if not browser_started:
-                restart_count += 1
-                if restart_count >= max_restarts:
-                    worker_labels[worker_id] = "browser failed — giving up"
-                    return processed
-                worker_labels[worker_id] = f"browser start failed — retry {restart_count}/{max_restarts}"
+            if job is None:
+                if self._step2_done is None or self._step2_done.is_set():
+                    return True
+                self._labels[self._worker_id] = "Waiting for step 2..."
                 await asyncio.sleep(10)
                 continue
-            worker_labels[worker_id] = "unexpected error — restarting"
-            await asyncio.sleep(5)
-            continue
+
+            attempt = 0
+            success = False
+            browser_restart = False
+
+            while attempt < 3 and not success:
+                try:
+                    async with self._fetch_gate:
+                        await engine.navigate(self._fbref_base_url + job.url)
+                    # Challenge polling and cooldown run outside gate so other
+                    # workers are not blocked during Cloudflare resolution.
+                    html = await engine.wait_for_challenge(
+                        self._fbref_base_url + job.url
+                    )
+                    await asyncio.sleep(random.uniform(5, 15))
+                    if not html:
+                        raise RuntimeError("empty HTML response")
+
+                    scraper = PlayerInfoScraper(
+                        player_id=_player_id_from_url(job.url),
+                        player_info_url=job.url,
+                    )
+
+                    async with get_session(self._session_factory) as session:
+                        info_repo = PlayerInfoRepository(session)
+                        q_repo = PlayerInfoQueueRepository(session)
+                        processor = ScrapeJobProcessor(
+                            scraper=scraper,
+                            queue_repo=q_repo,
+                            player_info_repo=info_repo,
+                            country_name_cache=self._country_name_cache,
+                            position_cache=self._position_cache,
+                            valid_countries=self._valid_countries,
+                        )
+                        result = await processor.process(job, html)
+                        await session.commit()
+
+                    success = True
+                    self._processed += 1
+                    self._counts[self._worker_id] = self._processed
+                    full_name = result[0] if result else "unknown"
+                    self._labels[self._worker_id] = escape(full_name or "unknown")
+
+                except (
+                    PageLoadError, RateLimitError, BrowserException, RuntimeError
+                ) as exc:
+                    attempt += 1
+                    if isinstance(exc, BrowserException):
+                        self._labels[self._worker_id] = "browser error — restarting"
+                        try:
+                            async with get_session(self._session_factory) as session:
+                                q_repo = PlayerInfoQueueRepository(session)
+                                await q_repo.mark_failed(job.id, str(exc))
+                                await session.commit()
+                        except Exception as mark_err:
+                            logger.error(
+                                "[worker-%d] mark_failed error: %s",
+                                self._worker_id, mark_err,
+                            )
+                        browser_restart = True
+                        break
+                    is_terminal = attempt >= 3
+                    if is_terminal:
+                        self._labels[self._worker_id] = f"failed job {job.id} — {exc}"
+                        try:
+                            async with get_session(self._session_factory) as session:
+                                q_repo = PlayerInfoQueueRepository(session)
+                                await q_repo.mark_failed(job.id, str(exc))
+                                await session.commit()
+                        except Exception as mark_err:
+                            logger.error(
+                                "[worker-%d] failed to mark job %d as failed: %s",
+                                self._worker_id, job.id, mark_err,
+                            )
+                    else:
+                        self._labels[self._worker_id] = (
+                            f"warning — retrying ({attempt}/3)"
+                        )
+                        await asyncio.sleep(2)
+
+            if browser_restart:
+                return False
+
+            if not success:
+                logger.error(
+                    "[worker-%d] job %d exhausted retries, giving up",
+                    self._worker_id, job.id,
+                )
 
 
 def _player_id_from_url(url: str) -> str:
@@ -451,7 +410,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
 
     t0 = time.monotonic()
     with Live(
-        _build_table(
+        build_worker_table(
             worker_labels,
             worker_counts,
             workers,
@@ -462,7 +421,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
-            _display_loop(
+            run_display_loop(
                 workers,
                 worker_labels,
                 worker_counts,
@@ -474,18 +433,18 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         )
         results = await asyncio.gather(
             *[
-                _worker(
+                PlayerInfoWorker(
                     worker_id=i + 1,
                     session_factory=session_factory,
                     fetch_gate=fetch_gate,
-                    chrome_profile_base=settings.scraping.chrome_profile_dir,
+                    profile_base=settings.scraping.chrome_profile_dir,
+                    worker_labels=worker_labels,
+                    worker_counts=worker_counts,
                     position_cache=position_cache,
                     valid_countries=valid_countries,
                     country_name_cache=country_name_cache,
-                    worker_labels=worker_labels,
-                    worker_counts=worker_counts,
                     fbref_base_url=settings.scraping.fbref_base_url,
-                )
+                ).run()
                 for i in range(workers)
             ],
             return_exceptions=True,

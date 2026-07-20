@@ -1,4 +1,4 @@
-"""Unit tests for scrape_players helpers: _seed_queue and _worker.
+"""Unit tests for scrape_players helpers: _seed_queue and PlayerListWorker.
 
 asyncio_mode = "auto" via pyproject.toml — no explicit @pytest.mark.asyncio.
 """
@@ -6,7 +6,11 @@ asyncio_mode = "auto" via pyproject.toml — no explicit @pytest.mark.asyncio.
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
+
+if TYPE_CHECKING:
+    from scripts.scrape_players import PlayerListWorker
 
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 
@@ -64,7 +68,7 @@ class TestSeedQueue:
         with patch("scripts.scrape_players.get_session", return_value=cm):
             _arg = "https://fbref.com/en/country/players/ARG/Argentina-Football"
             _esp = "https://fbref.com/en/country/players/ESP/Spain-Football"
-            countries = [("ARG", _arg), ("ESP", _esp)]
+            countries = [("ARG", _arg, "Argentina"), ("ESP", _esp, "Spain")]
             count = await _seed_queue(MagicMock(), countries)
 
         assert count == 2
@@ -85,7 +89,7 @@ class TestSeedQueue:
 
         with patch("scripts.scrape_players.get_session", return_value=cm):
             _arg = "https://fbref.com/en/country/players/ARG/Argentina-Football"
-            countries = [("ARG", _arg)]
+            countries = [("ARG", _arg, "Argentina")]
             count = await _seed_queue(MagicMock(), countries)
 
         # rowcount=0 means ON CONFLICT fired and nothing was inserted
@@ -108,61 +112,79 @@ class TestSeedQueue:
 
 
 class TestWorker:
-    async def test_worker_marks_done_on_success(self) -> None:
-        """_worker must call mark_done after a successful scrape."""
-        from scripts.scrape_players import _worker
+    def _make_worker(
+        self,
+        fetch_gate: asyncio.Semaphore,
+        settings: MagicMock,
+        session_factory: MagicMock | None = None,
+    ) -> PlayerListWorker:
+        from scripts.scrape_players import PlayerListWorker
+        return PlayerListWorker(
+            worker_id=1,
+            session_factory=session_factory or MagicMock(),
+            fetch_gate=fetch_gate,
+            profile_base="/tmp/chrome",
+            worker_labels={1: "Worker 1"},
+            worker_counts={1: 0},
+            settings=settings,
+        )
 
+    def _mock_engine_ctx(self) -> tuple[AsyncMock, AsyncMock]:
+        engine_instance = AsyncMock()
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=engine_instance)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx, engine_instance
+
+    async def test_worker_marks_done_on_success(self) -> None:
+        """PlayerListWorker must call mark_done after a successful scrape."""
         job = _make_job()
 
         session = AsyncMock()
         session.commit = AsyncMock()
 
-        # claim_next returns job first time, None second (queue empty)
-        claim_results = [job, None]
-
         mock_repo = AsyncMock()
-        mock_repo.claim_next.side_effect = claim_results
+        mock_repo.claim_next.side_effect = [job, None]
         mock_repo.mark_done = AsyncMock()
 
         mock_scraper = AsyncMock()
-        mock_scraper.scrape.return_value = (MagicMock(), 5)
+        mock_page = MagicMock()
+        mock_page.players = [MagicMock()] * 3
+        mock_scraper.scrape.return_value = (mock_page, 3)
 
-        mock_engine_cm = AsyncMock()
-        mock_engine_cm.__aenter__ = AsyncMock(return_value=MagicMock())
-        mock_engine_cm.__aexit__ = AsyncMock(return_value=False)
-
+        engine_ctx, _ = self._mock_engine_ctx()
         settings = MagicMock()
-        settings.scraping = MagicMock()
+
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch("scripts.scrape_players.PlayerListQueueRepository", return_value=mock_repo),  # noqa: E501
-            patch("scripts.scrape_players.PlayerListScraper", return_value=mock_scraper),  # noqa: E501
-            patch("scripts.scrape_players.PydollEngine", return_value=mock_engine_cm),
-            patch("scripts.scrape_players.get_session") as mock_get_session,
+            patch(
+                "scripts.scrape_players.PlayerListQueueRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "scripts.scrape_players.PlayerListScraper",
+                return_value=mock_scraper,
+            ),
+            patch(
+                "scripts.scrape_players.PlayerListWorker._build_engine",
+                return_value=engine_ctx,
+            ),
+            patch(
+                "scripts.scrape_players.get_session",
+                return_value=session_cm,
+            ),
         ):
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_get_session.return_value = cm
-
-            fetch_gate = asyncio.Semaphore(1)
-            processed = await _worker(
-                worker_id=1,
-                session_factory=MagicMock(),
-                fetch_gate=fetch_gate,
-                profile_base="/tmp/chrome",
-                settings=settings,
-                worker_labels={1: "Worker 1"},
-                worker_counts={1: 0},
-            )
+            worker = self._make_worker(asyncio.Semaphore(1), settings)
+            processed = await worker.run()
 
         assert processed == 1
         mock_repo.mark_done.assert_called_once_with(job.id)
 
     async def test_worker_marks_failed_on_scraper_exception(self) -> None:
-        """_worker must call mark_failed and NOT crash when scrape raises."""
-        from scripts.scrape_players import _worker
-
+        """PlayerListWorker must call mark_failed when scrape raises."""
         job = _make_job()
 
         session = AsyncMock()
@@ -175,76 +197,69 @@ class TestWorker:
         mock_scraper = AsyncMock()
         mock_scraper.scrape.side_effect = RuntimeError("timeout")
 
-        mock_engine_cm = AsyncMock()
-        mock_engine_cm.__aenter__ = AsyncMock(return_value=MagicMock())
-        mock_engine_cm.__aexit__ = AsyncMock(return_value=False)
-
+        engine_ctx, _ = self._mock_engine_ctx()
         settings = MagicMock()
-        settings.scraping = MagicMock()
+
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch("scripts.scrape_players.PlayerListQueueRepository", return_value=mock_repo),  # noqa: E501
-            patch("scripts.scrape_players.PlayerListScraper", return_value=mock_scraper),  # noqa: E501
-            patch("scripts.scrape_players.PydollEngine", return_value=mock_engine_cm),
-            patch("scripts.scrape_players.get_session") as mock_get_session,
+            patch(
+                "scripts.scrape_players.PlayerListQueueRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "scripts.scrape_players.PlayerListScraper",
+                return_value=mock_scraper,
+            ),
+            patch(
+                "scripts.scrape_players.PlayerListWorker._build_engine",
+                return_value=engine_ctx,
+            ),
+            patch(
+                "scripts.scrape_players.get_session",
+                return_value=session_cm,
+            ),
         ):
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_get_session.return_value = cm
-
-            fetch_gate = asyncio.Semaphore(1)
-            processed = await _worker(
-                worker_id=1,
-                session_factory=MagicMock(),
-                fetch_gate=fetch_gate,
-                profile_base="/tmp/chrome",
-                settings=settings,
-                worker_labels={1: "Worker 1"},
-                worker_counts={1: 0},
-            )
+            worker = self._make_worker(asyncio.Semaphore(1), settings)
+            processed = await worker.run()
 
         assert processed == 0
         mock_repo.mark_failed.assert_called_once()
         assert "timeout" in mock_repo.mark_failed.call_args[0][1]
 
     async def test_worker_exits_cleanly_when_queue_empty(self) -> None:
-        """_worker must return 0 immediately when claim_next returns None."""
-        from scripts.scrape_players import _worker
-
+        """PlayerListWorker must return 0 immediately when queue is empty."""
         session = AsyncMock()
         session.commit = AsyncMock()
 
         mock_repo = AsyncMock()
         mock_repo.claim_next.return_value = None
 
-        mock_engine_cm = AsyncMock()
-        mock_engine_cm.__aenter__ = AsyncMock(return_value=MagicMock())
-        mock_engine_cm.__aexit__ = AsyncMock(return_value=False)
-
+        engine_ctx, _ = self._mock_engine_ctx()
         settings = MagicMock()
-        settings.scraping = MagicMock()
+
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch("scripts.scrape_players.PlayerListQueueRepository", return_value=mock_repo),  # noqa: E501
-            patch("scripts.scrape_players.PydollEngine", return_value=mock_engine_cm),
-            patch("scripts.scrape_players.get_session") as mock_get_session,
+            patch(
+                "scripts.scrape_players.PlayerListQueueRepository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "scripts.scrape_players.PlayerListWorker._build_engine",
+                return_value=engine_ctx,
+            ),
+            patch(
+                "scripts.scrape_players.get_session",
+                return_value=session_cm,
+            ),
         ):
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_get_session.return_value = cm
-
-            fetch_gate = asyncio.Semaphore(1)
-            processed = await _worker(
-                worker_id=1,
-                session_factory=MagicMock(),
-                fetch_gate=fetch_gate,
-                profile_base="/tmp/chrome",
-                settings=settings,
-                worker_labels={1: "Worker 1"},
-                worker_counts={1: 0},
-            )
+            worker = self._make_worker(asyncio.Semaphore(1), settings)
+            processed = await worker.run()
 
         assert processed == 0
 
