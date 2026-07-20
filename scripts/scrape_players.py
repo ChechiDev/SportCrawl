@@ -78,9 +78,9 @@ def _build_table(
     table.add_column()
     for i in range(1, num_workers + 1):
         own = worker_counts.get(i, 0)
-        label = worker_labels.get(i, "starting crawl...")
-        row = f"[Crawl-{i}] [{own} | {total_str}] {label}"
-        table.add_row("RUN", escape(row))
+        label = worker_labels.get(i, "Starting crawl...")
+        base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
+        table.add_row("RUN", base + label)
     return Group(table)
 
 
@@ -235,7 +235,9 @@ async def _worker(
 
                         except Exception as exc:
                             if isinstance(exc, _BrowserException):
-                                worker_labels[worker_id] = "browser error — restarting"
+                                worker_labels[worker_id] = (
+                                    "[bold red]BROWSER ERROR — Restarting[/bold red]"
+                                )
                                 try:
                                     async with get_session(session_factory) as session:
                                         repo = PlayerListQueueRepository(session)
@@ -247,7 +249,10 @@ async def _worker(
                                 break
 
                             if attempt < max_attempts:
-                                lbl = f"RETRY {attempt}/{max_attempts} — {country_code}"
+                                lbl = (
+                                    f"[bold orange1]RETRY {attempt}/{max_attempts}"
+                                    f" — {country_code}[/bold orange1]"
+                                )
                                 worker_labels[worker_id] = lbl
                                 await asyncio.sleep(2)
                             else:
@@ -258,7 +263,9 @@ async def _worker(
                                         await session.commit()
                                 except Exception:
                                     pass
-                                worker_labels[worker_id] = f"FAILED — {country_code}"
+                                worker_labels[worker_id] = (
+                                    f"[bold red]FAILED — {country_code}[/bold red]"
+                                )
 
                     if browser_restart:
                         break
@@ -267,13 +274,20 @@ async def _worker(
             if not browser_started:
                 restart_count += 1
                 if restart_count >= max_restarts:
-                    worker_labels[worker_id] = "browser failed — giving up"
+                    worker_labels[worker_id] = (
+                        "[bold red]BROWSER FAILED — Giving up[/bold red]"
+                    )
                     return processed
-                msg = f"browser start failed — retry {restart_count}/{max_restarts}"
+                msg = (
+                    f"[bold red]BROWSER START FAILED"
+                    f" — Retry {restart_count}/{max_restarts}[/bold red]"
+                )
                 worker_labels[worker_id] = msg
                 await asyncio.sleep(10)
                 continue
-            worker_labels[worker_id] = "unexpected error — restarting"
+            worker_labels[worker_id] = (
+                "[bold red]UNEXPECTED ERROR — Restarting[/bold red]"
+            )
             await asyncio.sleep(5)
             continue
 

@@ -105,9 +105,9 @@ def _build_table(
     table.add_column()
     for i in range(1, num_workers + 1):
         own = worker_counts.get(i, 0)
-        label = worker_labels.get(i, "starting crawl...")
-        row = f"[Crawl-{i}] [{own} | {total_str}] {label}"
-        table.add_row("RUN", escape(row))
+        label = worker_labels.get(i, "Starting crawl...")
+        base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
+        table.add_row("RUN", base + label)
     return Group(table)
 
 
@@ -162,7 +162,7 @@ async def _worker(
     processed = 0
 
     startup_delay = random.uniform(3.0, 15.0)
-    worker_labels[worker_id] = f"waiting {startup_delay:.1f}s before start..."
+    worker_labels[worker_id] = f"Waiting {startup_delay:.1f}s before start..."
     await asyncio.sleep(startup_delay)
 
     profile_dir = f"{chrome_profile_base}-{worker_id}"
@@ -177,7 +177,7 @@ async def _worker(
             ) as engine:
                 browser_started = True
                 restart_count = 0  # reset on successful start
-                worker_labels[worker_id] = "starting crawl..."
+                worker_labels[worker_id] = "Starting crawl..."
 
                 while True:
                     async with get_session(session_factory) as session:
@@ -188,7 +188,7 @@ async def _worker(
                     if job is None:
                         if step2_done is None or step2_done.is_set():
                             return processed
-                        worker_labels[worker_id] = "waiting for step 2..."
+                        worker_labels[worker_id] = "Waiting for step 2..."
                         await asyncio.sleep(10)
                         continue
 
@@ -232,63 +232,78 @@ async def _worker(
                             processed += 1
                             worker_counts[worker_id] = processed
                             full_name = result[0] if result else "unknown"
-                            worker_labels[worker_id] = full_name
+                            worker_labels[worker_id] = escape(full_name or "unknown")
 
                         except (
                             PageLoadError, RateLimitError, BrowserException, RuntimeError  # noqa: E501
                         ) as exc:
                             attempt += 1
                             if isinstance(exc, BrowserException):
-                                worker_labels[worker_id] = "browser error — restarting"
+                                worker_labels[worker_id] = (
+                                    "[bold red]BROWSER ERROR — Restarting[/bold red]"
+                                )
                                 try:
                                     async with get_session(session_factory) as session:
                                         q_repo = PlayerInfoQueueRepository(session)
                                         await q_repo.mark_failed(job.id, str(exc))
                                         await session.commit()
                                 except Exception as mark_err:
-                                    logger.error(
-                                        "[worker-%d] mark_failed error: %s", worker_id, mark_err  # noqa: E501
+                                    worker_labels[worker_id] = (
+                                        "[bold red]mark_failed error: "
+                                        f"{escape(str(mark_err))}[/bold red]"
                                     )
                                 browser_restart = True
                                 break
                             is_terminal = attempt >= 3
                             if is_terminal:
-                                worker_labels[worker_id] = f"FAILED job {job.id} — {exc}"  # noqa: E501
+                                worker_labels[worker_id] = (
+                                    f"[bold red]FAILED job {job.id}"
+                                    f" — {escape(str(exc))}[/bold red]"
+                                )
                                 try:
                                     async with get_session(session_factory) as session:
                                         q_repo = PlayerInfoQueueRepository(session)
                                         await q_repo.mark_failed(job.id, str(exc))
                                         await session.commit()
                                 except Exception as mark_err:
-                                    logger.error(
-                                        "[worker-%d] Failed to mark job %d as failed: %s",  # noqa: E501
-                                        worker_id, job.id, mark_err,
+                                    worker_labels[worker_id] = (
+                                        f"[bold red]FAILED mark job {job.id}: "
+                                        f"{escape(str(mark_err))}[/bold red]"
                                     )
                             else:
-                                worker_labels[worker_id] = f"WARNING retrying ({attempt}/3)"  # noqa: E501
+                                worker_labels[worker_id] = (
+                                    "[bold orange1]WARNING — Retrying"
+                                    f" ({attempt}/3)[/bold orange1]"
+                                )
                                 await asyncio.sleep(2)
 
                     if browser_restart:
                         break
 
                     if not success:
-                        logger.error(
-                            "[worker-%d] job %d exhausted retries, giving up",
-                            worker_id,
-                            job.id,
+                        worker_labels[worker_id] = (
+                            f"[bold red]FAILED job {job.id}"
+                            " — Exhausted retries[/bold red]"
                         )
 
         except Exception:
             if not browser_started:
                 restart_count += 1
                 if restart_count >= max_restarts:
-                    worker_labels[worker_id] = "browser failed — giving up"
+                    worker_labels[worker_id] = (
+                        "[bold red]BROWSER FAILED — Giving up[/bold red]"
+                    )
                     return processed
-                msg = f"browser start failed — retry {restart_count}/{max_restarts}"
+                msg = (
+                    "[bold red]BROWSER START FAILED"
+                    f" — Retry {restart_count}/{max_restarts}[/bold red]"
+                )
                 worker_labels[worker_id] = msg
                 await asyncio.sleep(10)
                 continue
-            worker_labels[worker_id] = "unexpected error — restarting"
+            worker_labels[worker_id] = (
+                "[bold red]UNEXPECTED ERROR — Restarting[/bold red]"
+            )
             await asyncio.sleep(5)
             continue
 
