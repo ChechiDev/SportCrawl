@@ -20,6 +20,7 @@ from rich.console import Console, Group
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
+from rich.padding import Padding
 from rich.table import Table
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -81,7 +82,7 @@ def _build_table(
         label = worker_labels.get(i, "Starting crawl...")
         base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
         table.add_row("RUN", base + label)
-    return Group(table)
+    return Group(Padding(table, pad=(0, 0, 0, 2)))
 
 
 async def _display_loop(
@@ -117,19 +118,22 @@ def _players_url(country_url: str) -> str:
 
 async def _load_all_countries(
     session_factory: async_sessionmaker[AsyncSession],
-) -> list[tuple[str, str]]:
-    """Return (country_id, player_list_url) for every country in the DB."""
+) -> list[tuple[str, str, str]]:
+    """Return (country_id, player_list_url, country_name) for every country in the DB."""
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.select(Country.country_id, Country.country_url)
+            sa.select(Country.country_id, Country.country_url, Country.country_name)
             .order_by(Country.country_name)
         )
-        return [(row.country_id, _players_url(row.country_url)) for row in result]
+        return [
+            (row.country_id, _players_url(row.country_url), row.country_name)
+            for row in result
+        ]
 
 
 async def _seed_queue(
     session_factory: async_sessionmaker[AsyncSession],
-    countries: list[tuple[str, str]],
+    countries: list[tuple[str, str, str]],
 ) -> int:
     """Bulk-insert one scrape_queue row per country URL with job_type='player_list'.
 
@@ -148,7 +152,7 @@ async def _seed_queue(
             "status": ScrapeStatus.PENDING,
             "job_type": "player_list",
         }
-        for _, url in countries
+        for _, url, _ in countries
     ]
 
     chunk_size = 8191
@@ -173,6 +177,7 @@ async def _worker(
     settings: Settings,
     worker_labels: dict[int, str],
     worker_counts: dict[int, int],
+    url_to_name: dict[str, str] | None = None,
 ) -> int:
     """Drain player_list scrape_queue jobs until empty.
 
@@ -212,6 +217,11 @@ async def _worker(
                         if country_match
                         else job.url
                     )
+                    country_display = (
+                        (url_to_name.get(job.url) or country_code).title()
+                        if url_to_name
+                        else country_code
+                    )
 
                     from pydoll.exceptions import BrowserException as _BrowserException
 
@@ -230,14 +240,12 @@ async def _worker(
                             processed += 1
                             worker_counts[worker_id] = processed
                             total_players = len(page.players)
-                            worker_labels[worker_id] = f"{country_code}: {total_players:,} players"  # noqa: E501
+                            worker_labels[worker_id] = f"{country_display}: {total_players:,} players"  # noqa: E501
                             break
 
                         except Exception as exc:
                             if isinstance(exc, _BrowserException):
-                                worker_labels[worker_id] = (
-                                    "[bold red]BROWSER ERROR — Restarting[/bold red]"
-                                )
+                                worker_labels[worker_id] = "browser error — restarting"
                                 try:
                                     async with get_session(session_factory) as session:
                                         repo = PlayerListQueueRepository(session)
@@ -249,11 +257,7 @@ async def _worker(
                                 break
 
                             if attempt < max_attempts:
-                                lbl = (
-                                    f"[bold orange1]RETRY {attempt}/{max_attempts}"
-                                    f" — {country_code}[/bold orange1]"
-                                )
-                                worker_labels[worker_id] = lbl
+                                worker_labels[worker_id] = f"retry {attempt}/{max_attempts} — {country_display}"
                                 await asyncio.sleep(2)
                             else:
                                 try:
@@ -263,9 +267,7 @@ async def _worker(
                                         await session.commit()
                                 except Exception:
                                     pass
-                                worker_labels[worker_id] = (
-                                    f"[bold red]FAILED — {country_code}[/bold red]"
-                                )
+                                worker_labels[worker_id] = f"failed — {country_display}"
 
                     if browser_restart:
                         break
@@ -274,19 +276,13 @@ async def _worker(
             if not browser_started:
                 restart_count += 1
                 if restart_count >= max_restarts:
-                    worker_labels[worker_id] = (
-                        "[bold red]BROWSER FAILED — Giving up[/bold red]"
-                    )
+                    worker_labels[worker_id] = "browser failed — giving up"
                     return processed
-                msg = (
-                    f"[bold red]BROWSER START FAILED"
-                    f" — Retry {restart_count}/{max_restarts}[/bold red]"
-                )
-                worker_labels[worker_id] = msg
+                worker_labels[worker_id] = f"browser start failed — retry {restart_count}/{max_restarts}"
                 await asyncio.sleep(10)
                 continue
             worker_labels[worker_id] = (
-                "[bold red]UNEXPECTED ERROR — Restarting[/bold red]"
+                "unexpected error — restarting"
             )
             await asyncio.sleep(5)
             continue
@@ -328,10 +324,18 @@ async def main_all(workers: int = 1) -> None:
     await _seed_queue(session_factory, countries)
 
     async with get_session(session_factory) as session:
-        stale = await PlayerListQueueRepository(session).recover_stale()
+        stale = await PlayerListQueueRepository(session).recover_all_stale()
         await session.commit()
     if stale:
-        logger.info("Recovered %d stale player_list jobs back to PENDING", stale)
+        logger.info("Resumed: %d interrupted jobs restored to queue", stale)
+
+    async with get_session(session_factory) as session:
+        result = await session.execute(
+            sa.text("SELECT count(*) FROM sch_infra.scrape_queue WHERE job_type='player_list' AND status='DONE'")
+        )
+        initial_db_count = int(result.scalar() or 0)
+
+    url_to_name: dict[str, str] = {url: name for _, url, name in countries}
 
     fetch_gate = asyncio.Semaphore(1)
     logger.info("Launching %d worker(s)…", workers)
@@ -341,13 +345,14 @@ async def main_all(workers: int = 1) -> None:
     stop_event = asyncio.Event()
 
     with Live(
-        _build_table(worker_labels, worker_counts, workers, 0, total),
+        _build_table(worker_labels, worker_counts, workers, initial_db_count, total),
         console=_console,
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
             _display_loop(
-                workers, worker_labels, worker_counts, 0, total, stop_event, live
+                workers, worker_labels, worker_counts,
+                initial_db_count, total, stop_event, live,
             )
         )
         results = await asyncio.gather(
@@ -360,6 +365,7 @@ async def main_all(workers: int = 1) -> None:
                     settings=settings,
                     worker_labels=worker_labels,
                     worker_counts=worker_counts,
+                    url_to_name=url_to_name,
                 )
                 for i in range(workers)
             ],
@@ -377,21 +383,44 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
         logger.warning("main_countries called with empty codes list — nothing to do")
         return
 
-    countries = [(code, _BASE_URL.format(code=code)) for code in codes]
+    settings = Settings()  # type: ignore[call-arg]
+
+    # Build (code, url, name) triples; look up names from DB for display.
+    upper_codes = [c.upper() for c in codes]
+    session_factory_tmp = create_session_factory(settings.db)
+    async with get_session(session_factory_tmp) as session:
+        result = await session.execute(
+            sa.select(Country.country_id, Country.country_name).where(
+                Country.country_id.in_(upper_codes)
+            )
+        )
+        code_to_name: dict[str, str] = {row.country_id: row.country_name for row in result}
+
+    countries = [
+        (code, _BASE_URL.format(code=code), code_to_name.get(code, code))
+        for code in upper_codes
+    ]
     total = len(countries)
     workers = total
 
-    settings = Settings()  # type: ignore[call-arg]
     settings.db.pool_size = max(workers * 2, settings.db.pool_size)
     session_factory = create_session_factory(settings.db)
 
     await _seed_queue(session_factory, countries)
 
     async with get_session(session_factory) as session:
-        stale = await PlayerListQueueRepository(session).recover_stale()
+        stale = await PlayerListQueueRepository(session).recover_all_stale()
         await session.commit()
     if stale:
-        logger.info("Recovered %d stale player_list jobs back to PENDING", stale)
+        logger.info("Resumed: %d interrupted jobs restored to queue", stale)
+
+    async with get_session(session_factory) as session:
+        result = await session.execute(
+            sa.text("SELECT count(*) FROM sch_infra.scrape_queue WHERE job_type='player_list' AND status='DONE'")
+        )
+        initial_db_count = int(result.scalar() or 0)
+
+    url_to_name: dict[str, str] = {url: name for _, url, name in countries}
 
     fetch_gate = asyncio.Semaphore(1)
 
@@ -400,13 +429,14 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     stop_event = asyncio.Event()
 
     with Live(
-        _build_table(worker_labels, worker_counts, workers, 0, total),
+        _build_table(worker_labels, worker_counts, workers, initial_db_count, total),
         console=_console,
         refresh_per_second=2,
     ) as live:
         display_task = asyncio.create_task(
             _display_loop(
-                workers, worker_labels, worker_counts, 0, total, stop_event, live
+                workers, worker_labels, worker_counts,
+                initial_db_count, total, stop_event, live,
             )
         )
         results = await asyncio.gather(
@@ -419,6 +449,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
                     settings=settings,
                     worker_labels=worker_labels,
                     worker_counts=worker_counts,
+                    url_to_name=url_to_name,
                 )
                 for i in range(workers)
             ],
