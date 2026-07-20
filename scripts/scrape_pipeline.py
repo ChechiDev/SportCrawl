@@ -22,6 +22,7 @@ import sqlalchemy as sa
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markup import escape
+from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -109,9 +110,11 @@ def _build_unified_display(
     s3_workers: int,
     s3_total: int,
     s3_ready: bool,
+    s2_initial_db: int = 0,
+    s3_initial_db: int = 0,
 ) -> Group:
     # --- Step 2 ---
-    s2_done = sum(s2_counts.values())
+    s2_done = s2_initial_db + sum(s2_counts.values())
     s2_total_str = f"{s2_done}/{s2_total}" if s2_total else str(s2_done)
 
     s2_header = Text.assemble(
@@ -122,14 +125,17 @@ def _build_unified_display(
     s2_table = Table.grid(padding=(0, 2))
     s2_table.add_column(style="bold green")
     s2_table.add_column()
-    for i in range(1, s2_workers + 1):
-        own = s2_counts.get(i, 0)
-        label = s2_labels.get(i, "starting crawl...")
-        row = f"[Crawl-{i}] [{own} | {s2_total_str}] {label}"
-        s2_table.add_row("RUN", escape(row))
+    if s2_total and s2_done >= s2_total:
+        s2_table.add_row("OK", f"All players in {s2_total} countries already scraped")
+    else:
+        for i in range(1, s2_workers + 1):
+            own = s2_counts.get(i, 0)
+            label = s2_labels.get(i, "starting crawl...")
+            row = f"[Crawl-{i}] [{own} | {s2_total_str}] {label}"
+            s2_table.add_row("RUN", escape(row))
 
     # --- Step 3 ---
-    s3_done = sum(s3_counts.values())
+    s3_done = s3_initial_db + sum(s3_counts.values())
     s3_total_str = f"{s3_done}/{s3_total}" if s3_total else str(s3_done)
 
     s3_suffix = "" if s3_ready else "  [waiting for trigger...]"
@@ -144,28 +150,41 @@ def _build_unified_display(
         Text(f"  {msg}", style="dim yellow") for msg in notes
     ]
 
+    s2_table_padded = Padding(s2_table, pad=(0, 0, 0, 2))
+    resume_hint = Text(
+        "\n  Ctrl+C to stop · on restart, scraping resumes from where it left off",
+        style="dim",
+    )
+
     if s3_ready:
         s3_table = Table.grid(padding=(0, 2))
         s3_table.add_column(style="bold green")
         s3_table.add_column()
-        for i in range(1, s3_workers + 1):
-            own = s3_counts.get(i, 0)
-            label = s3_labels.get(i, "starting crawl...")
-            row = f"[Crawl-{i}] [{own} | {s3_total_str}] {label}"
-            s3_table.add_row("RUN", escape(row))
+        if s3_total and s3_done >= s3_total:
+            s3_table.add_row("OK", f"{s3_total:,} player info records already scraped")
+        else:
+            for i in range(1, s3_workers + 1):
+                own = s3_counts.get(i, 0)
+                label = s3_labels.get(i, "starting crawl...")
+                row = f"[Crawl-{i}] [{own} | {s3_total_str}] {label}"
+                s3_table.add_row("RUN", escape(row))
+        s3_table_padded = Padding(s3_table, pad=(0, 0, 0, 2))
         if note_renderables:
             return Group(
-                s2_header, s2_table, Text(""), s3_header, s3_table,
-                Text(""), *note_renderables,
+                s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
+                Text(""), *note_renderables, resume_hint,
             )
-        return Group(s2_header, s2_table, Text(""), s3_header, s3_table)
+        return Group(
+            s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
+            resume_hint,
+        )
 
     if note_renderables:
         return Group(
-            s2_header, s2_table, Text(""), s3_header,
-            Text(""), *note_renderables,
+            s2_header, s2_table_padded, Text(""), s3_header,
+            Text(""), *note_renderables, resume_hint,
         )
-    return Group(s2_header, s2_table, Text(""), s3_header)
+    return Group(s2_header, s2_table_padded, Text(""), s3_header, resume_hint)
 
 
 async def _s3_total_poller(
@@ -198,12 +217,16 @@ async def _display_loop(
     s3_ready_event: asyncio.Event,
     stop_event: asyncio.Event,
     live: Live,
+    s2_initial_db: int = 0,
+    s3_initial_db: int = 0,
 ) -> None:
     while not stop_event.is_set():
         renderable = _build_unified_display(
             s2_labels, s2_counts, s2_workers, s2_total,
             s3_labels, s3_counts, s3_workers, s3_total_ref[0],
             s3_ready_event.is_set(),
+            s2_initial_db=s2_initial_db,
+            s3_initial_db=s3_initial_db,
         )
         live.update(renderable)
         await asyncio.sleep(0.5)
@@ -211,6 +234,8 @@ async def _display_loop(
         s2_labels, s2_counts, s2_workers, s2_total,
         s3_labels, s3_counts, s3_workers, s3_total_ref[0],
         s3_ready_event.is_set(),
+        s2_initial_db=s2_initial_db,
+        s3_initial_db=s3_initial_db,
     )
     live.update(renderable)
 
@@ -297,10 +322,11 @@ async def main(
         s2_total = len(countries)
 
     async with get_session(session_factory) as session:
-        stale = await PlayerListQueueRepository(session).recover_stale()
+        stale = await PlayerListQueueRepository(session).recover_all_stale()
         await session.commit()
     if stale:
-        logger.info("Recovered %d stale player_list jobs back to PENDING", stale)
+        logger.info("Resumed: %d interrupted jobs restored to queue", stale)
+        _notifications.add(f"Resumed: {stale} interrupted jobs restored to queue")
 
     # Count actual pending step-2 jobs (covers the case where --all was not passed
     # but jobs already exist in the queue).
@@ -329,6 +355,17 @@ async def main(
         s3_already_done = int(result.scalar() or 0)
     s3_total = s3_already_done + s3_queue_count
 
+    # Initial DB counts for display numerators
+    async with get_session(session_factory) as session:
+        result = await session.execute(
+            sa.text(
+                "SELECT count(*) FROM sch_infra.scrape_queue"
+                " WHERE job_type='player_list' AND status='DONE'"
+            )
+        )
+        s2_initial_db = int(result.scalar() or 0)
+    s3_initial_db = s3_already_done
+
     # Shared caches for step-3 workers
     valid_countries = await _load_country_ids(session_factory)
     country_name_cache = await _load_country_name_cache(session_factory)
@@ -355,6 +392,8 @@ async def main(
         s2_labels, s2_counts, workers, s2_total,
         s3_labels, s3_counts, workers, s3_total_ref[0],
         False,
+        s2_initial_db=s2_initial_db,
+        s3_initial_db=s3_initial_db,
     )
 
     with Live(initial_renderable, console=_console, refresh_per_second=2) as live:
@@ -363,6 +402,8 @@ async def main(
                 s2_labels, s2_counts, workers, s2_total,
                 s3_labels, s3_counts, workers, s3_total_ref,
                 step3_ready, stop_event, live,
+                s2_initial_db=s2_initial_db,
+                s3_initial_db=s3_initial_db,
             )
         )
 
@@ -397,10 +438,11 @@ async def main(
         await step3_ready.wait()
 
         async with get_session(session_factory) as session:
-            stale3 = await PlayerInfoQueueRepository(session).recover_stale()
+            stale3 = await PlayerInfoQueueRepository(session).recover_all_stale()
             await session.commit()
         if stale3:
-            logger.info("Recovered %d stale player_info jobs back to PENDING", stale3)
+            logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
+            _notifications.add(f"Resumed: {stale3} interrupted jobs restored to queue")
 
         # Seed step-3 queue from tbl_players (idempotent)
         await _seed_player_info_queue(session_factory)

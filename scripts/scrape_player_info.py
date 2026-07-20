@@ -19,6 +19,7 @@ from rich.console import Console, Group
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
+from rich.padding import Padding
 from rich.table import Table
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -108,7 +109,7 @@ def _build_table(
         label = worker_labels.get(i, "Starting crawl...")
         base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
         table.add_row("RUN", base + label)
-    return Group(table)
+    return Group(Padding(table, pad=(0, 0, 0, 2)))
 
 
 async def _display_loop(
@@ -239,71 +240,53 @@ async def _worker(
                         ) as exc:
                             attempt += 1
                             if isinstance(exc, BrowserException):
-                                worker_labels[worker_id] = (
-                                    "[bold red]BROWSER ERROR — Restarting[/bold red]"
-                                )
+                                worker_labels[worker_id] = "browser error — restarting"
                                 try:
                                     async with get_session(session_factory) as session:
                                         q_repo = PlayerInfoQueueRepository(session)
                                         await q_repo.mark_failed(job.id, str(exc))
                                         await session.commit()
                                 except Exception as mark_err:
-                                    worker_labels[worker_id] = (
-                                        "[bold red]mark_failed error: "
-                                        f"{escape(str(mark_err))}[/bold red]"
+                                    logger.error(
+                                        "[worker-%d] mark_failed error: %s", worker_id, mark_err
                                     )
                                 browser_restart = True
                                 break
                             is_terminal = attempt >= 3
                             if is_terminal:
-                                worker_labels[worker_id] = (
-                                    f"[bold red]FAILED job {job.id}"
-                                    f" — {escape(str(exc))}[/bold red]"
-                                )
+                                worker_labels[worker_id] = f"failed job {job.id} — {exc}"
                                 try:
                                     async with get_session(session_factory) as session:
                                         q_repo = PlayerInfoQueueRepository(session)
                                         await q_repo.mark_failed(job.id, str(exc))
                                         await session.commit()
                                 except Exception as mark_err:
-                                    worker_labels[worker_id] = (
-                                        f"[bold red]FAILED mark job {job.id}: "
-                                        f"{escape(str(mark_err))}[/bold red]"
+                                    logger.error(
+                                        "[worker-%d] failed to mark job %d as failed: %s",
+                                        worker_id, job.id, mark_err,
                                     )
                             else:
-                                worker_labels[worker_id] = (
-                                    "[bold orange1]WARNING — Retrying"
-                                    f" ({attempt}/3)[/bold orange1]"
-                                )
+                                worker_labels[worker_id] = f"warning — retrying ({attempt}/3)"
                                 await asyncio.sleep(2)
 
                     if browser_restart:
                         break
 
                     if not success:
-                        worker_labels[worker_id] = (
-                            f"[bold red]FAILED job {job.id}"
-                            " — Exhausted retries[/bold red]"
+                        logger.error(
+                            "[worker-%d] job %d exhausted retries, giving up", worker_id, job.id
                         )
 
         except Exception:
             if not browser_started:
                 restart_count += 1
                 if restart_count >= max_restarts:
-                    worker_labels[worker_id] = (
-                        "[bold red]BROWSER FAILED — Giving up[/bold red]"
-                    )
+                    worker_labels[worker_id] = "browser failed — giving up"
                     return processed
-                msg = (
-                    "[bold red]BROWSER START FAILED"
-                    f" — Retry {restart_count}/{max_restarts}[/bold red]"
-                )
-                worker_labels[worker_id] = msg
+                worker_labels[worker_id] = f"browser start failed — retry {restart_count}/{max_restarts}"
                 await asyncio.sleep(10)
                 continue
-            worker_labels[worker_id] = (
-                "[bold red]UNEXPECTED ERROR — Restarting[/bold red]"
-            )
+            worker_labels[worker_id] = "unexpected error — restarting"
             await asyncio.sleep(5)
             continue
 
@@ -420,10 +403,10 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
     # Recover any stale IN_PROGRESS rows from a previous interrupted run
     async with get_session(session_factory) as session:
         queue_repo = PlayerInfoQueueRepository(session)
-        stale = await queue_repo.recover_stale()
+        stale = await queue_repo.recover_all_stale()
         await session.commit()
     if stale:
-        logger.info("Recovered %d stale jobs back to PENDING", stale)
+        logger.info("Resumed: %d interrupted jobs restored to queue", stale)
 
     # Recover any permanently FAILED rows so they are retried this run
     async with get_session(session_factory) as session:
