@@ -107,7 +107,7 @@ async def check_alembic_initialized(dsn: str) -> CheckResult:
             return CheckResult(
                 name="Alembic initialized",
                 passed=True,
-                detail="alembic_version table found.",
+                detail="Migrations initialized successfully.",
                 fatal=True,
             )
         return CheckResult(
@@ -130,7 +130,7 @@ async def check_alembic_revision(dsn: str, required_head: str) -> CheckResult:
             return CheckResult(
                 name="Alembic revision",
                 passed=True,
-                detail=f"DB at revision {current} (>= {required_head}).",
+                detail="Database version up to date.",
                 fatal=True,
             )
         return CheckResult(
@@ -157,7 +157,7 @@ async def check_schemas_exist(dsn: str) -> CheckResult:
             return CheckResult(
                 name="Schemas exist",
                 passed=True,
-                detail="sch_infra and sch_shared found.",
+                detail="Database schemas verified.",
                 fatal=True,
             )
         return CheckResult(
@@ -185,7 +185,7 @@ async def check_tables_exist(
             return CheckResult(
                 name="Tables exist",
                 passed=True,
-                detail=f"All {len(tables)} tables found for phase '{phase}'.",
+                detail="System tables ready.",
                 fatal=True,
             )
         return CheckResult(
@@ -226,6 +226,37 @@ async def check_seed_data(
             passed=False,
             detail=f"No {label} found. Seed data required for phase '{phase}'.",
             fatal=True,
+        )
+    finally:
+        await conn.close()
+
+
+async def check_clubs_data(dsn: str) -> CheckResult:
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        exists = await conn.fetchval(
+            "SELECT to_regclass('sch_shared.tbl_clubs') IS NOT NULL"
+        )
+        if not exists:
+            return CheckResult(
+                name="Clubs data",
+                passed=False,
+                detail="Clubs not available yet — domain and scraping pending.",
+                fatal=False,
+            )
+        count = await conn.fetchval("SELECT COUNT(*) FROM sch_shared.tbl_clubs")
+        if count and count > 0:
+            return CheckResult(
+                name="Clubs data",
+                passed=True,
+                detail=f"{count} clubs loaded.",
+                fatal=False,
+            )
+        return CheckResult(
+            name="Clubs data",
+            passed=False,
+            detail="Clubs table exists but is empty.",
+            fatal=False,
         )
     finally:
         await conn.close()

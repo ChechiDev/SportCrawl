@@ -5,12 +5,11 @@ from core.preflight.result import CheckResult
 
 def render_check(result: CheckResult, console: Console) -> None:
     if result.passed:
-        icon = "[bold green]OK  [/bold green]"
+        console.print(f"  [cyan]✓[/cyan]  {result.detail:<55}")
     elif not result.fatal:
-        icon = "[bold yellow]WARN[/bold yellow]"
+        console.print(f"  [yellow]⚠[/yellow]  {result.name}: {result.detail:<50}")
     else:
-        icon = "[bold red]FAIL[/bold red]"
-    console.print(f"  {icon}  {result.name}: {result.detail}")
+        console.print(f"  [red]✗[/red]  {result.name}: {result.detail:<50}")
 
 
 def render_summary(results: list[CheckResult], console: Console) -> None:

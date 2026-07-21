@@ -41,7 +41,7 @@ from scripts.scrape_player_info import (
     _load_country_name_cache,
 )
 from scripts.scrape_player_info import _seed_queue as _seed_player_info_queue
-from scripts.scrape_players import PlayerListWorker, _load_all_countries
+from scripts.scrape_players import PlayerListWorker, _COUNTRY_CODE_RE, _load_all_countries
 from scripts.scrape_players import _seed_queue as _seed_player_list_queue
 
 # force=True resets any handlers set by scrape_players / scrape_player_info at
@@ -120,9 +120,7 @@ def _build_unified_display(
     s2_total_str = f"{s2_done}/{s2_total}" if s2_total else str(s2_done)
 
     s2_header = Text.assemble(
-        ("Step ", "bold"),
-        ("2", "bold cyan"),
-        (" — Scraping Players", "bold"),
+        ("Scraping Players", "bold"),
     )
     s2_table = Table.grid(padding=(0, 2))
     s2_table.add_column(style="bold green")
@@ -142,9 +140,7 @@ def _build_unified_display(
 
     s3_suffix = "" if s3_ready else "  [waiting for trigger...]"
     s3_header = Text.assemble(
-        ("Step ", "bold"),
-        ("3", "bold cyan"),
-        (f" — Scraping Single player info{s3_suffix}", "bold"),
+        (f"Scraping Single Player Stats{s3_suffix}", "bold"),
     )
     # --- Notifications (TTL 5 s) ---
     notes = _notifications.active()
@@ -153,10 +149,6 @@ def _build_unified_display(
     ]
 
     s2_table_padded = Padding(s2_table, pad=(0, 0, 0, 2))
-    resume_hint = Text(
-        "\n  Ctrl+C to stop · on restart, scraping resumes from where it left off",
-        style="dim",
-    )
 
     if s3_ready:
         s3_table = Table.grid(padding=(0, 2))
@@ -174,19 +166,18 @@ def _build_unified_display(
         if note_renderables:
             return Group(
                 s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
-                Text(""), *note_renderables, resume_hint,
+                Text(""), *note_renderables,
             )
         return Group(
             s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
-            resume_hint,
         )
 
     if note_renderables:
         return Group(
             s2_header, s2_table_padded, Text(""), s3_header,
-            Text(""), *note_renderables, resume_hint,
+            Text(""), *note_renderables,
         )
-    return Group(s2_header, s2_table_padded, Text(""), s3_header, resume_hint)
+    return Group(s2_header, s2_table_padded, Text(""), s3_header)
 
 
 async def _s3_total_poller(
@@ -318,6 +309,13 @@ async def main(
         # If no --all flag, users rely on existing queue state.
         countries = []
 
+    s2_url_to_name: dict[str, str] = {url: name for _, url, name in countries}
+    s2_code_to_name: dict[str, str] = {}
+    for _, url, name in countries:
+        m = _COUNTRY_CODE_RE.search(url)
+        if m:
+            s2_code_to_name[m.group(1).upper()] = name
+
     s2_total = 0
     if countries:
         await _seed_player_list_queue(session_factory, countries)
@@ -431,7 +429,8 @@ async def main(
                     worker_labels=s2_labels,
                     worker_counts=s2_counts,
                     settings=settings,
-                    url_to_name=None,
+                    url_to_name=s2_url_to_name,
+                    code_to_name=s2_code_to_name,
                 ).run()
             )
             for i in range(workers)

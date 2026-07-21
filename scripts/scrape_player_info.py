@@ -397,7 +397,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         stale = await queue_repo.recover_all_stale()
         await session.commit()
     if stale:
-        logger.info("Resumed: %d interrupted jobs restored to queue", stale)
+        logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
 
     # Recover any permanently FAILED rows so they are retried this run
     async with get_session(session_factory) as session:

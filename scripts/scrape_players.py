@@ -19,6 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from rich.console import Console
 from rich.live import Live
+from rich.text import Text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -40,7 +41,7 @@ _root_logger = logging.getLogger()
 _root_logger.handlers.clear()
 _root_logger.setLevel(logging.CRITICAL)
 
-for _noisy in ("pydoll", "websockets", "asyncio"):
+for _noisy in ("pydoll", "websockets", "asyncio", "ports", "ports.scraper", "infrastructure"):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
         worker_counts: dict[int, int],
         settings: Settings,
         url_to_name: dict[str, str] | None = None,
+        code_to_name: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             worker_id=worker_id,
@@ -81,6 +83,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
         )
         self._settings = settings
         self._url_to_name = url_to_name or {}
+        self._code_to_name = code_to_name or {}
         self._scraper: PlayerListScraper | None = None
 
     @property
@@ -124,10 +127,10 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                 country_match.group(1).upper() if country_match else job.url
             )
             country_display = (
-                (self._url_to_name.get(job.url) or country_code).title()
-                if self._url_to_name
-                else country_code
-            )
+                self._url_to_name.get(job.url)
+                or self._code_to_name.get(country_code)
+                or country_code
+            ).title()
 
             max_attempts = 3
             browser_restart = False
@@ -287,7 +290,7 @@ async def main_all(workers: int = 1) -> None:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
         await session.commit()
     if stale:
-        logger.info("Resumed: %d interrupted jobs restored to queue", stale)
+        logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
 
     async with get_session(session_factory) as session:
         result = await session.execute(
@@ -299,6 +302,11 @@ async def main_all(workers: int = 1) -> None:
         initial_db_count = int(result.scalar() or 0)
 
     url_to_name: dict[str, str] = {url: name for _, url, name in countries}
+    code_to_name: dict[str, str] = {}
+    for _, url, name in countries:
+        m = _COUNTRY_CODE_RE.search(url)
+        if m:
+            code_to_name[m.group(1).upper()] = name
 
     fetch_gate = asyncio.Semaphore(1)
     logger.info("Launching %d worker(s)…", workers)
@@ -332,6 +340,7 @@ async def main_all(workers: int = 1) -> None:
                     worker_counts=worker_counts,
                     settings=settings,
                     url_to_name=url_to_name,
+                    code_to_name=code_to_name,
                 ).run()
                 for i in range(workers)
             ],
@@ -339,9 +348,13 @@ async def main_all(workers: int = 1) -> None:
         )
         stop_event.set()
         await display_task
+        done_text = Text("  ")
+        done_text.append("✓", style="cyan")
+        done_text.append("  All players scraped.")
+        live.update(done_text)
 
     grand_total = sum(r for r in results if isinstance(r, int))
-    logger.info("Done. %d jobs processed across %d worker(s).", grand_total, workers)
+    logger.debug("Done. %d jobs processed across %d worker(s).", grand_total, workers)
 
 
 async def main_countries(codes: list[str], workers: int = 1) -> None:
@@ -351,25 +364,20 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
 
     settings = Settings()  # type: ignore[call-arg]
 
-    # Build (code, url, name) triples; look up names from DB for display.
     upper_codes = [c.upper() for c in codes]
     session_factory_tmp = create_session_factory(settings.db)
     async with get_session(session_factory_tmp) as session:
         result = await session.execute(
-            sa.select(Country.country_id, Country.country_name).where(
+            sa.select(Country.country_id, Country.country_url, Country.country_name).where(
                 Country.country_id.in_(upper_codes)
             )
         )
-        code_to_name: dict[str, str] = {
-            row.country_id: row.country_name for row in result
-        }
-
-    countries = [
-        (code, _BASE_URL.format(code=code), code_to_name.get(code, code))
-        for code in upper_codes
-    ]
+        countries = [
+            (row.country_id, _players_url(row.country_url), row.country_name)
+            for row in result
+        ]
     total = len(countries)
-    workers = total
+    workers = 1
 
     settings.db.pool_size = max(workers * 2, settings.db.pool_size)
     session_factory = create_session_factory(settings.db)
@@ -380,7 +388,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
         await session.commit()
     if stale:
-        logger.info("Resumed: %d interrupted jobs restored to queue", stale)
+        logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
 
     async with get_session(session_factory) as session:
         result = await session.execute(
@@ -392,6 +400,11 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
         initial_db_count = int(result.scalar() or 0)
 
     url_to_name: dict[str, str] = {url: name for _, url, name in countries}
+    code_to_name: dict[str, str] = {}
+    for _, url, name in countries:
+        m = _COUNTRY_CODE_RE.search(url)
+        if m:
+            code_to_name[m.group(1).upper()] = name
 
     fetch_gate = asyncio.Semaphore(1)
 
@@ -424,6 +437,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
                     worker_counts=worker_counts,
                     settings=settings,
                     url_to_name=url_to_name,
+                    code_to_name=code_to_name,
                 ).run()
                 for i in range(workers)
             ],
@@ -431,9 +445,13 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
         )
         stop_event.set()
         await display_task
+        done_text = Text("  ")
+        done_text.append("✓", style="cyan")
+        done_text.append("  All players scraped.")
+        live.update(done_text)
 
     grand_total = sum(r for r in results if isinstance(r, int))
-    logger.info("Done. %d jobs processed across %d worker(s).", grand_total, workers)
+    logger.debug("Done. %d jobs processed across %d worker(s).", grand_total, workers)
 
 
 def main() -> None:

@@ -9,6 +9,7 @@ from rich.console import Console
 from core.preflight.checks import (
     check_alembic_initialized,
     check_alembic_revision,
+    check_clubs_data,
     check_db_reachable,
     check_schemas_exist,
     check_seed_data,
@@ -54,18 +55,22 @@ async def run_checks(
         if not compact:
             render_check(result, console)
 
+    async def _run(fn, label: str) -> CheckResult:  # type: ignore[no-untyped-def]
+        console.print(f"  [dim]→[/dim]  [white]{label}[/white]", end="\r")
+        await asyncio.sleep(1.5)
+        result = await fn()  # type: ignore[no-untyped-call]
+        return result
+
     check_fns = [
-        lambda: check_db_reachable(dsn),
-        lambda: check_alembic_initialized(dsn),
-        lambda: check_alembic_revision(
-            dsn, MINIMUM_REVISION.get(phase, REQUIRED_HEAD)
-        ),
-        lambda: check_schemas_exist(dsn),
-        lambda: check_tables_exist(dsn, phase),  # type: ignore[arg-type]
+        (lambda: check_db_reachable(dsn), "Checking DB connection..."),
+        (lambda: check_alembic_initialized(dsn), "Database migrations initialized..."),
+        (lambda: check_alembic_revision(dsn, MINIMUM_REVISION.get(phase, REQUIRED_HEAD)), "Checking DB revision..."),
+        (lambda: check_schemas_exist(dsn), "Checking schemas..."),
+        (lambda: check_tables_exist(dsn, phase), "Checking tables..."),  # type: ignore[arg-type]
     ]
 
-    for fn in check_fns:
-        result = await fn()  # type: ignore[no-untyped-call]
+    for fn, label in check_fns:
+        result = await _run(fn, label)
         _render(result)
         results.append(result)
         if not result.passed and result.fatal:
@@ -86,16 +91,24 @@ async def run_checks(
                 return results
 
     if phase in ("players", "player_info"):
-        result = await check_seed_data(dsn, phase)  # type: ignore[arg-type]
-        _render(result)
+        result = await _run(lambda: check_seed_data(dsn, phase), "Checking seed data...")  # type: ignore[arg-type]
+        if result.passed:
+            _render(result)
+        # On failure: suppress render — caller handles inline seeding display
         results.append(result)
         if not result.passed and result.fatal:
             if compact:
                 render_compact(results, console)
             return results
 
+    if phase in ("players", "player_info"):
+        result = await _run(lambda: check_clubs_data(dsn), "Checking clubs data...")
+        _render(result)
+        results.append(result)
+
     result = await check_stale_queue(dsn)
-    _render(result)
+    if not result.passed:
+        _render(result)
     results.append(result)
 
     if compact:

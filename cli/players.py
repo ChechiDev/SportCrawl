@@ -7,6 +7,7 @@ import asyncpg  # type: ignore[import-untyped]
 import typer
 from rich.console import Console
 
+from cli.header import print_header
 from config.settings import Settings
 from core.preflight import run_checks
 from core.preflight.checks import check_stale_queue
@@ -78,30 +79,31 @@ async def _run(
     dsn = _build_dsn(settings)
     seed_failed = None
 
+    print_header(console)
+
     from core.preflight.renderer import render_summary
 
     if not skip_preflight:
-        console.print("[bold]Preflight — Checking requirements[/bold]")
-        results = await run_checks(dsn, "players", console, compact=True)
+        console.print("[bold white]Checking requirements...[/bold white]")
+        results = await run_checks(dsn, "players", console, compact=False)
 
         seed_failed = next(
             (r for r in results if r.name == "Seed data" and not r.passed), None
         )
         if seed_failed and "countries" in seed_failed.detail:
             from core.exceptions.scraper import ScraperError
-            console.print()
-            console.print("[bold]Step 1 — Scraping countries[/bold]")
             _MAX_SEED_RETRIES = 5
             _SEED_RETRY_WAIT = 60
             for _attempt in range(1, _MAX_SEED_RETRIES + 1):
+                console.print(f"  [dim]→[/dim]  [dim]Seeding countries (attempt {_attempt}/{_MAX_SEED_RETRIES})...[/dim]{' ' * 20}", end="\r")
                 try:
                     await _seed_countries(settings)
                     break
                 except ScraperError:
                     if _attempt >= _MAX_SEED_RETRIES:
-                        console.print("  [bold red]FAIL[/bold red]  Countries scrape failed after retries. Try again later.")
+                        console.print(f"  [red]✗[/red]  Countries scrape failed after {_MAX_SEED_RETRIES} retries.{' ' * 20}")
                         raise typer.Exit(code=1)
-                    console.print(f"  [bold yellow]WARNING[/bold yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s ({_attempt}/{_MAX_SEED_RETRIES})")
+                    console.print(f"  [yellow]⚠[/yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}")
                     await asyncio.sleep(_SEED_RETRY_WAIT)
             conn = await asyncpg.connect(dsn, timeout=5)
             try:
@@ -110,24 +112,19 @@ async def _run(
                 )
             finally:
                 await conn.close()
-            seed_msg = (
-                f"  [bold green]OK[/bold green]  Seed data: "
-                f"[bold]{country_count}[/bold] countries found."
-            )
-            console.print(seed_msg)
-            stale_msg = "  [bold green]OK[/bold green]  "
-            stale_msg += "Stale queue: No stale jobs found."
-            console.print(stale_msg)
-            # Mark previously failed checks as resolved for the summary
+            console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
+            # Mark seed check as resolved and run stale queue check
             results = [
                 CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
                 if not r.passed else r
                 for r in results
             ]
             stale_result = await check_stale_queue(dsn)
+            if not stale_result.passed:
+                from core.preflight.renderer import render_check
+                render_check(stale_result, console)
             results.append(stale_result)
 
-        passed = sum(1 for r in results if r.passed)
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:
             raise typer.Exit(code=1)
@@ -157,12 +154,11 @@ async def _run(
         from scripts.scrape_pipeline import main as pipeline_main
 
         console.print()
-        console.print("[bold]Scraping Players and Single player info[/bold]")
         await pipeline_main(workers=workers, all_countries=True)
         return
 
     console.print()
-    console.print(f"[bold]Step {step} — Scraping Players[/bold]")
+    console.print("[bold]Scraping Players[/bold]")
     if all_countries:
         await main_all(workers=workers)
     elif country:
@@ -173,16 +169,8 @@ async def _run(
         raise typer.Exit(code=1)
 
     if with_player_info:
-        if not skip_preflight:
-            console.print()
-            console.print("[bold]Preflight for player info[/bold]")
-            pi_results = await run_checks(dsn, "player_info", console, compact=True)
-            pi_failures = [r for r in pi_results if not r.passed and r.fatal]
-            if pi_failures:
-                raise typer.Exit(code=1)
-
         console.print()
-        console.print("[bold]Step 3 — Scraping Single player info[/bold]")
+        console.print("[bold]Scraping Single Player Stats[/bold]")
         from scripts.scrape_player_info import main as scrape_info
 
         await scrape_info(workers=workers, seed=True)
