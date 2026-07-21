@@ -19,7 +19,6 @@ from typing import Any
 import sqlalchemy as sa
 from rich.console import Console
 from rich.live import Live
-from rich.logging import RichHandler
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -35,19 +34,12 @@ from infrastructure.persistence.repositories.player_list_queue import (
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.players import PlayerListScraper
 
-_console = Console(stderr=True)
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(message)s",
-    handlers=[
-        RichHandler(
-            console=_console,
-            show_time=False,
-            show_path=False,
-            rich_tracebacks=False,
-        ),
-    ],
-)
+_console = Console()
+
+_root_logger = logging.getLogger()
+_root_logger.handlers.clear()
+_root_logger.setLevel(logging.CRITICAL)
+
 for _noisy in ("pydoll", "websockets", "asyncio"):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
@@ -111,6 +103,11 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
         """Drain player_list jobs for one browser session.
 
         Returns True when queue is empty (stop), False on BrowserException (restart).
+
+        Note: ``engine`` is intentionally unused here. The scraper is injected via
+        ``on_browser_ready`` (temporal coupling by design) so that the same scraper
+        instance can be reused across jobs within a single browser session without
+        passing the engine through every call site.
         """
         from pydoll.exceptions import BrowserException as _BrowserException
 
@@ -137,7 +134,10 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
             for attempt in range(1, max_attempts + 1):
                 try:
                     async with self._fetch_gate:
-                        assert self._scraper is not None
+                        if self._scraper is None:
+                            raise RuntimeError(
+                                "scraper not initialised — on_browser_ready must run first"
+                            )
                         page, _ = await self._scraper.scrape(job.url)
 
                     async with get_session(self._session_factory) as session:
@@ -155,7 +155,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 
                 except Exception as exc:
                     if isinstance(exc, _BrowserException):
-                        self._labels[self._worker_id] = "browser error — restarting"
+                        self._labels[self._worker_id] = "[bold red]ERROR[/] Browser error — Restarting"
                         try:
                             async with get_session(self._session_factory) as session:
                                 repo = PlayerListQueueRepository(session)
@@ -168,7 +168,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 
                     if attempt < max_attempts:
                         self._labels[self._worker_id] = (
-                            f"retry {attempt}/{max_attempts} — {country_display}"
+                            f"[bold yellow]WARNING[/] Retrying ({attempt}/{max_attempts}) — {country_display}"
                         )
                         await asyncio.sleep(2)
                     else:
@@ -179,7 +179,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                 await session.commit()
                         except Exception:
                             pass
-                        self._labels[self._worker_id] = f"failed — {country_display}"
+                        self._labels[self._worker_id] = f"[bold red]FAILED[/] {country_display}"
 
             if browser_restart:
                 return False
@@ -313,6 +313,7 @@ async def main_all(workers: int = 1) -> None:
         ),
         console=_console,
         refresh_per_second=2,
+        vertical_overflow="crop",
     ) as live:
         display_task = asyncio.create_task(
             run_display_loop(
@@ -404,6 +405,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
         ),
         console=_console,
         refresh_per_second=2,
+        vertical_overflow="crop",
     ) as live:
         display_task = asyncio.create_task(
             run_display_loop(

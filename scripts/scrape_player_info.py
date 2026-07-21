@@ -18,13 +18,12 @@ import sqlalchemy as sa
 from pydoll.exceptions import BrowserException
 from rich.console import Console
 from rich.live import Live
-from rich.logging import RichHandler
 from rich.markup import escape
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
-from core.application.base_worker import BaseWorker
+from core.application.base_worker import BaseWorker, CooldownRequired
 from core.application.scrape_job_processor import ScrapeJobProcessor
 from core.exceptions.scraper import PageLoadError, RateLimitError
 from infrastructure.browser.pydoll_engine import PydollEngine
@@ -38,19 +37,52 @@ from infrastructure.persistence.repositories.player_info_queue import (
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.player_info import PlayerInfoScraper
 
-_console = Console(stderr=True)
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(message)s",
-    handlers=[
-        RichHandler(
-            console=_console,
-            show_time=False,
-            show_path=False,
-            rich_tracebacks=False,
-        ),
-    ],
-)
+_console = Console()
+
+
+class _NotificationBuffer:
+    """Thread-safe store for log messages with a TTL (default 5 s).
+
+    Messages older than *ttl* seconds are silently dropped on the next read.
+    """
+
+    def __init__(self, ttl: float = 5.0) -> None:
+        self._entries: list[tuple[float, str]] = []
+        self._ttl = ttl
+
+    def add(self, msg: str) -> None:
+        self._entries.append((time.monotonic(), msg))
+
+    def active(self) -> list[str]:
+        now = time.monotonic()
+        self._entries = [(t, m) for t, m in self._entries if now - t < self._ttl]
+        return [m for _, m in self._entries]
+
+
+class _BufferHandler(logging.Handler):
+    """Logging handler that routes records into a _NotificationBuffer."""
+
+    def __init__(self, buf: _NotificationBuffer) -> None:
+        super().__init__()
+        self._buf = buf
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._buf.add(self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
+_notifications = _NotificationBuffer(ttl=5.0)
+
+_buf_handler = _BufferHandler(_notifications)
+_buf_handler.setFormatter(logging.Formatter("%(levelname)s  %(message)s"))
+
+_root_logger = logging.getLogger()
+_root_logger.handlers.clear()
+_root_logger.addHandler(_buf_handler)
+_root_logger.setLevel(logging.WARNING)
+
 for _noisy in ("pydoll", "websockets", "asyncio"):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
@@ -136,7 +168,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
 
     async def startup_delay(self) -> None:
-        delay = random.uniform(3.0, 15.0)
+        delay = self._worker_id * random.uniform(1.5, 3.0)
         self._labels[self._worker_id] = f"Waiting {delay:.1f}s before start..."
         await asyncio.sleep(delay)
 
@@ -157,7 +189,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
             if job is None:
                 if self._step2_done is None or self._step2_done.is_set():
                     return True
-                self._labels[self._worker_id] = "Waiting for step 2..."
+                self._labels[self._worker_id] = "[dim]Waiting for step 2...[/]"
                 await asyncio.sleep(10)
                 continue
 
@@ -169,14 +201,16 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                 try:
                     async with self._fetch_gate:
                         await engine.navigate(self._fbref_base_url + job.url)
+                        await asyncio.sleep(random.uniform(2.0, 6.0))
                     # Challenge polling and cooldown run outside gate so other
                     # workers are not blocked during Cloudflare resolution.
-                    html = await engine.wait_for_challenge(
-                        self._fbref_base_url + job.url
-                    )
-                    await asyncio.sleep(random.uniform(5, 15))
+                    html = await engine.wait_for_challenge(self._fbref_base_url + job.url)
+                    await asyncio.sleep(random.uniform(3, 10))
                     if not html:
-                        raise RuntimeError("empty HTML response")
+                        raise PageLoadError(
+                            "empty HTML response",
+                            url=self._fbref_base_url + job.url,
+                        )
 
                     scraper = PlayerInfoScraper(
                         player_id=_player_id_from_url(job.url),
@@ -204,11 +238,11 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     self._labels[self._worker_id] = escape(full_name or "unknown")
 
                 except (
-                    PageLoadError, RateLimitError, BrowserException, RuntimeError
+                    PageLoadError, RateLimitError, BrowserException
                 ) as exc:
                     attempt += 1
                     if isinstance(exc, BrowserException):
-                        self._labels[self._worker_id] = "browser error — restarting"
+                        self._labels[self._worker_id] = "[bold red]ERROR[/] Browser error — Restarting"
                         try:
                             async with get_session(self._session_factory) as session:
                                 q_repo = PlayerInfoQueueRepository(session)
@@ -223,7 +257,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         break
                     is_terminal = attempt >= 3
                     if is_terminal:
-                        self._labels[self._worker_id] = f"failed job {job.id} — {exc}"
+                        self._labels[self._worker_id] = f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
                         try:
                             async with get_session(self._session_factory) as session:
                                 q_repo = PlayerInfoQueueRepository(session)
@@ -236,18 +270,16 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             )
                     else:
                         self._labels[self._worker_id] = (
-                            f"warning — retrying ({attempt}/3)"
+                            f"[bold yellow]WARNING[/] Retrying ({attempt}/3)"
                         )
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(random.uniform(5.0, 15.0))
 
             if browser_restart:
                 return False
 
             if not success:
-                logger.error(
-                    "[worker-%d] job %d exhausted retries, giving up",
-                    self._worker_id, job.id,
-                )
+                self._labels[self._worker_id] = f"[bold red]FAILED[/] Job {job.id} — max retries reached"
+                raise CooldownRequired
 
 
 def _player_id_from_url(url: str) -> str:
@@ -392,8 +424,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         )
         already_done = int(result.scalar() or 0)
 
-    # One request at a time globally — workers parse/write DB in parallel
-    fetch_gate = asyncio.Semaphore(1)
+    fetch_gate = asyncio.Semaphore(2)
 
     valid_countries = await _load_country_ids(session_factory)
     country_name_cache = await _load_country_name_cache(session_factory)
@@ -419,6 +450,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
         ),
         console=_console,
         refresh_per_second=2,
+        vertical_overflow="crop",
     ) as live:
         display_task = asyncio.create_task(
             run_display_loop(
@@ -429,6 +461,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
                 already_done + pending_total,
                 stop_event,
                 live,
+                _notifications.active,
             )
         )
         results = await asyncio.gather(

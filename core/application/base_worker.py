@@ -15,10 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+
+class CooldownRequired(Exception):
+    """Raised by run_claim_loop when retries are exhausted. BaseWorker handles the countdown."""
 
 
 @runtime_checkable
@@ -73,7 +78,7 @@ class BaseWorker[TJob](ABC):
         """Display name passed to the browser engine for this worker."""
 
     @abstractmethod
-    def _build_engine(self) -> Any:
+    def _build_engine(self) -> _BrowserEngine:
         """Return an async context manager that yields the browser engine."""
 
     # -------------------------------------------------------------------------
@@ -116,35 +121,46 @@ class BaseWorker[TJob](ABC):
         logger = logging.getLogger(__name__)
         await self.startup_delay()
 
-        max_restarts = 5
+        _MAX_RESTARTS = 5
         restart_count = 0
 
         while True:
-            browser_started = False
+            # --- Phase 1: browser start (failures count toward _MAX_RESTARTS) ---
             try:
                 async with self._build_engine() as engine:
-                    browser_started = True
-                    restart_count = 0  # ADR-4: reset on every successful browser start
-                    await self.on_browser_ready(engine)
-                    should_stop = await self.run_claim_loop(engine)
+                    # --- Phase 2: inner loop (browser is running; errors restart it) ---
+                    try:
+                        restart_count = 0  # ADR-4: reset on every successful browser start
+                        await self.on_browser_ready(engine)
+                        should_stop = await self.run_claim_loop(engine)
+                    except CooldownRequired:
+                        self._labels[self._worker_id] = f"__cooldown__{time.monotonic() + 60}"
+                        await asyncio.sleep(60)
+                        continue
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        logger.error(exc, exc_info=True)
+                        self._labels[self._worker_id] = "unexpected error — restarting"
+                        await asyncio.sleep(5)
+                        continue
                     if should_stop:
                         return self._processed
-                    # should_stop=False means run_claim_loop requested a browser restart
-                    # Fall through — outer while True will open a new browser session.
+                    # should_stop=False — outer while True opens a new browser session.
 
-            except Exception as exc:
-                if not browser_started:
-                    restart_count += 1
-                    if restart_count >= max_restarts:
-                        self._labels[self._worker_id] = "browser failed — giving up"
-                        return self._processed
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                restart_count += 1
+                if restart_count >= _MAX_RESTARTS:
                     self._labels[self._worker_id] = (
-                        f"browser start failed — retry {restart_count}/{max_restarts}"
+                        f"[bold red]ERROR[/] Browser failed {_MAX_RESTARTS}x — waiting 60s"
                     )
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(60)
+                    restart_count = 0
                     continue
-                # Error after browser was running — log and restart browser.
-                logger.error(exc, exc_info=True)
-                self._labels[self._worker_id] = "unexpected error — restarting"
-                await asyncio.sleep(5)
+                self._labels[self._worker_id] = (
+                    f"[bold yellow]WARNING[/] Browser start failed — retry {restart_count}/{_MAX_RESTARTS}"
+                )
+                await asyncio.sleep(10)
                 continue

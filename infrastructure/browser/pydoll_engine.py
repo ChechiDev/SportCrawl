@@ -122,6 +122,7 @@ class PydollEngine(ScrapingEngine):
         self._xvfb: _XvfbManager = _XvfbManager()
         self._profile_dir: str = profile_dir or "/tmp/sportcrawl-chrome-profile"
         self._name = name
+        self._keepalive_task: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> PydollEngine:
         return self
@@ -170,6 +171,10 @@ class PydollEngine(ScrapingEngine):
             opts.add_argument("--no-sandbox")
             opts.add_argument("--disable-dev-shm-usage")
             opts.add_argument("--log-level=3")
+            # Prevent Chrome from throttling idle tabs — keeps CDP WebSocket alive
+            opts.add_argument("--disable-background-timer-throttling")
+            opts.add_argument("--disable-renderer-backgrounding")
+            opts.add_argument("--disable-backgrounding-occluded-windows")
 
             if _EXTENSION_PATH.exists():
                 opts.add_argument(f"--load-extension={_EXTENSION_PATH}")
@@ -179,6 +184,7 @@ class PydollEngine(ScrapingEngine):
 
             self._browser = Chrome(options=opts)
             self._tab = await self._browser.start()
+            self._keepalive_task = asyncio.create_task(self._keepalive_loop())
 
     async def navigate(self, url: str) -> None:
         """Navigate the browser tab to *url* without waiting for a challenge.
@@ -193,7 +199,11 @@ class PydollEngine(ScrapingEngine):
         await self._ensure_browser()
         tab = self._tab
         try:
-            await tab.go_to(url)
+            await asyncio.wait_for(tab.go_to(url), timeout=30)
+        except asyncio.TimeoutError as exc:
+            raise PageLoadError(
+                f"Navigation timed out after 30s for {url}", url=url, cause=exc
+            ) from exc
         except KeyError as exc:
             raise PageLoadError(
                 f"CDP navigation response missing expected key for {url}: {exc}",
@@ -263,10 +273,17 @@ class PydollEngine(ScrapingEngine):
         challenge_logged = False
         while loop.time() < deadline:
             try:
-                source: str = await tab.page_source
+                source: str = await asyncio.wait_for(tab.page_source, timeout=10)
+            except asyncio.TimeoutError:
+                await asyncio.sleep(1)
+                continue
             except KeyError:
                 await asyncio.sleep(1)
                 continue
+            except (OSError, ConnectionError) as exc:
+                raise PageLoadError(
+                    f"CDP connection lost during challenge poll: {exc}", url=url
+                ) from exc
             peek = source[:1024].lower()
             if not any(marker in peek for marker in _CHALLENGE_MARKERS):
                 return source
@@ -345,11 +362,29 @@ class PydollEngine(ScrapingEngine):
                 cause=exc,
             ) from exc
 
+    async def _keepalive_loop(self) -> None:
+        """Send a lightweight CDP ping every 30s to keep the WebSocket alive."""
+        while True:
+            await asyncio.sleep(30)
+            if self._tab is None:
+                return
+            try:
+                await asyncio.wait_for(self._tab.page_source, timeout=5)
+            except Exception:
+                return
+
     async def close(self) -> None:
         """Stop the browser process and release CDP resources.
 
         Safe to call even if no fetch() has been performed yet.
         """
+        if self._keepalive_task is not None:
+            self._keepalive_task.cancel()
+            try:
+                await self._keepalive_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._keepalive_task = None
         if self._browser is not None:
             logger.debug("Stopping Chrome browser")
             await self._browser.stop()  # type: ignore[no-untyped-call]

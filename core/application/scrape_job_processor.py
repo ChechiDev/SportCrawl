@@ -10,13 +10,15 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
+from sqlalchemy.orm import Mapped
+
 from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
 
 logger = logging.getLogger(__name__)
 
 
 class _Job(Protocol):
-    id: int
+    id: Mapped[int]
 
 
 class _Scraper(Protocol):

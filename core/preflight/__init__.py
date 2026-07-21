@@ -15,7 +15,7 @@ from core.preflight.checks import (
     check_stale_queue,
     check_tables_exist,
 )
-from core.preflight.renderer import render_check
+from core.preflight.renderer import render_check, render_compact
 from core.preflight.result import CheckResult
 
 REQUIRED_HEAD = "p15a"
@@ -44,9 +44,15 @@ async def _run_migrations(console: Console) -> None:
     console.print("  [bold green]OK  [/bold green] Migrations applied.")
 
 
-async def run_checks(dsn: str, phase: str, console: Console) -> list[CheckResult]:
+async def run_checks(
+    dsn: str, phase: str, console: Console, *, compact: bool = False
+) -> list[CheckResult]:
     """Run all applicable checks for the given phase and return results."""
     results: list[CheckResult] = []
+
+    def _render(result: CheckResult) -> None:
+        if not compact:
+            render_check(result, console)
 
     check_fns = [
         lambda: check_db_reachable(dsn),
@@ -60,7 +66,7 @@ async def run_checks(dsn: str, phase: str, console: Console) -> list[CheckResult
 
     for fn in check_fns:
         result = await fn()  # type: ignore[no-untyped-call]
-        render_check(result, console)
+        _render(result)
         results.append(result)
         if not result.passed and result.fatal:
             if result.name == "Alembic revision":
@@ -68,22 +74,31 @@ async def run_checks(dsn: str, phase: str, console: Console) -> list[CheckResult
                 result = await check_alembic_revision(
                     dsn, MINIMUM_REVISION.get(phase, REQUIRED_HEAD)
                 )
-                render_check(result, console)
+                _render(result)
                 results.append(result)
                 if not result.passed:
+                    if compact:
+                        render_compact(results, console)
                     return results
             else:
+                if compact:
+                    render_compact(results, console)
                 return results
 
     if phase in ("players", "player_info"):
         result = await check_seed_data(dsn, phase)  # type: ignore[arg-type]
-        render_check(result, console)
+        _render(result)
         results.append(result)
         if not result.passed and result.fatal:
+            if compact:
+                render_compact(results, console)
             return results
 
     result = await check_stale_queue(dsn)
-    render_check(result, console)
+    _render(result)
     results.append(result)
+
+    if compact:
+        render_compact(results, console)
 
     return results

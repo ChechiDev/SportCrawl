@@ -21,6 +21,7 @@ async def _seed_countries(settings: Settings) -> None:
     import logging
     logging.getLogger("pydoll").setLevel(logging.WARNING)
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
+    logging.getLogger("ports.scraper").setLevel(logging.ERROR)
 
     from infrastructure.browser.pydoll_engine import PydollEngine
     from infrastructure.persistence.session import create_session_factory
@@ -81,15 +82,27 @@ async def _run(
 
     if not skip_preflight:
         console.print("[bold]Preflight — Checking requirements[/bold]")
-        results = await run_checks(dsn, "players", console)
+        results = await run_checks(dsn, "players", console, compact=True)
 
         seed_failed = next(
             (r for r in results if r.name == "Seed data" and not r.passed), None
         )
         if seed_failed and "countries" in seed_failed.detail:
+            from core.exceptions.scraper import ScraperError
             console.print()
             console.print("[bold]Step 1 — Scraping countries[/bold]")
-            await _seed_countries(settings)
+            _MAX_SEED_RETRIES = 5
+            _SEED_RETRY_WAIT = 60
+            for _attempt in range(1, _MAX_SEED_RETRIES + 1):
+                try:
+                    await _seed_countries(settings)
+                    break
+                except ScraperError:
+                    if _attempt >= _MAX_SEED_RETRIES:
+                        console.print("  [bold red]FAIL[/bold red]  Countries scrape failed after retries. Try again later.")
+                        raise typer.Exit(code=1)
+                    console.print(f"  [bold yellow]WARNING[/bold yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s ({_attempt}/{_MAX_SEED_RETRIES})")
+                    await asyncio.sleep(_SEED_RETRY_WAIT)
             conn = await asyncpg.connect(dsn, timeout=5)
             try:
                 country_count = await conn.fetchval(
@@ -115,7 +128,6 @@ async def _run(
             results.append(stale_result)
 
         passed = sum(1 for r in results if r.passed)
-        console.print(f"\n  {passed}/{len(results)} checks passed")
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:
             raise typer.Exit(code=1)
@@ -138,6 +150,7 @@ async def _run(
     import logging
     logging.getLogger("pydoll").setLevel(logging.WARNING)
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
+    logging.getLogger("ports.scraper").setLevel(logging.ERROR)
 
     step = 2 if not skip_preflight and seed_failed else 1
     if with_player_info and all_countries:
@@ -163,8 +176,7 @@ async def _run(
         if not skip_preflight:
             console.print()
             console.print("[bold]Preflight for player info[/bold]")
-            pi_results = await run_checks(dsn, "player_info", console)
-            render_summary(pi_results, console)
+            pi_results = await run_checks(dsn, "player_info", console, compact=True)
             pi_failures = [r for r in pi_results if not r.passed and r.fatal]
             if pi_failures:
                 raise typer.Exit(code=1)
