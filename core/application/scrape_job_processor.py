@@ -141,8 +141,9 @@ class ScrapeJobProcessor:
                 "job %d failed: %s", job.id, exc, exc_info=False
             )
             try:
-                await self._queue_repo.mark_failed(  # type: ignore[arg-type]
-                    job.id, str(exc)
+                await self._queue_repo.mark_failed(
+                    job.id,  # type: ignore[arg-type]
+                    str(exc),
                 )
             except Exception as mark_err:
                 logger.error(
