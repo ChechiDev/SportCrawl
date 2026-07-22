@@ -88,7 +88,7 @@ async def run_checks(
                     dsn, MINIMUM_REVISION.get(phase, REQUIRED_HEAD)
                 )
                 _render(result)
-                results.append(result)
+                results[-1] = result  # replace failed entry with fixed result
                 if not result.passed:
                     if compact:
                         render_compact(results, console)
