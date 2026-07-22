@@ -1,6 +1,6 @@
 [project]
 name = "sportcrawl"
-version = "0.16.0"
+version = "0.17.0"
 description = "Multi-sport data scraping infrastructure"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -126,7 +126,7 @@ ignore_imports = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.16.0"
+version = "0.17.0"
 version_files = ["pyproject.toml:version"]
 tag_format = "v$version"
 update_changelog_on_bump = false
