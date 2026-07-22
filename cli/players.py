@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 
 import asyncpg  # type: ignore[import-untyped]
 import typer
@@ -17,6 +18,9 @@ from scripts.scrape_players import main_all, main_countries
 players_app = typer.Typer(name="players", help="Scrape players pipeline")
 console = Console()
 
+_MAX_SEED_RETRIES = 5
+_SEED_RETRY_WAIT = 60
+
 
 async def _seed_countries(settings: Settings) -> None:
     import logging
@@ -30,9 +34,75 @@ async def _seed_countries(settings: Settings) -> None:
 
     _COUNTRIES_URL = "https://fbref.com/en/countries/"
     session_factory = create_session_factory(settings.db)
-    async with PydollEngine() as engine:
+    async with PydollEngine(profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-countries") as engine:
         scraper = CountryScraper(engine, settings.scraping, session_factory)
         await scraper.scrape(_COUNTRIES_URL)
+
+
+async def _seed_country_squads(settings: Settings) -> None:
+    import logging
+    logging.getLogger("pydoll").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure").setLevel(logging.WARNING)
+    logging.getLogger("ports.scraper").setLevel(logging.ERROR)
+
+    from infrastructure.browser.pydoll_engine import PydollEngine
+    from infrastructure.persistence.session import create_session_factory
+    from infrastructure.scraping.country_squads import CountrySquadsScraper
+
+    _SQUADS_URL = "https://fbref.com/en/squads/"
+    session_factory = create_session_factory(settings.db)
+    async with PydollEngine(profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-squads") as engine:
+        scraper = CountrySquadsScraper(engine, settings.scraping, session_factory)
+        await scraper.scrape(_SQUADS_URL)
+
+
+async def _seed_with_retry(
+    seed_fn: Callable[[], Awaitable[None]],
+    count_sql: str,
+    label: str,
+    dsn: str,
+) -> int:
+    """Run *seed_fn* with retry logic and return the final row count.
+
+    Args:
+        seed_fn: Async callable that performs the seed scrape.
+        count_sql: SQL query that returns the count of seeded rows.
+        label: Human-readable label for progress messages.
+        dsn: asyncpg DSN for the count query.
+
+    Returns:
+        Number of rows present after seeding.
+
+    Raises:
+        typer.Exit: if all retries are exhausted.
+    """
+    from core.exceptions.scraper import ScraperError
+
+    for _attempt in range(1, _MAX_SEED_RETRIES + 1):
+        console.print(
+            f"  [dim]→[/dim]  [dim]Seeding {label} (attempt {_attempt}/{_MAX_SEED_RETRIES})...[/dim]{' ' * 20}",
+            end="\r",
+        )
+        try:
+            await seed_fn()
+            break
+        except ScraperError:
+            if _attempt >= _MAX_SEED_RETRIES:
+                console.print(
+                    f"  [red]✗[/red]  {label.capitalize()} scrape failed after {_MAX_SEED_RETRIES} retries.{' ' * 20}"
+                )
+                raise typer.Exit(code=1)
+            console.print(
+                f"  [yellow]⚠[/yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}"
+            )
+            await asyncio.sleep(_SEED_RETRY_WAIT)
+
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        count = await conn.fetchval(count_sql)
+    finally:
+        await conn.close()
+    return count  # type: ignore[return-value]
 
 
 def _build_dsn(settings: Settings) -> str:
@@ -81,8 +151,6 @@ async def _run(
 
     print_header(console)
 
-    from core.preflight.renderer import render_summary
-
     if not skip_preflight:
         console.print("[bold white]Checking requirements...[/bold white]")
         results = await run_checks(dsn, "players", console, compact=False)
@@ -91,34 +159,36 @@ async def _run(
             (r for r in results if r.name == "Seed data" and not r.passed), None
         )
         if seed_failed and "countries" in seed_failed.detail:
-            from core.exceptions.scraper import ScraperError
-            _MAX_SEED_RETRIES = 5
-            _SEED_RETRY_WAIT = 60
-            for _attempt in range(1, _MAX_SEED_RETRIES + 1):
-                console.print(f"  [dim]→[/dim]  [dim]Seeding countries (attempt {_attempt}/{_MAX_SEED_RETRIES})...[/dim]{' ' * 20}", end="\r")
-                try:
-                    await _seed_countries(settings)
-                    break
-                except ScraperError:
-                    if _attempt >= _MAX_SEED_RETRIES:
-                        console.print(f"  [red]✗[/red]  Countries scrape failed after {_MAX_SEED_RETRIES} retries.{' ' * 20}")
-                        raise typer.Exit(code=1)
-                    console.print(f"  [yellow]⚠[/yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}")
-                    await asyncio.sleep(_SEED_RETRY_WAIT)
-            conn = await asyncpg.connect(dsn, timeout=5)
-            try:
-                country_count = await conn.fetchval(
-                    "SELECT count(*) FROM sch_shared.tbl_countries"
-                )
-            finally:
-                await conn.close()
+            country_count = await _seed_with_retry(
+                lambda: _seed_countries(settings),
+                "SELECT count(*) FROM sch_shared.tbl_countries",
+                "countries",
+                dsn,
+            )
             console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
-            # Mark seed check as resolved and run stale queue check
+            # Mark seed check as resolved
             results = [
                 CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
                 if not r.passed else r
                 for r in results
             ]
+        squads_failed = next(
+            (r for r in results if r.name == "Country squads" and not r.passed), None
+        )
+        if squads_failed:
+            squads_count = await _seed_with_retry(
+                lambda: _seed_country_squads(settings),
+                "SELECT count(*) FROM sch_shared.tbl_country_squads",
+                "country squads",
+                dsn,
+            )
+            console.print(f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}")
+            results = [
+                CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
+                if r.name == "Country squads" and not r.passed else r
+                for r in results
+            ]
+        if seed_failed or squads_failed:
             stale_result = await check_stale_queue(dsn)
             if not stale_result.passed:
                 from core.preflight.renderer import render_check
@@ -149,7 +219,6 @@ async def _run(
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
     logging.getLogger("ports.scraper").setLevel(logging.ERROR)
 
-    step = 2 if not skip_preflight and seed_failed else 1
     if with_player_info and all_countries:
         from scripts.scrape_pipeline import main as pipeline_main
 

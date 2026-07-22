@@ -38,12 +38,12 @@ class CountrySquads(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     __table_args__ = (
-        Index("ix_country_squads_fk_flag", "fk_flag"),
-        Index("ix_country_squads_men_squad_id", "fbref_men_squad_id"),
-        Index("ix_country_squads_women_squad_id", "fbref_women_squad_id"),
+        Index("ix_tbl_country_squads_fk_flag", "fk_flag"),
+        Index("ix_tbl_country_squads_men_squad_id", "fbref_men_squad_id"),
+        Index("ix_tbl_country_squads_women_squad_id", "fbref_women_squad_id"),
         {"schema": "sch_shared"},
     )

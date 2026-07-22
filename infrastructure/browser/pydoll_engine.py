@@ -33,7 +33,7 @@ from pydoll.browser.chromium.chrome import Chrome
 from pydoll.exceptions import PydollException
 
 from core.exceptions.scraper import PageLoadError, RateLimitError
-from ports.browser import ScrapingEngine
+from ports.browser import ScriptableEngine
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ _EXTENSION_PATH = Path(__file__).parents[2] / "extensions" / "sportcrawl-chrome"
 _CHALLENGE_TIMEOUT = 120  # seconds — Turnstile managed challenge can take 30–90s
 
 
-class PydollEngine(ScrapingEngine):
+class PydollEngine(ScriptableEngine):
     """ScrapingEngine that drives Chrome via CDP using pydoll-python.
 
     The browser is started lazily on the first fetch() call and must be
@@ -124,7 +124,7 @@ class PydollEngine(ScrapingEngine):
         self._name = name
         self._keepalive_task: asyncio.Task[None] | None = None
 
-    async def __aenter__(self) -> PydollEngine:
+    async def __aenter__(self) -> "PydollEngine":
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -300,6 +300,26 @@ class PydollEngine(ScrapingEngine):
             f"Cloudflare challenge did not resolve after {_CHALLENGE_TIMEOUT}s",
             url=url,
         )
+
+    async def execute_script(self, script: str) -> None:
+        """Execute *script* in the current page context via CDP Runtime.evaluate."""
+        if self._tab is None:
+            raise PageLoadError("No active tab — call fetch() or navigate() first", url="")
+        try:
+            await self._tab.execute_script(script)
+        except (PydollException, OSError, ConnectionError) as exc:
+            raise PageLoadError(f"execute_script failed: {exc}", url="") from exc
+
+    async def get_page_source(self) -> str:
+        """Return the current page's outer HTML without navigating."""
+        if self._tab is None:
+            raise PageLoadError("No active tab — call fetch() or navigate() first", url="")
+        try:
+            return await asyncio.wait_for(self._tab.page_source, timeout=10)
+        except asyncio.TimeoutError as exc:
+            raise PageLoadError("get_page_source timed out after 10s", url="") from exc
+        except (PydollException, OSError, ConnectionError) as exc:
+            raise PageLoadError(f"get_page_source failed: {exc}", url="") from exc
 
     async def fetch(self, url: str) -> str:
         """Navigate to *url* and return the page's outer HTML.

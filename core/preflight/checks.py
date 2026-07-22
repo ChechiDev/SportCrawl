@@ -5,9 +5,12 @@ This module MUST NOT import from infrastructure, domains, or ports.
 """
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 import asyncpg  # type: ignore[import-untyped]
+
+logger = logging.getLogger(__name__)
 
 from core.preflight.result import CheckResult
 
@@ -41,6 +44,7 @@ _REVISION_ORDER = [
     "p14l",
     "p14m",
     "p15a",
+    "p16a",
 ]
 
 
@@ -64,6 +68,7 @@ _PLAYERS_TABLES = _COUNTRIES_TABLES + [
     "sch_shared.tbl_player_positions",
     "sch_infra.player_discovery_batch",
     "sch_infra.player_queue_ref",
+    "sch_shared.tbl_country_squads",
 ]
 
 _PLAYER_INFO_TABLES = _PLAYERS_TABLES + [
@@ -225,6 +230,37 @@ async def check_seed_data(
             name="Seed data",
             passed=False,
             detail=f"No {label} found. Seed data required for phase '{phase}'.",
+            fatal=True,
+        )
+    finally:
+        await conn.close()
+
+
+async def check_country_squads_data(dsn: str) -> CheckResult:
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM sch_shared.tbl_country_squads"
+        )
+        if count and count > 0:
+            return CheckResult(
+                name="Country squads",
+                passed=True,
+                detail=f"{count} country squads loaded.",
+                fatal=True,
+            )
+        return CheckResult(
+            name="Country squads",
+            passed=False,
+            detail="No country squads found. Seed data required.",
+            fatal=True,
+        )
+    except Exception as exc:
+        logger.warning("check_country_squads_data failed", exc_info=True)
+        return CheckResult(
+            name="Country squads",
+            passed=False,
+            detail=f"tbl_country_squads not reachable: {exc}",
             fatal=True,
         )
     finally:

@@ -27,3 +27,21 @@ class ScrapingEngine(ABC):
 
     async def __aexit__(self, *_: object) -> None:
         await self.close()
+
+
+class ScriptableEngine(ScrapingEngine):
+    """ScrapingEngine subtype that additionally supports JS execution and live page source.
+
+    Concrete implementations that drive a real browser (e.g. PydollEngine) should
+    extend this class rather than ScrapingEngine directly.
+    """
+
+    @abstractmethod
+    async def execute_script(self, script: str) -> None:
+        """Execute arbitrary JavaScript in the current page context."""
+        ...
+
+    @abstractmethod
+    async def get_page_source(self) -> str:
+        """Return the current page's outer HTML without navigating."""
+        ...

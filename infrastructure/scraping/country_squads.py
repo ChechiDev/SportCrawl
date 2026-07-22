@@ -39,7 +39,6 @@ _SQUAD_ID_RE = re.compile(r"/en/squads/([a-z0-9]{8})/")
 _MEN_LINK_TEXT = "Men"
 _WOMEN_LINK_TEXT = "Women"
 
-
 class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
     """Scraper for the FBRef squads listing page (https://fbref.com/en/squads/).
 
@@ -71,9 +70,9 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
             ParsingError: if the squads table is not found in the HTML.
         """
         soup = BeautifulSoup(html, "lxml")
-        table = soup.find("table", {"id": "squads"})
+        table = soup.find("table", {"id": "countries"})
         if not table:
-            raise ParsingError("squads table not found")
+            raise ParsingError("countries table not found")
 
         tbody = table.find("tbody")
         rows = tbody.find_all("tr") if tbody else []

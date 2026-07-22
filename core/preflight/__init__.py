@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from rich.console import Console
@@ -9,7 +10,7 @@ from rich.console import Console
 from core.preflight.checks import (
     check_alembic_initialized,
     check_alembic_revision,
-    check_clubs_data,
+    check_country_squads_data,
     check_db_reachable,
     check_schemas_exist,
     check_seed_data,
@@ -19,11 +20,12 @@ from core.preflight.checks import (
 from core.preflight.renderer import render_check, render_compact
 from core.preflight.result import CheckResult
 
-REQUIRED_HEAD = "p15a"
+REQUIRED_HEAD = "p16a"
+_CHECK_DISPLAY_DELAY_S = 1.5
 
 MINIMUM_REVISION: dict[str, str] = {
     "countries": "p10d_add_fk_ondelete",
-    "players": "p11e",
+    "players": "p16a",
     "player_info": REQUIRED_HEAD,
 }
 
@@ -55,10 +57,10 @@ async def run_checks(
         if not compact:
             render_check(result, console)
 
-    async def _run(fn, label: str) -> CheckResult:  # type: ignore[no-untyped-def]
+    async def _run(fn: Callable[[], Awaitable[CheckResult]], label: str) -> CheckResult:
         console.print(f"  [dim]→[/dim]  [white]{label}[/white]", end="\r")
-        await asyncio.sleep(1.5)
-        result = await fn()  # type: ignore[no-untyped-call]
+        await asyncio.sleep(_CHECK_DISPLAY_DELAY_S)
+        result = await fn()
         return result
 
     check_fns = [
@@ -102,9 +104,14 @@ async def run_checks(
             return results
 
     if phase in ("players", "player_info"):
-        result = await _run(lambda: check_clubs_data(dsn), "Checking clubs data...")
-        _render(result)
+        result = await _run(lambda: check_country_squads_data(dsn), "Checking country squads...")
+        if result.passed:
+            _render(result)
         results.append(result)
+        if not result.passed and result.fatal:
+            if compact:
+                render_compact(results, console)
+            return results
 
     result = await check_stale_queue(dsn)
     if not result.passed:

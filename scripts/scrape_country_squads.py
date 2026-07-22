@@ -22,7 +22,7 @@ _SQUADS_URL = "https://fbref.com/en/squads/"
 async def main() -> None:
     settings = Settings()  # type: ignore[call-arg]
     session_factory = create_session_factory(settings.db)
-    async with PydollEngine() as engine:
+    async with PydollEngine(profile_dir=f"{settings.scraping.chrome_profile_dir}-country-squads") as engine:
         scraper = CountrySquadsScraper(engine, settings.scraping, session_factory)
         page = await scraper.scrape(_SQUADS_URL)
         print(f"Persisted {len(page.squads)} country squads.")

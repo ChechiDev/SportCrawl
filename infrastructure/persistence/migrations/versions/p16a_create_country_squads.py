@@ -40,30 +40,32 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["fk_country"],
             ["sch_shared.tbl_countries.country_id"],
+            name="fk_country_squads_country",
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["fk_flag"],
             ["sch_shared.tbl_flags.flag_id"],
+            name="fk_country_squads_flag",
             ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("fk_country"),
         schema="sch_shared",
     )
     op.create_index(
-        "ix_country_squads_fk_flag",
+        "ix_tbl_country_squads_fk_flag",
         "tbl_country_squads",
         ["fk_flag"],
         schema="sch_shared",
     )
     op.create_index(
-        "ix_country_squads_men_squad_id",
+        "ix_tbl_country_squads_men_squad_id",
         "tbl_country_squads",
         ["fbref_men_squad_id"],
         schema="sch_shared",
     )
     op.create_index(
-        "ix_country_squads_women_squad_id",
+        "ix_tbl_country_squads_women_squad_id",
         "tbl_country_squads",
         ["fbref_women_squad_id"],
         schema="sch_shared",
@@ -72,17 +74,17 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index(
-        "ix_country_squads_women_squad_id",
+        "ix_tbl_country_squads_women_squad_id",
         table_name="tbl_country_squads",
         schema="sch_shared",
     )
     op.drop_index(
-        "ix_country_squads_men_squad_id",
+        "ix_tbl_country_squads_men_squad_id",
         table_name="tbl_country_squads",
         schema="sch_shared",
     )
     op.drop_index(
-        "ix_country_squads_fk_flag",
+        "ix_tbl_country_squads_fk_flag",
         table_name="tbl_country_squads",
         schema="sch_shared",
     )
