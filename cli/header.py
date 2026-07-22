@@ -30,7 +30,7 @@ def print_header(console: Console) -> None:
     crawl_lines += [""] * (height - len(crawl_lines))
 
     # Pad each sport line to consistent width
-    sport_width = max(len(l) for l in sport_lines)
+    sport_width = max(len(line) for line in sport_lines)
 
     for s, c in zip(sport_lines, crawl_lines):
         row = Text()
@@ -43,7 +43,8 @@ def print_header(console: Console) -> None:
     tagline.append(f"  v{v}", style="dim cyan")
     console.print(tagline)
     hint = Text()
-    hint.append("  Ctrl+C to stop  ·  on restart, scraping resumes from where it left off", style="dim white")
+    hint.append("  Ctrl+C to stop  ·  on restart, scraping resumes from where it", style="dim white")
+    hint.append(" left off", style="dim white")
     console.print(hint)
     console.print(Rule(style="blue dim"))
     console.print()

@@ -41,7 +41,11 @@ from scripts.scrape_player_info import (
     _load_country_name_cache,
 )
 from scripts.scrape_player_info import _seed_queue as _seed_player_info_queue
-from scripts.scrape_players import PlayerListWorker, _COUNTRY_CODE_RE, _load_all_countries
+from scripts.scrape_players import (
+    _COUNTRY_CODE_RE,
+    PlayerListWorker,
+    _load_all_countries,
+)
 from scripts.scrape_players import _seed_queue as _seed_player_list_queue
 
 # force=True resets any handlers set by scrape_players / scrape_player_info at

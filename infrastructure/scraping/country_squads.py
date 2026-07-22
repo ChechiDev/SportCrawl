@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.scraper import ParsingError
 from domains.club.models import CountrySquad, CountrySquadsPage
-from infrastructure.persistence.repositories.country_squads import CountrySquadsRepository
+from infrastructure.persistence.repositories.country_squads import (
+    CountrySquadsRepository,
+)
 from infrastructure.persistence.session import get_session
 from ports.browser import ScrapingEngine
 from ports.scraper import BaseScraper, ScraperConfig
@@ -109,7 +111,8 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
             if flag_cell:
                 flag_span = flag_cell.find("span", class_="f-i")
                 if flag_span:
-                    classes = flag_span.get("class") or []
+                    class_attr: str | list[str] = flag_span.get("class") or []
+                    classes: list[str] = class_attr if isinstance(class_attr, list) else [class_attr]
                     for cls in classes:
                         if cls.startswith("f-") and cls != "f-i":
                             fk_flag = cls[2:]  # strip leading "f-"

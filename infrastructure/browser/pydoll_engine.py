@@ -124,7 +124,7 @@ class PydollEngine(ScriptableEngine):
         self._name = name
         self._keepalive_task: asyncio.Task[None] | None = None
 
-    async def __aenter__(self) -> "PydollEngine":
+    async def __aenter__(self) -> PydollEngine:
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -200,7 +200,7 @@ class PydollEngine(ScriptableEngine):
         tab = self._tab
         try:
             await asyncio.wait_for(tab.go_to(url), timeout=30)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise PageLoadError(
                 f"Navigation timed out after 30s for {url}", url=url, cause=exc
             ) from exc
@@ -274,7 +274,7 @@ class PydollEngine(ScriptableEngine):
         while loop.time() < deadline:
             try:
                 source: str = await asyncio.wait_for(tab.page_source, timeout=10)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await asyncio.sleep(1)
                 continue
             except KeyError:
@@ -316,7 +316,7 @@ class PydollEngine(ScriptableEngine):
             raise PageLoadError("No active tab — call fetch() or navigate() first", url="")
         try:
             return await asyncio.wait_for(self._tab.page_source, timeout=10)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise PageLoadError("get_page_source timed out after 10s", url="") from exc
         except (PydollException, OSError, ConnectionError) as exc:
             raise PageLoadError(f"get_page_source failed: {exc}", url="") from exc

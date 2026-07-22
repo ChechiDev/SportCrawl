@@ -102,7 +102,7 @@ async def _seed_with_retry(
         count = await conn.fetchval(count_sql)
     finally:
         await conn.close()
-    return count  # type: ignore[return-value]
+    return count  # type: ignore[no-any-return]
 
 
 def _build_dsn(settings: Settings) -> str:

@@ -90,7 +90,9 @@ class TestConfederationUpsert:
         squad = _make_squad(confederation=None)
 
         with _pg_insert_mock() as mock_pg_insert:
-            from infrastructure.persistence.models.shared.confederation import Confederation
+            from infrastructure.persistence.models.shared.confederation import (
+                Confederation,
+            )
 
             repo = CountrySquadsRepository(session)
             await repo.upsert([squad])
@@ -125,7 +127,9 @@ class TestSquadUpsert:
         squad = _make_squad()
 
         with _pg_insert_mock() as mock_pg_insert:
-            from infrastructure.persistence.models.shared.country_squads import CountrySquads
+            from infrastructure.persistence.models.shared.country_squads import (
+                CountrySquads,
+            )
 
             repo = CountrySquadsRepository(session)
             await repo.upsert([squad])

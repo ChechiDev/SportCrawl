@@ -23,7 +23,6 @@ import pytest
 
 from core.application.base_worker import BaseWorker, CooldownRequired
 
-
 # ---------------------------------------------------------------------------
 # Concrete test subclass (not mocked ABC — ABCs are tested via concrete impls)
 # ---------------------------------------------------------------------------
