@@ -30,7 +30,7 @@ class ScrapingEngine(ABC):
 
 
 class ScriptableEngine(ScrapingEngine):
-    """ScrapingEngine subtype that additionally supports JS execution and live page source.
+    """ScrapingEngine subtype that supports JS execution and live page source.
 
     Concrete implementations that drive a real browser (e.g. PydollEngine) should
     extend this class rather than ScrapingEngine directly.

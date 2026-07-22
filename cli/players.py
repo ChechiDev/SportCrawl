@@ -34,7 +34,9 @@ async def _seed_countries(settings: Settings) -> None:
 
     _COUNTRIES_URL = "https://fbref.com/en/countries/"
     session_factory = create_session_factory(settings.db)
-    async with PydollEngine(profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-countries") as engine:
+    async with PydollEngine(
+        profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-countries"
+    ) as engine:
         scraper = CountryScraper(engine, settings.scraping, session_factory)
         await scraper.scrape(_COUNTRIES_URL)
 
@@ -51,7 +53,9 @@ async def _seed_country_squads(settings: Settings) -> None:
 
     _SQUADS_URL = "https://fbref.com/en/squads/"
     session_factory = create_session_factory(settings.db)
-    async with PydollEngine(profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-squads") as engine:
+    async with PydollEngine(
+        profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-squads"
+    ) as engine:
         scraper = CountrySquadsScraper(engine, settings.scraping, session_factory)
         await scraper.scrape(_SQUADS_URL)
 
@@ -80,7 +84,8 @@ async def _seed_with_retry(
 
     for _attempt in range(1, _MAX_SEED_RETRIES + 1):
         console.print(
-            f"  [dim]→[/dim]  [dim]Seeding {label} (attempt {_attempt}/{_MAX_SEED_RETRIES})...[/dim]{' ' * 20}",
+            f"  [dim]→[/dim]  [dim]Seeding {label}"
+            f" (attempt {_attempt}/{_MAX_SEED_RETRIES})...[/dim]{' ' * 20}",
             end="\r",
         )
         try:
@@ -89,11 +94,13 @@ async def _seed_with_retry(
         except ScraperError:
             if _attempt >= _MAX_SEED_RETRIES:
                 console.print(
-                    f"  [red]✗[/red]  {label.capitalize()} scrape failed after {_MAX_SEED_RETRIES} retries.{' ' * 20}"
+                    f"  [red]✗[/red]  {label.capitalize()} scrape failed"
+                    f" after {_MAX_SEED_RETRIES} retries.{' ' * 20}"
                 )
                 raise typer.Exit(code=1)
             console.print(
-                f"  [yellow]⚠[/yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}"
+                f"  [yellow]⚠[/yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s"
+                f" ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}"
             )
             await asyncio.sleep(_SEED_RETRY_WAIT)
 
@@ -165,7 +172,9 @@ async def _run(
                 "countries",
                 dsn,
             )
-            console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
+            console.print(
+                f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}"
+            )
             # Mark only the seed check as resolved
             results = [
                 CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
@@ -182,7 +191,9 @@ async def _run(
                 "country squads",
                 dsn,
             )
-            console.print(f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}")
+            console.print(
+                f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}"
+            )
             results = [
                 CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
                 if r.name == "Country squads" and not r.passed else r

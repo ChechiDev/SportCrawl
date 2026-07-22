@@ -25,5 +25,9 @@ def render_compact(results: list[CheckResult], console: Console) -> None:
         console.print(f"  [bold green]OK[/bold green]  All {passed} checks passed")
         return
     for result in failures:
-        icon = "[bold yellow]WARN[/bold yellow]" if not result.fatal else "[bold red]FAIL[/bold red]"
+        icon = (
+            "[bold yellow]WARN[/bold yellow]"
+            if not result.fatal
+            else "[bold red]FAIL[/bold red]"
+        )
         console.print(f"  {icon}  {result.name}: {result.detail}")

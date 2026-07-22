@@ -43,7 +43,10 @@ def print_header(console: Console) -> None:
     tagline.append(f"  v{v}", style="dim cyan")
     console.print(tagline)
     hint = Text()
-    hint.append("  Ctrl+C to stop  ·  on restart, scraping resumes from where it", style="dim white")
+    hint.append(
+        "  Ctrl+C to stop  ·  on restart, scraping resumes from where it",
+        style="dim white",
+    )
     hint.append(" left off", style="dim white")
     console.print(hint)
     console.print(Rule(style="blue dim"))

@@ -1,4 +1,4 @@
-"""Unit tests for CountrySquadsScraper.parse() (infrastructure/scraping/country_squads.py).
+"""Unit tests for CountrySquadsScraper.parse() (infrastructure/scraping/country_squads).
 
 All DB and network calls are mocked. asyncio_mode = "auto" via pyproject.toml
 so no explicit @pytest.mark.asyncio decorators are needed.

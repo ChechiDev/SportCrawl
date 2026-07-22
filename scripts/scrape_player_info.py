@@ -204,7 +204,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         await asyncio.sleep(random.uniform(2.0, 6.0))
                     # Challenge polling and cooldown run outside gate so other
                     # workers are not blocked during Cloudflare resolution.
-                    html = await engine.wait_for_challenge(self._fbref_base_url + job.url)
+                    html = await engine.wait_for_challenge(
+                        self._fbref_base_url + job.url
+                    )
                     await asyncio.sleep(random.uniform(3, 10))
                     if not html:
                         raise PageLoadError(
@@ -228,7 +230,10 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             position_cache=self._position_cache,
                             valid_countries=self._valid_countries,
                         )
-                        result = await processor.process(job, html)
+                        result = await processor.process(
+                            job,  # type: ignore[arg-type]
+                            html,
+                        )
                         await session.commit()
 
                     success = True
@@ -242,7 +247,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                 ) as exc:
                     attempt += 1
                     if isinstance(exc, BrowserException):
-                        self._labels[self._worker_id] = "[bold red]ERROR[/] Browser error — Restarting"
+                        self._labels[self._worker_id] = (
+                            "[bold red]ERROR[/] Browser error — Restarting"
+                        )
                         try:
                             async with get_session(self._session_factory) as session:
                                 q_repo = PlayerInfoQueueRepository(session)
@@ -257,7 +264,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         break
                     is_terminal = attempt >= 3
                     if is_terminal:
-                        self._labels[self._worker_id] = f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
+                        self._labels[self._worker_id] = (
+                            f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
+                        )
                         try:
                             async with get_session(self._session_factory) as session:
                                 q_repo = PlayerInfoQueueRepository(session)
@@ -278,7 +287,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                 return False
 
             if not success:
-                self._labels[self._worker_id] = f"[bold red]FAILED[/] Job {job.id} — max retries reached"
+                self._labels[self._worker_id] = (
+                    f"[bold red]FAILED[/] Job {job.id} — max retries reached"
+                )
                 raise CooldownRequired
 
 

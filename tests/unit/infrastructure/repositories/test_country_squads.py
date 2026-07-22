@@ -49,7 +49,7 @@ def _make_squad(
     confederation: str | None = "CONMEBOL",
     fk_flag: str | None = "ar",
     clubs_url: str = "https://fbref.com/en/country/clubs/ARG/Argentina-Football-Clubs",
-    nat_team_men_url: str | None = "https://fbref.com/en/squads/abcd1234/history/Argentina-Men",
+    nat_team_men_url: str | None = "https://fbref.com/en/squads/abcd1234/history/Argentina-Men",  # noqa: E501
     nat_team_women_url: str | None = None,
     fbref_men_squad_id: str | None = "abcd1234",
     fbref_women_squad_id: str | None = None,
@@ -85,7 +85,7 @@ class TestConfederationUpsert:
         stmt_mock.on_conflict_do_nothing.assert_called()
 
     async def test_confederation_not_inserted_when_none(self) -> None:
-        """When confederation is None, pg_insert must NOT be called for Confederation."""
+        """When confederation is None, pg_insert must NOT be called for it."""
         session = _make_session()
         squad = _make_squad(confederation=None)
 
@@ -98,12 +98,13 @@ class TestConfederationUpsert:
             await repo.upsert([squad])
 
         confederation_calls = [
-            c for c in mock_pg_insert.call_args_list if c.args and c.args[0] is Confederation
+            c for c in mock_pg_insert.call_args_list
+            if c.args and c.args[0] is Confederation
         ]
         assert len(confederation_calls) == 0
 
     async def test_existing_confederation_does_not_duplicate(self) -> None:
-        """ON CONFLICT DO NOTHING means no duplicate row — session.execute is still called."""
+        """ON CONFLICT DO NOTHING: no duplicate row, session.execute is still called."""
         session = _make_session()
         squad = _make_squad(confederation="UEFA")
 
@@ -135,7 +136,8 @@ class TestSquadUpsert:
             await repo.upsert([squad])
 
         squad_calls = [
-            c for c in mock_pg_insert.call_args_list if c.args and c.args[0] is CountrySquads
+            c for c in mock_pg_insert.call_args_list
+            if c.args and c.args[0] is CountrySquads
         ]
         assert len(squad_calls) == 1
 
@@ -152,13 +154,15 @@ class TestSquadUpsert:
         stmt_mock.on_conflict_do_update.assert_called()
 
     async def test_upsert_batches_rows(self) -> None:
-        """upsert with N squads must call execute exactly 2 times (one confederation batch + one squad batch)."""
+        """upsert with N squads calls execute exactly 2 times (conf + squad batch)."""
         session = _make_session()
         squads = [
             _make_squad("ARG"),
-            _make_squad("ENG", confederation="UEFA", fk_flag="gb",
-                        clubs_url="https://fbref.com/en/country/clubs/ENG/England-Football-Clubs",
-                        nat_team_men_url=None, fbref_men_squad_id=None),
+            _make_squad(
+                "ENG", confederation="UEFA", fk_flag="gb",
+                clubs_url="https://fbref.com/en/country/clubs/ENG/England-Football-Clubs",  # noqa: E501
+                nat_team_men_url=None, fbref_men_squad_id=None,
+            ),
         ]
 
         with _pg_insert_mock():

@@ -18,15 +18,15 @@ def test_country_squad_valid_full() -> None:
         fk_flag="ar",
         confederation="CONMEBOL",
         clubs_url="https://fbref.com/en/country/clubs/ARG/Argentina-Football-Clubs",
-        nat_team_men_url="https://fbref.com/en/squads/abcd1234/history/Argentina-Men-Stats-and-History",
-        nat_team_women_url="https://fbref.com/en/squads/efgh5678/history/Argentina-Women-Stats-and-History",
+        nat_team_men_url="https://fbref.com/en/squads/abcd1234/history/Argentina-Men-Stats-and-History",  # noqa: E501
+        nat_team_women_url="https://fbref.com/en/squads/efgh5678/history/Argentina-Women-Stats-and-History",  # noqa: E501
         fbref_men_squad_id="abcd1234",
         fbref_women_squad_id="efgh5678",
     )
     assert s.fk_country == "ARG"
     assert s.fk_flag == "ar"
     assert s.confederation == "CONMEBOL"
-    assert s.clubs_url == "https://fbref.com/en/country/clubs/ARG/Argentina-Football-Clubs"
+    assert s.clubs_url == "https://fbref.com/en/country/clubs/ARG/Argentina-Football-Clubs"  # noqa: E501
     assert s.fbref_men_squad_id == "abcd1234"
     assert s.fbref_women_squad_id == "efgh5678"
 
@@ -48,7 +48,7 @@ def test_country_squad_men_only() -> None:
     s = CountrySquad(
         fk_country="FRA",
         clubs_url="https://fbref.com/en/country/clubs/FRA/France-Football-Clubs",
-        nat_team_men_url="https://fbref.com/en/squads/aaaabbbb/history/France-Men-Stats-and-History",
+        nat_team_men_url="https://fbref.com/en/squads/aaaabbbb/history/France-Men-Stats-and-History",  # noqa: E501
         fbref_men_squad_id="aaaabbbb",
     )
     assert s.nat_team_men_url is not None
@@ -72,7 +72,7 @@ def test_country_squad_fk_country_min_len() -> None:
 def test_country_squad_fk_country_max_len() -> None:
     s = CountrySquad(
         fk_country="ABCDEFGHIJ",  # 10 chars
-        clubs_url="https://fbref.com/en/country/clubs/ABCDEFGHIJ/Country-Football-Clubs",
+        clubs_url="https://fbref.com/en/country/clubs/ABCDEFGHIJ/Country-Football-Clubs",  # noqa: E501
     )
     assert len(s.fk_country) == 10
 
@@ -89,7 +89,7 @@ def test_country_squad_fk_country_too_long_raises() -> None:
     with pytest.raises(ValidationError):
         CountrySquad(
             fk_country="ABCDEFGHIJK",  # 11 chars
-            clubs_url="https://fbref.com/en/country/clubs/ABCDEFGHIJK/Country-Football-Clubs",
+            clubs_url="https://fbref.com/en/country/clubs/ABCDEFGHIJK/Country-Football-Clubs",  # noqa: E501
         )
 
 

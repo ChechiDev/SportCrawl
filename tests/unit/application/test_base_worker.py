@@ -8,7 +8,7 @@ Failure modes under test:
   2. Browser starts successfully → run_claim_loop returns False → browser restarts.
   3. Browser START raises _MAX_RESTARTS times → worker waits 60s and resets counter,
      then recovers when browser finally starts (does NOT return permanently).
-  4. CooldownRequired raised inside run_claim_loop → 30s sleep, then continue.
+  4. CooldownRequired raised inside run_claim_loop → 60s sleep, then continue.
   5. asyncio.CancelledError propagates through both the inner and outer try/except.
 """
 
@@ -29,7 +29,7 @@ from core.application.base_worker import BaseWorker, CooldownRequired
 
 
 class _StubWorker(BaseWorker[object]):
-    """Minimal concrete BaseWorker that delegates run_claim_loop to an injected callable."""
+    """Minimal concrete BaseWorker that delegates run_claim_loop to an injected fn."""
 
     def __init__(
         self,
@@ -135,7 +135,7 @@ class TestBaseWorkerHappyPath:
 
 class TestBaseWorkerBrowserRestart:
     async def test_run_claim_loop_false_triggers_browser_restart(self) -> None:
-        """run_claim_loop returning False must cause the outer loop to start a new engine."""
+        """run_claim_loop returning False causes the outer loop to open a new engine."""
         call_count = 0
 
         async def _restart_once_then_stop(engine: Any) -> bool:
@@ -193,7 +193,9 @@ class TestBaseWorkerBrowserStartFailure:
         )
         # Verify that the 60s cooldown sleep was called at least once
         sleep_args = [call.args[0] for call in mock_sleep.call_args_list]
-        assert 60 in sleep_args, "60-second cooldown must be triggered after max failures"
+        assert 60 in sleep_args, (
+            "60-second cooldown must be triggered after max failures"
+        )
 
     async def test_label_updated_during_browser_failure_cooldown(self) -> None:
         """Label must contain Rich markup and 'waiting 60s' during the cooldown."""
@@ -234,8 +236,6 @@ class TestBaseWorkerBrowserStartFailure:
             engine_factory=_engine_factory,
         )
 
-        original_setter = None
-
         with patch("asyncio.sleep", new_callable=AsyncMock):
             # Intercept label writes by subclassing the dict assignment post-hoc
             class _TrackingDict(dict):  # type: ignore[type-arg]
@@ -246,21 +246,21 @@ class TestBaseWorkerBrowserStartFailure:
             worker._labels = _TrackingDict()  # type: ignore[assignment]
             await worker.run()
 
-        cooldown_labels = [l for l in captured_labels if "60s" in l]
+        cooldown_labels = [lb for lb in captured_labels if "60s" in lb]
         assert cooldown_labels, "A label mentioning '60s' must be set during cooldown"
-        assert any("[bold red]" in l for l in cooldown_labels), (
+        assert any("[bold red]" in lb for lb in cooldown_labels), (
             "Cooldown label must use Rich bold red markup"
         )
 
 
 # ---------------------------------------------------------------------------
-# 4. CooldownRequired → 30s sleep, loop continues
+# 4. CooldownRequired → 60s sleep, loop continues
 # ---------------------------------------------------------------------------
 
 
 class TestBaseWorkerCooldownRequired:
     async def test_cooldown_required_sleeps_and_continues(self) -> None:
-        """CooldownRequired must trigger a 30s sleep, then re-enter the outer loop."""
+        """CooldownRequired must trigger a 60s sleep, then re-enter the outer loop."""
         call_count = 0
 
         async def _raise_then_stop(engine: Any) -> bool:
@@ -277,7 +277,7 @@ class TestBaseWorkerCooldownRequired:
         assert result == 0
         assert call_count == 2
         sleep_args = [call.args[0] for call in mock_sleep.call_args_list]
-        assert 30 in sleep_args, "30-second cooldown sleep must be triggered"
+        assert 60 in sleep_args, "60-second cooldown sleep must be triggered"
 
 
 # ---------------------------------------------------------------------------

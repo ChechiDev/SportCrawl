@@ -304,7 +304,9 @@ class PydollEngine(ScriptableEngine):
     async def execute_script(self, script: str) -> None:
         """Execute *script* in the current page context via CDP Runtime.evaluate."""
         if self._tab is None:
-            raise PageLoadError("No active tab — call fetch() or navigate() first", url="")
+            raise PageLoadError(
+                "No active tab — call fetch() or navigate() first", url=""
+            )
         try:
             await self._tab.execute_script(script)
         except (PydollException, OSError, ConnectionError) as exc:
@@ -313,7 +315,9 @@ class PydollEngine(ScriptableEngine):
     async def get_page_source(self) -> str:
         """Return the current page's outer HTML without navigating."""
         if self._tab is None:
-            raise PageLoadError("No active tab — call fetch() or navigate() first", url="")
+            raise PageLoadError(
+                "No active tab — call fetch() or navigate() first", url=""
+            )
         try:
             return await asyncio.wait_for(self._tab.page_source, timeout=10)
         except TimeoutError as exc:
