@@ -45,6 +45,7 @@ _REVISION_ORDER = [
     "p14m",
     "p15a",
     "p16a",
+    "p16b",
 ]
 
 
@@ -76,10 +77,16 @@ _PLAYER_INFO_TABLES = _PLAYERS_TABLES + [
     "sch_shared.tbl_player_photo",
 ]
 
+_CLUB_TEAMS_TABLES = _PLAYERS_TABLES + [
+    "sch_shared.tbl_competition",
+    "sch_shared.tbl_teams",
+]
+
 _PHASE_TABLES: dict[str, list[str]] = {
     "countries": _COUNTRIES_TABLES,
     "players": _PLAYERS_TABLES,
     "player_info": _PLAYER_INFO_TABLES,
+    "club_teams": _CLUB_TEAMS_TABLES,
 }
 
 
@@ -176,7 +183,7 @@ async def check_schemas_exist(dsn: str) -> CheckResult:
 
 
 async def check_tables_exist(
-    dsn: str, phase: Literal["countries", "players", "player_info"]
+    dsn: str, phase: Literal["countries", "players", "player_info", "club_teams"]
 ) -> CheckResult:
     tables = _PHASE_TABLES[phase]
     conn = await asyncpg.connect(dsn, timeout=5)

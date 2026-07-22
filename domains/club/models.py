@@ -46,3 +46,44 @@ class CountrySquadsPage(BaseModel):
     """Collection of parsed CountrySquad rows from a single squads page fetch."""
 
     squads: list[CountrySquad]
+
+
+class Team(BaseModel):
+    """Parsed team/club row from a FBRef country clubs page.
+
+    gender_raw stores the raw "M" or "F" value from HTML; the integer FK is
+    resolved at persistence time via the gender lookup table.
+    """
+
+    team_id: str = Field(min_length=8, max_length=8)
+    """8-char hex squad ID from the FBRef URL (e.g. 'abcd1234')."""
+
+    team_name: str = Field(min_length=1, max_length=200)
+    """Full team name as shown on FBRef."""
+
+    fk_country: str = Field(max_length=10)
+    """3-letter country code from the parent country squads row."""
+
+    gender_raw: str
+    """Raw gender value from HTML — 'M' or 'F'. Resolved to int FK at persist time."""
+
+    comp_name: str | None = None
+    """Competition name (raw string); None when cell is empty."""
+
+    team_from: int | None = None
+    """First season year (lesser of 'YYYY-YY' split), or None if unparseable."""
+
+    team_to: int | None = None
+    """Last season year (greater of 'YYYY-YY' split), or None if unparseable."""
+
+    team_url: str = Field(min_length=1, max_length=500)
+    """Full FBRef URL to the team's stats page."""
+
+
+class TeamsPage(BaseModel):
+    """Collection of parsed Team rows from a single country clubs page fetch."""
+
+    fk_country: str
+    """Country code that was scraped."""
+
+    teams: list[Team] = []
