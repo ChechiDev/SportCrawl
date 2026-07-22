@@ -147,8 +147,8 @@ class TestSquadUpsert:
 
         stmt_mock.on_conflict_do_update.assert_called()
 
-    async def test_upsert_multiple_rows_executes_per_row(self) -> None:
-        """upsert with N squads must call execute at least N times (one per squad)."""
+    async def test_upsert_batches_rows(self) -> None:
+        """upsert with N squads must call execute exactly 2 times (one confederation batch + one squad batch)."""
         session = _make_session()
         squads = [
             _make_squad("ARG"),
@@ -161,8 +161,8 @@ class TestSquadUpsert:
             repo = CountrySquadsRepository(session)
             await repo.upsert(squads)
 
-        # 2 squads with confederation → at least 4 execute calls (2 conf + 2 squad)
-        assert session.execute.call_count >= 4
+        # batch upsert: 1 confederation batch + 1 squad batch = 2 execute calls total
+        assert session.execute.call_count == 2
 
     async def test_upsert_empty_list_does_not_execute(self) -> None:
         """Passing an empty list must not call execute at all."""

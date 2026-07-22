@@ -13,7 +13,7 @@ import pytest
 
 from config.settings import ScrapingSettings
 from core.exceptions.scraper import ParsingError
-from domains.club.models import CountrySquad, CountrySquadsPage
+from domains.club.models import CountrySquadsPage
 from infrastructure.scraping.country_squads import CountrySquadsScraper
 from ports.browser import ScrapingEngine
 
@@ -23,7 +23,7 @@ from ports.browser import ScrapingEngine
 
 _FULL_ROW_HTML = """
 <html><body>
-<table id="squads">
+<table id="countries">
   <thead><tr><th>Country</th></tr></thead>
   <tbody>
     <tr>
@@ -45,7 +45,7 @@ _FULL_ROW_HTML = """
 
 _MEN_ONLY_HTML = """
 <html><body>
-<table id="squads">
+<table id="countries">
   <tbody>
     <tr>
       <th scope="row" data-stat="country"><strong>Andorra Football Clubs</strong></th>
@@ -65,7 +65,7 @@ _MEN_ONLY_HTML = """
 
 _NO_NATIONAL_TEAMS_HTML = """
 <html><body>
-<table id="squads">
+<table id="countries">
   <tbody>
     <tr>
       <th scope="row" data-stat="country"><strong>Fictonia Football Clubs</strong></th>
@@ -83,7 +83,7 @@ _NO_NATIONAL_TEAMS_HTML = """
 
 _MULTI_ROW_HTML = """
 <html><body>
-<table id="squads">
+<table id="countries">
   <tbody>
     <tr>
       <th scope="row" data-stat="country"><strong>Albania Football Clubs</strong></th>
@@ -121,7 +121,7 @@ _NO_TABLE_HTML = """
 
 _EMPTY_TBODY_HTML = """
 <html><body>
-<table id="squads">
+<table id="countries">
   <tbody></tbody>
 </table>
 </body></html>

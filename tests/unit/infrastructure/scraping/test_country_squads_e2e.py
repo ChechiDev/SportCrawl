@@ -22,7 +22,7 @@ from ports.browser import ScrapingEngine
 
 _E2E_HTML = """
 <html><body>
-<table id="squads">
+<table id="countries">
   <tbody>
     <tr>
       <th scope="row" data-stat="country"><strong>Albania Football Clubs</strong></th>
@@ -101,7 +101,7 @@ class TestCountrySquadsE2E:
 
         @asynccontextmanager
         async def _fake_get_session(
-            _factory: Any,
+            _: Any,
         ) -> AsyncGenerator[AsyncMock, None]:  # type: ignore[misc]
             yield mock_session
 
