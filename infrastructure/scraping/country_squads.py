@@ -41,6 +41,7 @@ _SQUAD_ID_RE = re.compile(r"/en/squads/([a-z0-9]{8})/")
 _MEN_LINK_TEXT = "Men"
 _WOMEN_LINK_TEXT = "Women"
 
+
 class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
     """Scraper for the FBRef squads listing page (https://fbref.com/en/squads/).
 

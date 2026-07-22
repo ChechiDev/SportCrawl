@@ -73,7 +73,7 @@ async def run_checks(
             "Checking DB revision...",
         ),
         (lambda: check_schemas_exist(dsn), "Checking schemas..."),
-        (lambda: check_tables_exist(dsn, phase), "Checking tables..."),  # type: ignore[arg-type]
+        (lambda: check_tables_exist(dsn, phase), "Checking tables..."),  # type: ignore[arg-type]  # noqa: E501
     ]
 
     for fn, label in check_fns:

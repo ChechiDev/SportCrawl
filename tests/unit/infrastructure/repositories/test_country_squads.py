@@ -49,7 +49,7 @@ def _make_squad(
     confederation: str | None = "CONMEBOL",
     fk_flag: str | None = "ar",
     clubs_url: str = "https://fbref.com/en/country/clubs/ARG/Argentina-Football-Clubs",
-    nat_team_men_url: str | None = "https://fbref.com/en/squads/abcd1234/history/Argentina-Men",
+    nat_team_men_url: str | None = "https://fbref.com/en/squads/abcd1234/history/Argentina-Men",  # noqa: E501
     nat_team_women_url: str | None = None,
     fbref_men_squad_id: str | None = "abcd1234",
     fbref_women_squad_id: str | None = None,
@@ -158,9 +158,11 @@ class TestSquadUpsert:
         session = _make_session()
         squads = [
             _make_squad("ARG"),
-            _make_squad("ENG", confederation="UEFA", fk_flag="gb",
-                        clubs_url="https://fbref.com/en/country/clubs/ENG/England-Football-Clubs",
-                        nat_team_men_url=None, fbref_men_squad_id=None),
+            _make_squad(
+                "ENG", confederation="UEFA", fk_flag="gb",
+                clubs_url="https://fbref.com/en/country/clubs/ENG/England-Football-Clubs",  # noqa: E501
+                nat_team_men_url=None, fbref_men_squad_id=None,
+            ),
         ]
 
         with _pg_insert_mock():
