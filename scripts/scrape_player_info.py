@@ -230,8 +230,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             position_cache=self._position_cache,
                             valid_countries=self._valid_countries,
                         )
-                        result = await processor.process(  # type: ignore[arg-type]
-                            job, html
+                        result = await processor.process(
+                            job,  # type: ignore[arg-type]
+                            html,
                         )
                         await session.commit()
 
