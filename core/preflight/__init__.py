@@ -98,17 +98,14 @@ async def run_checks(
             _render(result)
         # On failure: suppress render — caller handles inline seeding display
         results.append(result)
-        if not result.passed and result.fatal:
-            if compact:
-                render_compact(results, console)
-            return results
 
-    if phase in ("players", "player_info"):
         result = await _run(lambda: check_country_squads_data(dsn), "Checking country squads...")
         if result.passed:
             _render(result)
         results.append(result)
-        if not result.passed and result.fatal:
+
+        seed_failures = [r for r in results if not r.passed and r.fatal]
+        if seed_failures:
             if compact:
                 render_compact(results, console)
             return results
