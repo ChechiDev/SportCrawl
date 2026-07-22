@@ -230,34 +230,32 @@ async def _run(
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
     logging.getLogger("ports.scraper").setLevel(logging.ERROR)
 
-    from scripts.scrape_country_teams import main as scrape_teams
+    if not all_countries and not country:
+        console.print("[red]Specify --country or --all.[/red]")
+        raise typer.Exit(code=1)
+
+    # Launch teams scraping as an independent OS process so it runs in parallel
+    # with the players pipeline without sharing the event loop or browser resources.
+    import sys
+    teams_proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "scripts.scrape_country_teams",
+    )
 
     if with_player_info and all_countries:
         from scripts.scrape_pipeline import main as pipeline_main
 
         console.print()
-        await asyncio.gather(
-            pipeline_main(workers=workers, all_countries=True),
-            scrape_teams(),
-        )
+        await pipeline_main(workers=workers, all_countries=True)
+        await teams_proc.wait()
         return
 
-    if not all_countries and not country:
-        console.print("[red]Specify --country or --all.[/red]")
-        raise typer.Exit(code=1)
-
-    async def _players() -> None:
-        console.print()
-        console.print("[bold]Scraping Players[/bold]")
-        if all_countries:
-            await main_all(workers=workers)
-        else:
-            codes = [c.strip().upper() for c in country.split(",") if c.strip()]  # type: ignore[union-attr]
-            await main_countries(codes, workers=workers)
-
     console.print()
-    console.print("[bold]Scraping Teams[/bold]")
-    await asyncio.gather(_players(), scrape_teams())
+    console.print("[bold]Scraping Players[/bold]")
+    if all_countries:
+        await main_all(workers=workers)
+    else:
+        codes = [c.strip().upper() for c in country.split(",") if c.strip()]  # type: ignore[union-attr]
+        await main_countries(codes, workers=workers)
 
     if with_player_info:
         console.print()
@@ -265,3 +263,5 @@ async def _run(
         from scripts.scrape_player_info import main as scrape_info
 
         await scrape_info(workers=workers, seed=True)
+
+    await teams_proc.wait()
