@@ -49,7 +49,7 @@ def scrape_players(
 
     from scripts.scrape_players import main_all, main_single
 
-    _FBREF_BASE = "https://fbref.com/en/country/players"
+    _PLAYERS_BASE_URL = "https://fbref.com/en/country/players"
 
     if all_countries:
         asyncio.run(main_all())
@@ -57,10 +57,23 @@ def scrape_players(
         asyncio.run(main_single(url))
     elif country:
         code = country.upper()
-        asyncio.run(main_single(f"{_FBREF_BASE}/{code}/{code}-Football"))
+        asyncio.run(main_single(f"{_PLAYERS_BASE_URL}/{code}/{code}-Football"))
     else:
         typer.echo("Specify --country, --url, or --all.", err=True)
         raise typer.Exit(code=1)
+
+
+@app.command("scrape-squads")
+def scrape_squads() -> None:
+    """Fetch and persist country squad data from FBRef (/en/squads/)."""
+    import logging
+    logging.getLogger("pydoll").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure.browser").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure.scraping").setLevel(logging.WARNING)
+
+    from scripts.scrape_country_squads import main as squads_main
+
+    asyncio.run(squads_main())
 
 
 @app.command("pipeline")
