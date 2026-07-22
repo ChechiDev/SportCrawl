@@ -43,6 +43,7 @@ class TestPlayersStart:
                 AsyncMock(return_value=[_passing_result()]),
             ),
             patch("cli.players.main_all", AsyncMock()),
+            patch("scripts.scrape_country_teams.main", AsyncMock()),
         ):
             result = runner.invoke(players_app, ["--all"])
         assert result.exit_code == 0

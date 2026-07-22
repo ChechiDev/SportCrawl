@@ -20,13 +20,14 @@ from core.preflight.checks import (
 from core.preflight.renderer import render_check, render_compact
 from core.preflight.result import CheckResult
 
-REQUIRED_HEAD = "p16a"
+REQUIRED_HEAD = "p16b"
 _CHECK_DISPLAY_DELAY_S = 1.5
 
 MINIMUM_REVISION: dict[str, str] = {
     "countries": "p10d_add_fk_ondelete",
-    "players": "p16a",
-    "player_info": REQUIRED_HEAD,
+    "players": "p16b",
+    "player_info": "p16b",
+    "club_teams": "p16b",
 }
 
 _ALEMBIC_INI = Path(__file__).parent.parent.parent / "alembic.ini"

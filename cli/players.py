@@ -254,3 +254,9 @@ async def _run(
         from scripts.scrape_player_info import main as scrape_info
 
         await scrape_info(workers=workers, seed=True)
+
+    console.print()
+    console.print("[bold]Scraping Teams[/bold]")
+    from scripts.scrape_country_teams import main as scrape_teams
+
+    await scrape_teams()
