@@ -10,9 +10,9 @@ from typing import Literal
 
 import asyncpg  # type: ignore[import-untyped]
 
-logger = logging.getLogger(__name__)
-
 from core.preflight.result import CheckResult
+
+logger = logging.getLogger(__name__)
 
 _REVISION_ORDER = [
     "134f2e68682a",

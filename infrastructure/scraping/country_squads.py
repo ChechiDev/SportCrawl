@@ -87,7 +87,7 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
                 for cell in row.find_all(["th", "td"])
             }
 
-            # Require club_count cell with an anchor — it provides clubs_url + country code.
+            # Require club_count cell with an anchor — clubs_url + country code.
             club_count_cell = cells_by_stat.get("club_count")
             if not club_count_cell:
                 continue
@@ -99,7 +99,9 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
             clubs_href = str(club_anchor.get("href", ""))
             code_match = _CLUBS_HREF_RE.search(clubs_href)
             if not code_match:
-                logger.debug("Skipping row: cannot extract country code from href=%s", clubs_href)
+                logger.debug(
+                    "Skipping row: cannot extract country code from href=%s", clubs_href
+                )
                 continue
 
             fk_country = code_match.group(1).upper()
@@ -112,7 +114,9 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
                 flag_span = flag_cell.find("span", class_="f-i")
                 if flag_span:
                     class_attr: str | list[str] = flag_span.get("class") or []
-                    classes: list[str] = class_attr if isinstance(class_attr, list) else [class_attr]
+                    classes: list[str] = (
+                        class_attr if isinstance(class_attr, list) else [class_attr]
+                    )
                     for cls in classes:
                         if cls.startswith("f-") and cls != "f-i":
                             fk_flag = cls[2:]  # strip leading "f-"

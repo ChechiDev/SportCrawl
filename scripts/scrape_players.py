@@ -41,7 +41,9 @@ _root_logger = logging.getLogger()
 _root_logger.handlers.clear()
 _root_logger.setLevel(logging.CRITICAL)
 
-for _noisy in ("pydoll", "websockets", "asyncio", "ports", "ports.scraper", "infrastructure"):
+for _noisy in (
+    "pydoll", "websockets", "asyncio", "ports", "ports.scraper", "infrastructure"
+):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
@@ -139,7 +141,8 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                     async with self._fetch_gate:
                         if self._scraper is None:
                             raise RuntimeError(
-                                "scraper not initialised — on_browser_ready must run first"
+                                "scraper not initialised"
+                                " — on_browser_ready must run first"
                             )
                         page, _ = await self._scraper.scrape(job.url)
 
@@ -158,7 +161,9 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 
                 except Exception as exc:
                     if isinstance(exc, _BrowserException):
-                        self._labels[self._worker_id] = "[bold red]ERROR[/] Browser error — Restarting"
+                        self._labels[self._worker_id] = (
+                            "[bold red]ERROR[/] Browser error — Restarting"
+                        )
                         try:
                             async with get_session(self._session_factory) as session:
                                 repo = PlayerListQueueRepository(session)
@@ -171,7 +176,8 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 
                     if attempt < max_attempts:
                         self._labels[self._worker_id] = (
-                            f"[bold yellow]WARNING[/] Retrying ({attempt}/{max_attempts}) — {country_display}"
+                            f"[bold yellow]WARNING[/]"
+                            f" Retrying ({attempt}/{max_attempts}) — {country_display}"
                         )
                         await asyncio.sleep(2)
                     else:
@@ -182,7 +188,9 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                 await session.commit()
                         except Exception:
                             pass
-                        self._labels[self._worker_id] = f"[bold red]FAILED[/] {country_display}"
+                        self._labels[self._worker_id] = (
+                            f"[bold red]FAILED[/] {country_display}"
+                        )
 
             if browser_restart:
                 return False
@@ -368,7 +376,9 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     session_factory_tmp = create_session_factory(settings.db)
     async with get_session(session_factory_tmp) as session:
         result = await session.execute(
-            sa.select(Country.country_id, Country.country_url, Country.country_name).where(
+            sa.select(
+                Country.country_id, Country.country_url, Country.country_name
+            ).where(
                 Country.country_id.in_(upper_codes)
             )
         )

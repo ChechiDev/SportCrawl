@@ -131,7 +131,7 @@ class ScrapeJobProcessor:
 
             await self._player_info_repo.upsert_player_info(raw, pos_ids)
             await self._player_info_repo.upsert_photo(raw.player_id, raw.photo_url)
-            await self._queue_repo.mark_done(job.id)
+            await self._queue_repo.mark_done(job.id)  # type: ignore[arg-type]
 
             country_id = raw.fk_national_team or raw.fk_country_birth
             return (raw.full_name or raw.player_id or "unknown", country_id)
@@ -141,7 +141,7 @@ class ScrapeJobProcessor:
                 "job %d failed: %s", job.id, exc, exc_info=False
             )
             try:
-                await self._queue_repo.mark_failed(job.id, str(exc))
+                await self._queue_repo.mark_failed(job.id, str(exc))  # type: ignore[arg-type]
             except Exception as mark_err:
                 logger.error(
                     "Failed to mark job %d as failed: %s",

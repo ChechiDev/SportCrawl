@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 class CooldownRequired(Exception):
-    """Raised by run_claim_loop when retries are exhausted. BaseWorker handles the countdown."""
+    """Raised by run_claim_loop when retries are exhausted. BaseWorker runs cooldown."""
 
 
 @runtime_checkable
@@ -128,13 +128,15 @@ class BaseWorker[TJob](ABC):
             # --- Phase 1: browser start (failures count toward _MAX_RESTARTS) ---
             try:
                 async with self._build_engine() as engine:
-                    # --- Phase 2: inner loop (browser is running; errors restart it) ---
+                    # --- Phase 2: inner loop (browser running; errors restart it) ---
                     try:
-                        restart_count = 0  # ADR-4: reset on every successful browser start
+                        restart_count = 0  # ADR-4: reset on successful browser start
                         await self.on_browser_ready(engine)
                         should_stop = await self.run_claim_loop(engine)
                     except CooldownRequired:
-                        self._labels[self._worker_id] = f"__cooldown__{time.monotonic() + 60}"
+                        self._labels[self._worker_id] = (
+                            f"__cooldown__{time.monotonic() + 60}"
+                        )
                         await asyncio.sleep(60)
                         continue
                     except asyncio.CancelledError:
@@ -154,13 +156,15 @@ class BaseWorker[TJob](ABC):
                 restart_count += 1
                 if restart_count >= _MAX_RESTARTS:
                     self._labels[self._worker_id] = (
-                        f"[bold red]ERROR[/] Browser failed {_MAX_RESTARTS}x — waiting 60s"
+                        f"[bold red]ERROR[/] Browser failed"
+                        f" {_MAX_RESTARTS}x — waiting 60s"
                     )
                     await asyncio.sleep(60)
                     restart_count = 0
                     continue
                 self._labels[self._worker_id] = (
-                    f"[bold yellow]WARNING[/] Browser start failed — retry {restart_count}/{_MAX_RESTARTS}"
+                    f"[bold yellow]WARNING[/] Browser start failed"
+                    f" — retry {restart_count}/{_MAX_RESTARTS}"
                 )
                 await asyncio.sleep(10)
                 continue

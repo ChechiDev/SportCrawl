@@ -66,7 +66,12 @@ async def run_checks(
     check_fns = [
         (lambda: check_db_reachable(dsn), "Checking DB connection..."),
         (lambda: check_alembic_initialized(dsn), "Database migrations initialized..."),
-        (lambda: check_alembic_revision(dsn, MINIMUM_REVISION.get(phase, REQUIRED_HEAD)), "Checking DB revision..."),
+        (
+            lambda: check_alembic_revision(
+                dsn, MINIMUM_REVISION.get(phase, REQUIRED_HEAD)
+            ),
+            "Checking DB revision...",
+        ),
         (lambda: check_schemas_exist(dsn), "Checking schemas..."),
         (lambda: check_tables_exist(dsn, phase), "Checking tables..."),  # type: ignore[arg-type]
     ]
@@ -93,13 +98,18 @@ async def run_checks(
                 return results
 
     if phase in ("players", "player_info"):
-        result = await _run(lambda: check_seed_data(dsn, phase), "Checking seed data...")  # type: ignore[arg-type]
+        result = await _run(
+            lambda: check_seed_data(dsn, phase),  # type: ignore[arg-type]
+            "Checking seed data...",
+        )
         if result.passed:
             _render(result)
         # On failure: suppress render — caller handles inline seeding display
         results.append(result)
 
-        result = await _run(lambda: check_country_squads_data(dsn), "Checking country squads...")
+        result = await _run(
+            lambda: check_country_squads_data(dsn), "Checking country squads..."
+        )
         if result.passed:
             _render(result)
         results.append(result)

@@ -122,6 +122,9 @@ ignore_imports = [
     "infrastructure.work_server.runtime -> infrastructure.scraping.players",
     "infrastructure.scraping.players -> infrastructure.persistence.repositories.player_discovery",
     "infrastructure.scraping.players -> infrastructure.persistence.session",
+    "infrastructure.work_server.runtime -> infrastructure.scraping.country_squads",
+    "infrastructure.scraping.country_squads -> infrastructure.persistence.repositories.country_squads",
+    "infrastructure.scraping.country_squads -> infrastructure.persistence.session",
 ]
 
 [tool.commitizen]

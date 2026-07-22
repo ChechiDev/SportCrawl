@@ -400,7 +400,12 @@ async def main(
         s3_initial_db=s3_initial_db,
     )
 
-    with Live(initial_renderable, console=_console, refresh_per_second=2, vertical_overflow="crop") as live:
+    with Live(
+        initial_renderable,
+        console=_console,
+        refresh_per_second=2,
+        vertical_overflow="crop"
+    ) as live:
         display_task = asyncio.create_task(
             _display_loop(
                 s2_labels, s2_counts, workers, s2_total,
