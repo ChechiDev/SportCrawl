@@ -166,10 +166,10 @@ async def _run(
                 dsn,
             )
             console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
-            # Mark seed check as resolved
+            # Mark only the seed check as resolved
             results = [
                 CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
-                if not r.passed else r
+                if r.name == "Seed data" and not r.passed else r
                 for r in results
             ]
         squads_failed = next(
