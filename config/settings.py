@@ -90,9 +90,7 @@ class Settings(BaseSettings):
     def enforce_work_server_token(self) -> "Settings":
         """Require non-empty SCRAPING__WORK_SERVER_TOKEN in all environments."""
         if not self.scraping.work_server_token.get_secret_value():
-            raise ValueError(
-                "SCRAPING__WORK_SERVER_TOKEN must be a non-empty value."
-            )
+            raise ValueError("SCRAPING__WORK_SERVER_TOKEN must be a non-empty value.")
         return self
 
     @model_validator(mode="after")

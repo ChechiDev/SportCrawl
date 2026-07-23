@@ -103,10 +103,10 @@ async def test_upsert_executes_statements() -> None:
 
     # Call sequence: (1) comp insert, (2) comp fetch, (3) gender fetch, (4) teams insert
     session.execute.side_effect = [
-        comp_result,       # comp insert (on_conflict_do_nothing)
-        comp_fetch_result, # comp select
-        gender_result,     # gender select
-        MagicMock(),       # teams insert
+        comp_result,  # comp insert (on_conflict_do_nothing)
+        comp_fetch_result,  # comp select
+        gender_result,  # gender select
+        MagicMock(),  # teams insert
     ]
 
     repo = TeamsRepository(session)
@@ -129,7 +129,7 @@ async def test_upsert_no_comp_skips_comp_insert() -> None:
     # Only 2 calls: gender fetch + teams insert
     session.execute.side_effect = [
         gender_result,  # gender select
-        MagicMock(),    # teams insert
+        MagicMock(),  # teams insert
     ]
 
     repo = TeamsRepository(session)

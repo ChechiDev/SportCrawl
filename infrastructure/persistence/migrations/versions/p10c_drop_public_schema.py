@@ -73,8 +73,7 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "DROP TRIGGER IF EXISTS trg_scrape_queue_updated_at"
-        " ON sch_infra.scrape_queue"
+        "DROP TRIGGER IF EXISTS trg_scrape_queue_updated_at ON sch_infra.scrape_queue"
     )
     op.execute(
         """

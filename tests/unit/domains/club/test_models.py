@@ -26,7 +26,9 @@ def test_country_squad_valid_full() -> None:
     assert s.fk_country == "ARG"
     assert s.fk_flag == "ar"
     assert s.confederation == "CONMEBOL"
-    assert s.clubs_url == "https://fbref.com/en/country/clubs/ARG/Argentina-Football-Clubs"  # noqa: E501
+    assert (
+        s.clubs_url == "https://fbref.com/en/country/clubs/ARG/Argentina-Football-Clubs"
+    )  # noqa: E501
     assert s.fbref_men_squad_id == "abcd1234"
     assert s.fbref_women_squad_id == "efgh5678"
 

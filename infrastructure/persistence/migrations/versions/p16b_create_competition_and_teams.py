@@ -106,9 +106,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Strict reverse: indexes first, then tbl_teams, then tbl_competition
     op.drop_index("ix_tbl_teams_fk_comp", table_name="tbl_teams", schema="sch_shared")
-    op.drop_index(
-        "ix_tbl_teams_fk_gender", table_name="tbl_teams", schema="sch_shared"
-    )
+    op.drop_index("ix_tbl_teams_fk_gender", table_name="tbl_teams", schema="sch_shared")
     op.drop_index(
         "ix_tbl_teams_fk_country", table_name="tbl_teams", schema="sch_shared"
     )

@@ -1,4 +1,5 @@
 """Players CLI sub-app for sportcrawl."""
+
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +24,7 @@ _SEED_RETRY_WAIT = 60
 
 async def _seed_countries(settings: Settings) -> None:
     import logging
+
     logging.getLogger("pydoll").setLevel(logging.WARNING)
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
     logging.getLogger("ports.scraper").setLevel(logging.ERROR)
@@ -42,6 +44,7 @@ async def _seed_countries(settings: Settings) -> None:
 
 async def _seed_country_squads(settings: Settings) -> None:
     import logging
+
     logging.getLogger("pydoll").setLevel(logging.WARNING)
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
     logging.getLogger("ports.scraper").setLevel(logging.ERROR)
@@ -83,8 +86,7 @@ async def _seed_with_retry(
 
     for _attempt in range(1, _MAX_SEED_RETRIES + 1):
         console.print(
-            f"  [dim]→[/dim]  [dim]Seeding {label}"
-            f" (attempt {_attempt}/{_MAX_SEED_RETRIES})...[/dim]{' ' * 20}",
+            f"  [dim]→[/dim]  [dim]Seeding {label}...[/dim]{' ' * 20}",
             end="\r",
         )
         try:
@@ -178,7 +180,8 @@ async def _run(
             # Mark only the seed check as resolved
             results = [
                 CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
-                if r.name == "Seed data" and not r.passed else r
+                if r.name == "Seed data" and not r.passed
+                else r
                 for r in results
             ]
         squads_failed = next(
@@ -196,13 +199,15 @@ async def _run(
             )
             results = [
                 CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
-                if r.name == "Country squads" and not r.passed else r
+                if r.name == "Country squads" and not r.passed
+                else r
                 for r in results
             ]
         if seed_failed or squads_failed:
             stale_result = await check_stale_queue(dsn)
             if not stale_result.passed:
                 from core.preflight.renderer import render_check
+
                 render_check(stale_result, console)
             results.append(stale_result)
 
@@ -226,6 +231,7 @@ async def _run(
             await conn.close()
 
     import logging
+
     logging.getLogger("pydoll").setLevel(logging.WARNING)
     logging.getLogger("infrastructure").setLevel(logging.WARNING)
     logging.getLogger("ports.scraper").setLevel(logging.ERROR)

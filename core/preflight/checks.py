@@ -3,6 +3,7 @@
 Each check is async, connects to the DB independently, and returns a CheckResult.
 This module MUST NOT import from infrastructure, domains, or ports.
 """
+
 from __future__ import annotations
 
 import logging
@@ -216,14 +217,10 @@ async def check_seed_data(
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         if phase in ("players", "club_teams"):
-            count = await conn.fetchval(
-                "SELECT COUNT(*) FROM sch_shared.tbl_countries"
-            )
+            count = await conn.fetchval("SELECT COUNT(*) FROM sch_shared.tbl_countries")
             label = "countries"
         else:
-            count = await conn.fetchval(
-                "SELECT COUNT(*) FROM sch_shared.tbl_players"
-            )
+            count = await conn.fetchval("SELECT COUNT(*) FROM sch_shared.tbl_players")
             label = "players"
 
         if count and count > 0:

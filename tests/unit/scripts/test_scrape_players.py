@@ -119,6 +119,7 @@ class TestWorker:
         session_factory: MagicMock | None = None,
     ) -> PlayerListWorker:
         from scripts.scrape_players import PlayerListWorker
+
         return PlayerListWorker(
             worker_id=1,
             session_factory=session_factory or MagicMock(),

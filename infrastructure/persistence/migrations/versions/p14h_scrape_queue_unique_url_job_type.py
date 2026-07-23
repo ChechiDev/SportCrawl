@@ -18,9 +18,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.drop_constraint(
-        "uq_scrape_queue_url", "scrape_queue", schema="sch_infra"
-    )
+    op.drop_constraint("uq_scrape_queue_url", "scrape_queue", schema="sch_infra")
     op.create_unique_constraint(
         "uq_scrape_queue_url_job_type",
         "scrape_queue",

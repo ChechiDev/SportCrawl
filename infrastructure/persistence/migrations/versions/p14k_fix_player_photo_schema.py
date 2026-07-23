@@ -32,10 +32,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_photo "
-            "DROP COLUMN updated_at"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_player_photo DROP COLUMN updated_at")
     )
     op.execute(
         sa.text(

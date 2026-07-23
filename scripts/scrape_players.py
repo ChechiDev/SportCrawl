@@ -19,6 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from rich.console import Console
 from rich.live import Live
+from rich.markup import escape as _escape
 from rich.text import Text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -42,7 +43,12 @@ _root_logger.handlers.clear()
 _root_logger.setLevel(logging.CRITICAL)
 
 for _noisy in (
-    "pydoll", "websockets", "asyncio", "ports", "ports.scraper", "infrastructure"
+    "pydoll",
+    "websockets",
+    "asyncio",
+    "ports",
+    "ports.scraper",
+    "infrastructure",
 ):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
@@ -107,7 +113,9 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
     async def run_claim_loop(self, engine: Any) -> int:  # noqa: ARG002
         """Drain player_list jobs for one browser session.
 
-        Returns self._processed when queue is empty (stop), -1 on BrowserException (restart).
+        Returns:
+            self._processed when queue is empty (stop)
+            -1 on BrowserException (restart)
 
         Note: ``engine`` is intentionally unused here. The scraper is injected via
         ``on_browser_ready`` (temporal coupling by design) so that the same scraper
@@ -125,9 +133,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                 return self._processed
 
             country_match = _COUNTRY_CODE_RE.search(job.url)
-            country_code = (
-                country_match.group(1).upper() if country_match else job.url
-            )
+            country_code = country_match.group(1).upper() if country_match else job.url
             country_display = (
                 self._url_to_name.get(job.url)
                 or self._code_to_name.get(country_code)
@@ -155,7 +161,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                     self._counts[self._worker_id] = self._processed
                     total_players = len(page.players)
                     self._labels[self._worker_id] = (
-                        f"{country_display}: {total_players:,} players"
+                        f"{_escape(country_display)}: {total_players:,} Players"
                     )
                     break
 
@@ -212,8 +218,9 @@ async def _load_all_countries(
     """Return (country_id, player_list_url, country_name) for every country."""
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.select(Country.country_id, Country.country_url, Country.country_name)
-            .order_by(Country.country_name)
+            sa.select(
+                Country.country_id, Country.country_url, Country.country_name
+            ).order_by(Country.country_name)
         )
         return [
             (row.country_id, _players_url(row.country_url), row.country_name)
@@ -333,8 +340,13 @@ async def main_all(workers: int = 1) -> None:
     ) as live:
         display_task = asyncio.create_task(
             run_display_loop(
-                workers, worker_labels, worker_counts,
-                initial_db_count, total, stop_event, live,
+                workers,
+                worker_labels,
+                worker_counts,
+                initial_db_count,
+                total,
+                stop_event,
+                live,
             )
         )
         results = await asyncio.gather(
@@ -378,9 +390,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
         result = await session.execute(
             sa.select(
                 Country.country_id, Country.country_url, Country.country_name
-            ).where(
-                Country.country_id.in_(upper_codes)
-            )
+            ).where(Country.country_id.in_(upper_codes))
         )
         countries = [
             (row.country_id, _players_url(row.country_url), row.country_name)
@@ -432,8 +442,13 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     ) as live:
         display_task = asyncio.create_task(
             run_display_loop(
-                workers, worker_labels, worker_counts,
-                initial_db_count, total, stop_event, live,
+                workers,
+                worker_labels,
+                worker_counts,
+                initial_db_count,
+                total,
+                stop_event,
+                live,
             )
         )
         results = await asyncio.gather(
@@ -476,8 +491,12 @@ def main() -> None:
     group.add_argument(
         "--url", metavar="URL", help="Full FBRef country player-list URL."
     )
-    group.add_argument("--all", action="store_true", dest="all_countries",
-                       help="Scrape all countries from the database.")
+    group.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_countries",
+        help="Scrape all countries from the database.",
+    )
     parser.add_argument(
         "--workers",
         metavar="N",

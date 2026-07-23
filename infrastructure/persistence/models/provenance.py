@@ -68,9 +68,7 @@ class Provenance(Base):
     content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     http_status: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
-    run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     __table_args__ = (
         Index("ix_provenance_url_scraped_at", "url", "scraped_at"),

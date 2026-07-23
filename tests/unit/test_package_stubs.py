@@ -22,10 +22,7 @@ class TestDomainsSharedPackage:
         from pathlib import Path
 
         source_path = (
-            Path(__file__).parent.parent.parent
-            / "domains"
-            / "shared"
-            / "__init__.py"
+            Path(__file__).parent.parent.parent / "domains" / "shared" / "__init__.py"
         )
         source = source_path.read_text()
         tree = ast.parse(source)

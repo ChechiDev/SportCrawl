@@ -138,9 +138,7 @@ class TestBulkEnqueuePersistsPlayers:
 
 
 class TestBulkEnqueueIdempotent:
-    async def test_bulk_enqueue_idempotent(
-        self, async_session: AsyncSession
-    ) -> None:
+    async def test_bulk_enqueue_idempotent(self, async_session: AsyncSession) -> None:
         """Calling bulk_enqueue twice with same rows produces no duplicates."""
         repo = PlayerDiscoveryRepository(async_session)
         rows = [
@@ -155,9 +153,7 @@ class TestBulkEnqueueIdempotent:
 
         # tbl_players — no duplicates
         player_result = await async_session.execute(
-            select(Player).where(
-                Player.player_id.in_(["11111111", "22222222"])
-            )
+            select(Player).where(Player.player_id.in_(["11111111", "22222222"]))
         )
         players = player_result.scalars().all()
         assert len(players) == 2

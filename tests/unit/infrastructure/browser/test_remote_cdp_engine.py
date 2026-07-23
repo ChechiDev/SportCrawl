@@ -110,9 +110,12 @@ class TestRemoteCDPEngineLazyConnect:
         mock_tab = _make_mock_tab("<html></html>")
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             assert engine._browser is None  # not yet connected
@@ -128,10 +131,13 @@ class TestRemoteCDPEngineLazyConnect:
         mock_tab = _make_mock_tab("<html></html>")
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
-        ) as mock_chrome_cls:
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ) as mock_chrome_cls,
+        ):
             engine = RemoteCDPEngine()
             await engine.fetch("https://example.com/page1")
             mock_tab.page_source = _html_coroutine("<html></html>")
@@ -153,9 +159,12 @@ class TestRemoteCDPEngineFreshTabPerRequest:
         mock_tab = _make_mock_tab("<html><body>clean</body></html>")
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             await engine.fetch("https://example.com")
@@ -178,9 +187,12 @@ class TestRemoteCDPEngineFreshTabPerRequest:
         mock_browser.new_tab = AsyncMock(return_value=mock_tab)
         mock_browser.close = AsyncMock()
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             with pytest.raises(PageLoadError):
@@ -223,11 +235,16 @@ class TestRemoteCDPEngineFetchHtml:
         mock_browser.new_tab = AsyncMock(return_value=mock_tab)
         mock_browser.close = AsyncMock()
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
-        ), patch(
-            "infrastructure.browser.remote_cdp_engine.asyncio.sleep", new=AsyncMock()
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.asyncio.sleep",
+                new=AsyncMock(),
+            ),
         ):
             engine = RemoteCDPEngine()
             result = await engine.fetch("https://fbref.com/")
@@ -242,9 +259,12 @@ class TestRemoteCDPEngineFetchHtml:
         mock_tab = _make_mock_tab(clean_html)
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             result = await engine.fetch("https://fbref.com/en/players/")
@@ -273,9 +293,12 @@ class TestRemoteCDPEnginePageLoadError:
         mock_browser.new_tab = AsyncMock(return_value=mock_tab)
         mock_browser.close = AsyncMock()
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             with pytest.raises(PageLoadError) as exc_info:
@@ -299,9 +322,12 @@ class TestRemoteCDPEnginePageLoadError:
         mock_browser.new_tab = AsyncMock(return_value=mock_tab)
         mock_browser.close = AsyncMock()
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             with pytest.raises(PageLoadError) as exc_info:
@@ -323,9 +349,12 @@ class TestRemoteCDPEngineClose:
         mock_tab = _make_mock_tab("<html></html>")
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             await engine.fetch("https://example.com")
@@ -341,9 +370,12 @@ class TestRemoteCDPEngineClose:
         mock_tab = _make_mock_tab("<html></html>")
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             await engine.fetch("https://example.com")
@@ -390,15 +422,20 @@ class TestRemoteCDPEngineChallengeTimeout:
         mock_browser.new_tab = AsyncMock(return_value=mock_tab)
         mock_browser.close = AsyncMock()
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
-        ), patch(
-            "infrastructure.browser.remote_cdp_engine._CHALLENGE_TIMEOUT",
-            0,  # immediate timeout — no real waiting
-        ), patch(
-            "infrastructure.browser.remote_cdp_engine.asyncio.sleep",
-            new=AsyncMock(),
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
+            patch(
+                "infrastructure.browser.remote_cdp_engine._CHALLENGE_TIMEOUT",
+                0,  # immediate timeout — no real waiting
+            ),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.asyncio.sleep",
+                new=AsyncMock(),
+            ),
         ):
             engine = RemoteCDPEngine()
             with pytest.raises(PageLoadError) as exc_info:
@@ -427,15 +464,20 @@ class TestRemoteCDPEngineChallengeTimeout:
         mock_browser.new_tab = AsyncMock(return_value=mock_tab)
         mock_browser.close = AsyncMock()
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
-        ), patch(
-            "infrastructure.browser.remote_cdp_engine._CHALLENGE_TIMEOUT",
-            0,
-        ), patch(
-            "infrastructure.browser.remote_cdp_engine.asyncio.sleep",
-            new=AsyncMock(),
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
+            patch(
+                "infrastructure.browser.remote_cdp_engine._CHALLENGE_TIMEOUT",
+                0,
+            ),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.asyncio.sleep",
+                new=AsyncMock(),
+            ),
         ):
             engine = RemoteCDPEngine()
             with pytest.raises(PageLoadError) as exc_info:
@@ -458,9 +500,12 @@ class TestRemoteCDPEngineRateLimit:
         mock_tab = _make_mock_tab(rate_limit_html)
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             with pytest.raises(RateLimitError):
@@ -474,9 +519,12 @@ class TestRemoteCDPEngineRateLimit:
         mock_tab = _make_mock_tab(rate_limit_html)
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             with pytest.raises(RateLimitError):
@@ -490,9 +538,12 @@ class TestRemoteCDPEngineRateLimit:
         mock_tab = _make_mock_tab(clean_html)
         mock_browser = _make_mock_browser(mock_tab)
 
-        with _patch_aiohttp_version_endpoint(), patch(
-            "infrastructure.browser.remote_cdp_engine.Chrome",
-            return_value=mock_browser,
+        with (
+            _patch_aiohttp_version_endpoint(),
+            patch(
+                "infrastructure.browser.remote_cdp_engine.Chrome",
+                return_value=mock_browser,
+            ),
         ):
             engine = RemoteCDPEngine()
             result = await engine.fetch("https://fbref.com/en/players/")

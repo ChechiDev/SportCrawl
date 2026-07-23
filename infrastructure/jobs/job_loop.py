@@ -249,9 +249,7 @@ class JobLoop:
                     scraper = self._scraper_factory(url)
                     await scraper.fetch_and_parse(url)
                     raw_html: str = scraper.last_html
-                    content_hash = hashlib.sha256(
-                        raw_html.encode("utf-8")
-                    ).hexdigest()
+                    content_hash = hashlib.sha256(raw_html.encode("utf-8")).hexdigest()
 
                     prov = self._provenance_factory(
                         url, "SUCCESS", content_hash, run_id
@@ -285,7 +283,9 @@ class JobLoop:
                     except Exception as mark_err:
                         logger.error(
                             "Failed to mark job %s as failed: %s",
-                            row_id, mark_err, exc_info=False,
+                            row_id,
+                            mark_err,
+                            exc_info=False,
                         )
                         return
 

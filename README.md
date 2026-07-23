@@ -81,98 +81,91 @@ docker compose up -d
 
 ## Usage
 
-SportCrawl is driven entirely from the CLI. All commands run a **preflight check** before scraping — verifying the database connection, schema version, and seed data. If anything is missing, it's fixed automatically before the scrape starts.
+SportCrawl is driven entirely from the CLI. Every command runs a **preflight check** before scraping — verifying the database connection, schema version, and seed data. Missing data is fixed automatically before the scrape starts.
 
-## Scrape countries
+---
 
-Fetches all countries and confederations from FBRef and seeds the database. This is required before scraping players.
+## Run the pipeline
 
-```bash
-uv run sportcrawl countries start
-```
-
-## Scrape players
-
-Scrapes the player roster for one or more countries.
+Runs the full pipeline: Teams, Players, and Player Info in parallel with a single command.
 
 ```bash
-# Single country
-uv run sportcrawl players start --country ESP
+# All countries
+uv run sportcrawl --all --workers 5
 
-# Multiple countries
-uv run sportcrawl players start --country ESP,ARG,BRA
-
-# All 219 countries
-uv run sportcrawl players start --all
+# One or more specific countries
+uv run sportcrawl --country ESP --workers 3
+uv run sportcrawl --country ESP,ARG,BRA --workers 5
 ```
 
-Run with parallel workers to speed up scraping across multiple countries:
+The three scraping stages run concurrently in a single unified display:
 
-```bash
-uv run sportcrawl players start --all --workers 5
-```
+- **Scraping Teams** — starts immediately, scrapes club listings per country
+- **Scraping Players** — starts immediately in parallel with Teams
+- **Scraping Single Player Stats** — starts automatically once enough players are in the database
 
 | Flag | Description |
 |---|---|
 | `--country` | Comma-separated FBRef country codes (e.g. `ESP,ARG`) |
-| `--all` | Scrape all players by countries available in the database |
-| `--workers N` | Number of parallel workers (default: `1`) |
+| `--all` | Run pipeline for all countries available in the database |
+| `--workers N` | Number of parallel workers per stage (default: `1`) |
+| `--with-player-info` | Include individual player profile scraping |
 | `--skip-preflight` | Skip the preflight check |
 | `--recover-stale` | Reset jobs stuck in `IN_PROGRESS` for over 1 hour |
 
-> The scraper supports up to 25 parallel workers. For best results and to avoid rate limiting, **1–5 workers is recommended**.
+> For best results and to avoid rate limiting, **3–5 workers is recommended**.
 
-## Scrape Single player info
+> **Heads up:** scraping all players and their individual profiles across all countries means hundreds of thousands of requests. This can take several hours depending on the number of workers and your network conditions.
 
-Scrapes individual player profiles — bio, nationality, positions, and career history.
-
-```bash
-uv run sportcrawl players start --all --with-player-info --workers 5
-```
-
-The `--with-player-info` flag runs the player list scrape first, then automatically queues and scrapes all individual profiles in the same run.
-
-> **Heads up:** scraping all players across all countries means hundreds of thousands of individual requests. This can take several hours depending on the number of workers and your network conditions. Plan accordingly.
-
-
-<details>
-<summary><h3>Scraping usage example</h3></summary>
-
-### Scraping by country
+## Scraping Example
 
 ```bash
-❯ uv run sportcrawl players start --all --with-player-info --workers 5
-Preflight — Checking requirements
-  OK    DB reachable: Connected successfully.
-  OK    Alembic initialized: alembic_version table found.
-  OK    Alembic revision: DB at revision p14m (>= p11e).
-  OK    Schemas exist: sch_infra and sch_shared found.
-  OK    Tables exist: All 8 tables found for phase 'players'.
-  FAIL  Seed data: No countries found. Seed data required for phase 'players'.
+❯ uv run sportcrawl --all --workers 5
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   _____ ____  ____  ____  ______   __________  ___ _       ____ 
+  / ___// __ \/ __ \/ __ \/_  __/  / ____/ __ \/   | |     / / / 
+  \__ \/ /_/ / / / / /_/ / / /    / /   / /_/ / /| | | /| / / /  
+ ___/ / ____/ /_/ / _, _/ / /    / /___/ _, _/ ___ | |/ |/ / /___
+/____/_/    \____/_/ |_| /_/     \____/_/ |_/_/  |_|__/|__/_____/
+                                                                 
+  Sports data, scraped at scale.  v0.18.0
+  Ctrl+C to stop  ·  on restart, scraping resumes from where it left off
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Step 1 — Scraping countries
-  OK  Seed data: 219 countries found.
-  OK  Stale queue: No stale jobs found.
+Checking requirements...
+  ✓  Connected successfully.                                
+  ✓  Migrations initialized successfully.                   
+  ✓  Database version up to date.                           
+  ✓  Database schemas verified.                             
+  ✓  System tables ready.                                   
+  ✓  219 countries loaded.                                        
+  ✓  96 country squads loaded.                                        
 
-  7/7 checks passed
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Scraping Players and Single player info
-Step 2 — Scraping Players
-RUN  [Crawl-1] [12 | 62/219] DJI: 118 players  
-RUN  [Crawl-2] [12 | 62/219] DEN: 2,358 players
-RUN  [Crawl-3] [13 | 62/219] DOM: 306 players  
-RUN  [Crawl-4] [13 | 62/219] DMA: 136 players  
-RUN  [Crawl-5] [12 | 62/219] CIV: 878 players  
+Scraping Teams
+  RUN  [Crawl-1] [14 | 67/96] Nicaragua: 1 teams                                                                                                                   
+  RUN  [Crawl-2] [14 | 67/96] Netherlands: 62 teams                                                                                                                
+  RUN  [Crawl-3] [13 | 67/96] Malta: 15 teams                                                                                                                      
+  RUN  [Crawl-4] [13 | 67/96] Montenegro: 18 teams                                                                                                                 
+  RUN  [Crawl-5] [13 | 67/96] Martinique: 4 teams                                                                                                                  
 
-Step 3 — Scraping Single player info
-RUN  [Crawl-1] [41 | 204/48755] Player Name
-RUN  [Crawl-2] [42 | 204/48755] Player Name
-RUN  [Crawl-3] [41 | 204/48755] Player Name
-RUN  [Crawl-4] [39 | 204/48755] Player Name
-RUN  [Crawl-5] [41 | 204/48755] Player Name
+Scraping Players
+  RUN  [Crawl-1] [12 | 60/219] Djibouti: 118 players                                                                                                               
+  RUN  [Crawl-2] [12 | 60/219] Côte D'Ivoire: 879 players                                                                                                          
+  RUN  [Crawl-3] [12 | 60/219] Czechoslovakia: 173 players                                                                                                         
+  RUN  [Crawl-4] [12 | 60/219] Czech Republic: 1,648 players                                                                                                       
+  RUN  [Crawl-5] [12 | 60/219] Denmark: 2,360 players                                                                                                              
+
+Scraping Single Player Stats
+  RUN  [Crawl-1] [18 | 87/48520] Player Name
+  RUN  [Crawl-2] [18 | 87/48520] Player Name
+  RUN  [Crawl-3] [17 | 87/48520] Player Name
+  RUN  [Crawl-4] [17 | 87/48520] Player Name
+  RUN  [Crawl-5] [17 | 87/48520] Player Name
 ```
 
-</details>
+---
 
 ## Reset Database
 
@@ -182,27 +175,29 @@ Truncates all scraped data from the database. Useful for testing or starting fre
 uv run sportcrawl reset
 ```
 
-> This only clears scraped data (players, player info, flags, queue). It does not drop the schema or run a migration rollback.
+> This only clears scraped data. It does not drop schemas or roll back migrations.
 
-<details>
-<summary><h3>Reset database example</h3></summary>
-
+## Reset Example
 ```bash
-❯ uv run sportcrawl reset    
-╭──────────────────────────────────────────────────────────────────────── Reset Database ─────────────────────────────────────────────────────────────────────────╮
-│ WARNING                                                                                                                                                         │
-│                                                                                                                                                                 │
-│ This will delete ALL scraped data:                                                                                                                              │
-│   • sch_shared: countries, players, player_info, photos, positions                                                                                              │
-│   • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref                                                                                           │
-│                                                                                                                                                                 │
-│ Schemas and migrations will NOT be touched.                                                                                                                     │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+❯ uv run sportcrawl reset
+╭────────────────────────────── Reset Database ──────────────────────────────╮
+│ WARNING                                                                     │
+│                                                                             │
+│ This will delete ALL scraped data:                                          │
+│   • sch_shared: countries, players, player_info, photos, positions,         │
+│     country_squads, teams, competition                                      │
+│   • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref       │
+│                                                                             │
+│ Schemas and migrations will NOT be touched.                                 │
+╰─────────────────────────────────────────────────────────────────────────────╯
 Continue? [y/N]: y
   OK   sch_shared.tbl_player_info truncated
   OK   sch_shared.tbl_player_photo truncated
   OK   sch_shared.tbl_player_positions truncated
   OK   sch_shared.tbl_players truncated
+  OK   sch_shared.tbl_teams truncated
+  OK   sch_shared.tbl_country_squads truncated
+  OK   sch_shared.tbl_competition truncated
   OK   sch_shared.tbl_countries truncated
   OK   sch_shared.tbl_confederations truncated
   OK   sch_shared.tbl_gender truncated

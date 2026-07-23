@@ -10,13 +10,51 @@ from __future__ import annotations
 import asyncio
 
 import typer
+from rich.console import Console
 
 from cli.players import players_app
 from config.settings import Settings
 from infrastructure.work_server.runtime import serve
 
-app = typer.Typer(name="sportcrawl", help="Sportcrawl CLI")
+app = typer.Typer(
+    name="sportcrawl",
+    help="Sportcrawl — sports data, scraped at scale.",
+    invoke_without_command=True,
+)
 app.add_typer(players_app, name="players")
+
+
+@app.callback()
+def default(
+    ctx: typer.Context,
+    country: str | None = typer.Option(
+        None, "--country", "-c", help="Comma-separated country codes, e.g. ESP,ARG"
+    ),
+    all_countries: bool = typer.Option(
+        False, "--all", "-a", help="Scrape all countries"
+    ),
+    with_player_info: bool = typer.Option(False, "--with-player-info"),
+    workers: int = typer.Option(1, "--workers", "-w"),
+    recover_stale: bool = typer.Option(False, "--recover-stale"),
+    skip_preflight: bool = typer.Option(False, "--skip-preflight"),
+) -> None:
+    """Run the full scraping pipeline (teams + players + player info)."""
+    if ctx.invoked_subcommand is not None:
+        return
+    if not all_countries and not country:
+        raise typer.BadParameter("Specify --country or --all.")
+    from cli.players import _run
+
+    asyncio.run(
+        _run(
+            country=country,
+            all_countries=all_countries,
+            with_player_info=with_player_info,
+            workers=workers,
+            recover_stale=recover_stale,
+            skip_preflight=skip_preflight,
+        )
+    )
 
 
 @app.command("work-server")
@@ -29,20 +67,29 @@ def work_server() -> None:
 @app.command("scrape-players")
 def scrape_players(
     country: str | None = typer.Option(
-        None, "--country", "-c", metavar="CODE",
+        None,
+        "--country",
+        "-c",
+        metavar="CODE",
         help="FBRef country code, e.g. ARG.",
     ),
     url: str | None = typer.Option(
-        None, "--url", "-u", metavar="URL",
+        None,
+        "--url",
+        "-u",
+        metavar="URL",
         help="Full FBRef country player-list URL.",
     ),
     all_countries: bool = typer.Option(
-        False, "--all", "-a",
+        False,
+        "--all",
+        "-a",
         help="Scrape all countries from the database.",
     ),
 ) -> None:
     """Discover and persist players for one country or all countries."""
     import logging
+
     logging.getLogger("pydoll").setLevel(logging.WARNING)
     logging.getLogger("infrastructure.browser").setLevel(logging.WARNING)
     logging.getLogger("infrastructure.scraping").setLevel(logging.WARNING)
@@ -67,6 +114,7 @@ def scrape_players(
 def scrape_squads() -> None:
     """Fetch and persist country squad data from FBRef (/en/squads/)."""
     import logging
+
     logging.getLogger("pydoll").setLevel(logging.WARNING)
     logging.getLogger("infrastructure.browser").setLevel(logging.WARNING)
     logging.getLogger("infrastructure.scraping").setLevel(logging.WARNING)
@@ -79,21 +127,26 @@ def scrape_squads() -> None:
 @app.command("pipeline")
 def pipeline(
     workers: int = typer.Option(
-        1, "--workers", "-w",
+        1,
+        "--workers",
+        "-w",
         help="Number of parallel workers per step (default: 1).",
     ),
     trigger_count: int = typer.Option(
-        100, "--trigger-count",
+        100,
+        "--trigger-count",
         help="Minimum players in DB before Step 3 starts (default: 100).",
     ),
 ) -> None:
     """Run Step 2 (players) and Step 3 (player info) concurrently."""
     from scripts.scrape_pipeline import main as pipeline_main
 
-    asyncio.run(pipeline_main(
-        workers=workers,
-        trigger_count=trigger_count,
-    ))
+    asyncio.run(
+        pipeline_main(
+            workers=workers,
+            trigger_count=trigger_count,
+        )
+    )
 
 
 @app.command("reset")
@@ -106,16 +159,18 @@ def reset_db(
 
     console = Console()
 
-    console.print(Panel(
-        "[bold red]WARNING[/bold red]\n\n"
-        "This will delete ALL scraped data:\n"
-        "  • sch_shared: countries, players, player_info, photos, positions,\n"
-        "    country_squads, teams, competition\n"
-        "  • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
-        "Schemas and migrations will NOT be touched.",
-        title="[red]Reset Database[/red]",
-        border_style="red",
-    ))
+    console.print(
+        Panel(
+            "[bold red]WARNING[/bold red]\n\n"
+            "This will delete ALL scraped data:\n"
+            "  • sch_shared: countries, players, player_info, photos, positions,\n"
+            "    country_squads, teams, competition\n"
+            "  • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
+            "Schemas and migrations will NOT be touched.",
+            title="[red]Reset Database[/red]",
+            border_style="red",
+        )
+    )
 
     if not yes:
         confirm = typer.confirm("Continue?", default=False)
@@ -125,7 +180,7 @@ def reset_db(
     asyncio.run(_do_reset(console))
 
 
-async def _do_reset(console: object) -> None:
+async def _do_reset(console: Console) -> None:
     import asyncpg  # type: ignore[import-untyped]
 
     from config.settings import Settings
@@ -155,23 +210,17 @@ async def _do_reset(console: object) -> None:
             ("sch_infra", "player_queue_ref"),
         ]
         for schema, table in tables:
-            await conn.execute(
-                f"TRUNCATE {schema}.{table} RESTART IDENTITY CASCADE"
-            )
+            await conn.execute(f"TRUNCATE {schema}.{table} RESTART IDENTITY CASCADE")
             msg = f"  [bold green]OK  [/bold green] {schema}.{table} truncated"
-            console.print(msg)  # type: ignore[attr-defined]
+            console.print(msg)
         await conn.execute(
             "INSERT INTO sch_shared.tbl_gender (gender) VALUES ('M'), ('F')"
         )
-        console.print(  # type: ignore[attr-defined]
-            "  [bold green]OK  [/bold green] sch_shared.tbl_gender re-seeded"
-        )
+        console.print("  [bold green]OK  [/bold green] sch_shared.tbl_gender re-seeded")
     finally:
         await conn.close()
 
-    console.print(  # type: ignore[attr-defined]
-        "\n[green]Reset complete. Ready to scrape from scratch.[/green]"
-    )
+    console.print("\n[green]Reset complete. Ready to scrape from scratch.[/green]")
 
 
 def main() -> None:

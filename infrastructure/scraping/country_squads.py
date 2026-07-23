@@ -84,8 +84,7 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
 
         for row in rows:
             cells_by_stat = {
-                cell.get("data-stat"): cell
-                for cell in row.find_all(["th", "td"])
+                cell.get("data-stat"): cell for cell in row.find_all(["th", "td"])
             }
 
             # Require club_count cell with an anchor — clubs_url + country code.
@@ -148,7 +147,8 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
                     if not squad_id:
                         logger.debug(
                             "Could not extract squad id from href=%s (country=%s)",
-                            href, fk_country,
+                            href,
+                            fk_country,
                         )
 
                     if link_text == _MEN_LINK_TEXT:

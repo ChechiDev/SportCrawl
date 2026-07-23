@@ -119,9 +119,7 @@ class TestDrainProcessesAllBatches:
     async def test_drain_processes_all_batches(self) -> None:
         """Queue with 15 jobs at batch_size=5 calls _run_batch 3 times."""
         # 3 batches of 5, then empty → _run_batch called 4 times total
-        loop, call_log = _build_job_loop_with_drain_mock(
-            batch_results=[5, 5, 5, 0]
-        )
+        loop, call_log = _build_job_loop_with_drain_mock(batch_results=[5, 5, 5, 0])
         stop_event = asyncio.Event()
 
         await loop.drain(batch_size=5, stop_event=stop_event)
@@ -131,9 +129,7 @@ class TestDrainProcessesAllBatches:
 
     async def test_drain_returns_total_processed(self) -> None:
         """drain() return value equals the sum of all _run_batch return values."""
-        loop, call_log = _build_job_loop_with_drain_mock(
-            batch_results=[5, 5, 5, 0]
-        )
+        loop, call_log = _build_job_loop_with_drain_mock(batch_results=[5, 5, 5, 0])
         stop_event = asyncio.Event()
 
         total = await loop.drain(batch_size=5, stop_event=stop_event)
@@ -189,9 +185,7 @@ class TestDrainReturnValue:
     async def test_drain_returns_total_across_mixed_batches(self) -> None:
         """drain() sums partial batches correctly."""
         # Simulate: batch of 3, batch of 7, batch of 2, then empty
-        loop, call_log = _build_job_loop_with_drain_mock(
-            batch_results=[3, 7, 2, 0]
-        )
+        loop, call_log = _build_job_loop_with_drain_mock(batch_results=[3, 7, 2, 0])
         stop_event = asyncio.Event()
 
         total = await loop.drain(batch_size=10, stop_event=stop_event)

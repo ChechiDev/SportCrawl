@@ -263,9 +263,7 @@ class TestScrapingSettingsNewFields:
         monkeypatch.setenv("DB__USER", "testuser")
         monkeypatch.setenv("DB__PASSWORD", "testpass")
         monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "test-token")
-        monkeypatch.setenv(
-            "SCRAPING__ALLOWED_HOSTS", '["fbref.com","stathead.com"]'
-        )
+        monkeypatch.setenv("SCRAPING__ALLOWED_HOSTS", '["fbref.com","stathead.com"]')
         settings = Settings()  # type: ignore[call-arg]
         assert settings.scraping.allowed_hosts == ["fbref.com", "stathead.com"]
 

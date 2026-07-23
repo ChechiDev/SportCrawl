@@ -43,6 +43,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text("DROP TABLE sch_shared.tbl_player_citizenship")
-    )
+    op.execute(sa.text("DROP TABLE sch_shared.tbl_player_citizenship"))
