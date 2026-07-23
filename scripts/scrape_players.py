@@ -104,10 +104,10 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
             engine, self._settings.scraping, self._session_factory
         )
 
-    async def run_claim_loop(self, engine: Any) -> bool:  # noqa: ARG002
+    async def run_claim_loop(self, engine: Any) -> int:  # noqa: ARG002
         """Drain player_list jobs for one browser session.
 
-        Returns True when queue is empty (stop), False on BrowserException (restart).
+        Returns self._processed when queue is empty (stop), -1 on BrowserException (restart).
 
         Note: ``engine`` is intentionally unused here. The scraper is injected via
         ``on_browser_ready`` (temporal coupling by design) so that the same scraper
@@ -122,7 +122,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                 await session.commit()
 
             if job is None:
-                return True
+                return self._processed
 
             country_match = _COUNTRY_CODE_RE.search(job.url)
             country_code = (
@@ -193,7 +193,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                         )
 
             if browser_restart:
-                return False
+                return -1
 
 
 def _players_url(country_url: str) -> str:

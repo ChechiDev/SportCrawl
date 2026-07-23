@@ -86,18 +86,19 @@ class BaseWorker[TJob](ABC):
     # -------------------------------------------------------------------------
 
     @abstractmethod
-    async def run_claim_loop(self, engine: Any) -> bool:
+    async def run_claim_loop(self, engine: Any) -> int:
         """Drain jobs for one browser session.
 
         Returns:
-            True  — queue exhausted; worker should stop (return self._processed).
-            False — browser must restart; outer loop re-enters with a new engine.
+            >= 0  — queue exhausted; return value is the count processed this session.
+                    BaseWorker will stop the outer loop and return self._processed.
+            -1    — browser must restart; outer loop re-enters with a new engine.
 
         Implementations:
         - Update self._processed, self._counts[self._worker_id], self._labels[...].
         - Own retries and mark_done / mark_failed via self._session_factory.
-        - On BrowserException: return False (triggers browser restart).
-        - On queue empty (job is None): return True (stop) or handle step2_done.
+        - On BrowserException: return -1 (triggers browser restart).
+        - On queue empty: return self._processed (stop).
         """
 
     # -------------------------------------------------------------------------
@@ -132,7 +133,7 @@ class BaseWorker[TJob](ABC):
                     try:
                         restart_count = 0  # ADR-4: reset on successful browser start
                         await self.on_browser_ready(engine)
-                        should_stop = await self.run_claim_loop(engine)
+                        loop_result = await self.run_claim_loop(engine)
                     except CooldownRequired:
                         self._labels[self._worker_id] = (
                             f"__cooldown__{time.monotonic() + 60}"
@@ -146,9 +147,9 @@ class BaseWorker[TJob](ABC):
                         self._labels[self._worker_id] = "unexpected error — restarting"
                         await asyncio.sleep(5)
                         continue
-                    if should_stop:
+                    if loop_result >= 0:
                         return self._processed
-                    # should_stop=False — outer while True opens a new browser session.
+                    # loop_result == -1 — outer while True opens a new browser session.
 
             except asyncio.CancelledError:
                 raise

@@ -172,11 +172,11 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         self._labels[self._worker_id] = f"Waiting {delay:.1f}s before start..."
         await asyncio.sleep(delay)
 
-    async def run_claim_loop(self, engine: Any) -> bool:
+    async def run_claim_loop(self, engine: Any) -> int:
         """Process player_info jobs for one browser session.
 
-        Returns True when queue is empty and step2 is done (stop).
-        Returns False on BrowserException (restart browser).
+        Returns self._processed when queue is empty and step2 is done (stop).
+        Returns -1 on BrowserException (restart browser).
         """
         self._labels[self._worker_id] = "Starting crawl..."
 
@@ -188,7 +188,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
             if job is None:
                 if self._step2_done is None or self._step2_done.is_set():
-                    return True
+                    return self._processed
                 self._labels[self._worker_id] = "[dim]Waiting for step 2...[/]"
                 await asyncio.sleep(10)
                 continue
@@ -284,7 +284,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         await asyncio.sleep(random.uniform(5.0, 15.0))
 
             if browser_restart:
-                return False
+                return -1
 
             if not success:
                 self._labels[self._worker_id] = (

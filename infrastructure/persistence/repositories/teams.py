@@ -35,8 +35,13 @@ class TeamsRepository:
     The caller owns the transaction and must call session.commit() after upsert().
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        gender_map: dict[str, int] | None = None,
+    ) -> None:
         self._session = session
+        self._gender_map = gender_map
 
     async def upsert(self, rows: list[Team]) -> None:
         """Upsert a list of Team rows in FK-safe order.
@@ -71,11 +76,14 @@ class TeamsRepository:
                 )
                 comp_map = {row.comp_name: row.comp_id for row in fetch_result}
 
-            # Step 2: load gender lookup {gender_value: id}
-            gender_result = await self._session.execute(
-                sa.select(Gender.id, Gender.gender)
-            )
-            gender_map = {row.gender: row.id for row in gender_result}
+            # Step 2: load gender lookup {gender_value: id} (skip if pre-loaded)
+            if self._gender_map is not None:
+                gender_map = self._gender_map
+            else:
+                gender_result = await self._session.execute(
+                    sa.select(Gender.id, Gender.gender)
+                )
+                gender_map = {row.gender: row.id for row in gender_result}
 
             # Step 3: batch upsert teams
             values = []
@@ -103,7 +111,7 @@ class TeamsRepository:
             if values:
                 insert_stmt = pg_insert(Teams).values(values)
                 stmt_teams = insert_stmt.on_conflict_do_update(
-                    index_elements=["team_id"],
+                    constraint="pk_tbl_teams",
                     set_={
                         "team_name": insert_stmt.excluded.team_name,
                         "fk_country": insert_stmt.excluded.fk_country,

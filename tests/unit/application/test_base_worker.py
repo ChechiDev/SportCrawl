@@ -4,8 +4,8 @@ TDD cycle: RED written to specify behaviour, GREEN via base_worker.py fixes.
 asyncio_mode = "auto" via pyproject.toml — no explicit @pytest.mark.asyncio.
 
 Failure modes under test:
-  1. Browser starts successfully → run_claim_loop returns True → worker stops normally.
-  2. Browser starts successfully → run_claim_loop returns False → browser restarts.
+  1. Browser starts successfully → run_claim_loop returns >= 0 → worker stops normally.
+  2. Browser starts successfully → run_claim_loop returns -1 → browser restarts.
   3. Browser START raises _MAX_RESTARTS times → worker waits 60s and resets counter,
      then recovers when browser finally starts (does NOT return permanently).
   4. CooldownRequired raised inside run_claim_loop → 60s sleep, then continue.
@@ -15,6 +15,7 @@ Failure modes under test:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -60,7 +61,7 @@ class _StubWorker(BaseWorker[object]):
             return self._engine_factory()
 
         @asynccontextmanager
-        async def _ctx() -> Any:
+        async def _ctx() -> AsyncIterator[Any]:
             yield MagicMock()
 
         return _ctx()
@@ -68,7 +69,7 @@ class _StubWorker(BaseWorker[object]):
     async def startup_delay(self) -> None:
         return None  # skip random sleep in tests
 
-    async def run_claim_loop(self, engine: Any) -> bool:
+    async def run_claim_loop(self, engine: Any) -> int:
         return await self._claim_loop_fn(engine)
 
 
@@ -77,19 +78,19 @@ class _StubWorker(BaseWorker[object]):
 # ---------------------------------------------------------------------------
 
 
-def _always_stop(_engine: Any) -> bool:
-    """Synchronous helper that returns True (stop)."""
-    return True
+def _always_stop(_engine: Any) -> int:
+    """Synchronous helper that returns 0 (stop — queue empty, nothing processed)."""
+    return 0
 
 
-def _always_restart(_engine: Any) -> bool:
-    """Synchronous helper that returns False (restart)."""
-    return False
+def _always_restart(_engine: Any) -> int:
+    """Synchronous helper that returns -1 (restart browser)."""
+    return -1
 
 
 def _build_success_engine() -> Any:
     @asynccontextmanager
-    async def _ctx() -> Any:
+    async def _ctx() -> AsyncIterator[Any]:
         yield MagicMock()
 
     return _ctx()
@@ -97,7 +98,7 @@ def _build_success_engine() -> Any:
 
 def _build_raising_engine(exc: Exception) -> Any:
     @asynccontextmanager
-    async def _ctx() -> Any:
+    async def _ctx() -> AsyncIterator[Any]:
         raise exc
         yield  # unreachable — satisfies async generator protocol
 
@@ -111,17 +112,17 @@ def _build_raising_engine(exc: Exception) -> Any:
 
 class TestBaseWorkerHappyPath:
     async def test_returns_processed_count_when_queue_empty(self) -> None:
-        """When run_claim_loop returns True, run() must return self._processed."""
-        worker = _StubWorker(claim_loop_fn=AsyncMock(return_value=True))
+        """When run_claim_loop returns >= 0, run() must return self._processed."""
+        worker = _StubWorker(claim_loop_fn=AsyncMock(return_value=0))
         result = await worker.run()
         assert result == 0
 
     async def test_returns_nonzero_when_jobs_processed(self) -> None:
         """Processed count reflects mutations made by run_claim_loop."""
 
-        async def _process_and_stop(engine: Any) -> bool:
+        async def _process_and_stop(engine: Any) -> int:
             worker._processed = 3
-            return True
+            return 3
 
         worker = _StubWorker(claim_loop_fn=_process_and_stop)
         result = await worker.run()
@@ -135,13 +136,13 @@ class TestBaseWorkerHappyPath:
 
 class TestBaseWorkerBrowserRestart:
     async def test_run_claim_loop_false_triggers_browser_restart(self) -> None:
-        """run_claim_loop returning False causes the outer loop to open a new engine."""
+        """run_claim_loop returning -1 causes the outer loop to open a new engine."""
         call_count = 0
 
-        async def _restart_once_then_stop(engine: Any) -> bool:
+        async def _restart_once_then_stop(engine: Any) -> int:
             nonlocal call_count
             call_count += 1
-            return call_count >= 2  # restart on first call, stop on second
+            return 0 if call_count >= 2 else -1  # restart on first call, stop on second
 
         worker = _StubWorker(claim_loop_fn=_restart_once_then_stop)
         await worker.run()
@@ -167,20 +168,20 @@ class TestBaseWorkerBrowserStartFailure:
             if start_call_count <= _MAX_RESTARTS:
 
                 @asynccontextmanager
-                async def _fail() -> Any:
+                async def _fail() -> AsyncIterator[Any]:
                     raise OSError("Chrome failed to start")
                     yield  # unreachable
 
                 return _fail()
 
             @asynccontextmanager
-            async def _ok() -> Any:
+            async def _ok() -> AsyncIterator[Any]:
                 yield MagicMock()
 
             return _ok()
 
         worker = _StubWorker(
-            claim_loop_fn=AsyncMock(return_value=True),
+            claim_loop_fn=AsyncMock(return_value=0),
             engine_factory=_engine_factory,
         )
 
@@ -208,14 +209,14 @@ class TestBaseWorkerBrowserStartFailure:
             if call_count <= _MAX_RESTARTS:
 
                 @asynccontextmanager
-                async def _fail() -> Any:
+                async def _fail() -> AsyncIterator[Any]:
                     raise OSError("boom")
                     yield
 
                 return _fail()
 
             @asynccontextmanager
-            async def _ok() -> Any:
+            async def _ok() -> AsyncIterator[Any]:
                 yield MagicMock()
 
             return _ok()
@@ -232,7 +233,7 @@ class TestBaseWorkerBrowserStartFailure:
                 self.__labels = value
 
         worker = _StubWorker(
-            claim_loop_fn=AsyncMock(return_value=True),
+            claim_loop_fn=AsyncMock(return_value=0),
             engine_factory=_engine_factory,
         )
 
@@ -263,12 +264,12 @@ class TestBaseWorkerCooldownRequired:
         """CooldownRequired must trigger a 60s sleep, then re-enter the outer loop."""
         call_count = 0
 
-        async def _raise_then_stop(engine: Any) -> bool:
+        async def _raise_then_stop(engine: Any) -> int:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise CooldownRequired
-            return True
+            return 0
 
         worker = _StubWorker(claim_loop_fn=_raise_then_stop)
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
@@ -289,7 +290,7 @@ class TestBaseWorkerCancellation:
     async def test_cancelled_error_propagates_from_inner_loop(self) -> None:
         """asyncio.CancelledError inside run_claim_loop must propagate outward."""
 
-        async def _raise_cancelled(engine: Any) -> bool:
+        async def _raise_cancelled(engine: Any) -> int:
             raise asyncio.CancelledError
 
         worker = _StubWorker(claim_loop_fn=_raise_cancelled)
@@ -301,14 +302,14 @@ class TestBaseWorkerCancellation:
 
         def _engine_factory() -> Any:
             @asynccontextmanager
-            async def _ctx() -> Any:
+            async def _ctx() -> AsyncIterator[Any]:
                 raise asyncio.CancelledError
                 yield
 
             return _ctx()
 
         worker = _StubWorker(
-            claim_loop_fn=AsyncMock(return_value=True),
+            claim_loop_fn=AsyncMock(return_value=0),
             engine_factory=_engine_factory,
         )
         with pytest.raises(asyncio.CancelledError):

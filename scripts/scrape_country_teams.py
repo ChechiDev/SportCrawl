@@ -80,18 +80,28 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
         return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
 
     async def startup_delay(self) -> None:
-        delay = (self._worker_id - 1) * 1
+        delay = self._worker_id - 1
         if delay:
             await asyncio.sleep(delay)
 
-    async def run_claim_loop(self, engine: Any) -> bool:
+    async def run_claim_loop(self, engine: Any) -> int:
+        import sqlalchemy as _sa
+
+        from infrastructure.persistence.models.shared.gender import Gender as _Gender
+
         from pydoll.exceptions import BrowserException as _BrowserException
+
+        # Pre-load gender map once per browser session to avoid repeated SELECTs.
+        gender_map: dict[str, int] | None = None
+        async with get_session(self._session_factory) as _session:
+            _result = await _session.execute(_sa.select(_Gender.id, _Gender.gender))
+            gender_map = {row.gender: row.id for row in _result}
 
         while True:
             try:
                 fk_country, clubs_url = self._queue.get_nowait()
             except asyncio.QueueEmpty:
-                return True
+                return self._processed
 
             max_attempts = 3
             browser_restart = False
@@ -108,7 +118,7 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
                         page = await scraper.scrape(clubs_url)
 
                     async with get_session(self._session_factory) as session:
-                        await scraper.persist(page, session)
+                        await scraper.persist(page, session, gender_map=gender_map)
                         await session.commit()
 
                     self._processed += 1
@@ -139,9 +149,15 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] {fk_country}"
                         )
+                        logger.error(
+                            "Failed to scrape %s after %d attempts: %s",
+                            fk_country,
+                            max_attempts,
+                            exc,
+                        )
 
             if browser_restart:
-                return False
+                return -1
 
 
 async def main(workers: int = 1) -> None:

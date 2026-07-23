@@ -50,6 +50,9 @@ def _parse_year(season: str, take: Literal["lesser", "greater"]) -> int | None:
         if take == "lesser":
             return int(parts[0])
         else:
+            if len(parts[1]) == 2:
+                # Abbreviated format: "2023-24" → reconstruct full year as 2024
+                return int(parts[0][:2] + parts[1])
             return int(parts[1])
     except ValueError:
         return None
@@ -154,7 +157,12 @@ class CountryTeamsScraper(BaseScraper[TeamsPage]):
 
         return TeamsPage(fk_country=self._fk_country, teams=teams)
 
-    async def persist(self, page: TeamsPage, session: AsyncSession) -> int:
+    async def persist(
+        self,
+        page: TeamsPage,
+        session: AsyncSession,
+        gender_map: dict[str, int] | None = None,
+    ) -> int:
         """Upsert a parsed TeamsPage into the database.
 
         The caller owns the session transaction and must call session.commit().
@@ -162,11 +170,13 @@ class CountryTeamsScraper(BaseScraper[TeamsPage]):
         Args:
             page: A TeamsPage produced by parse().
             session: Open async SQLAlchemy session from the caller.
+            gender_map: Optional pre-loaded {gender_value: id} map to avoid
+                        a repeated SELECT on tbl_gender per call.
 
         Returns:
             Number of team rows processed.
         """
-        repo = TeamsRepository(session)
+        repo = TeamsRepository(session, gender_map=gender_map)
         await repo.upsert(page.teams)
         return len(page.teams)
 
