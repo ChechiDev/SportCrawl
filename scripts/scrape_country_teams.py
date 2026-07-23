@@ -26,6 +26,7 @@ from core.application.base_worker import BaseWorker
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.shared.country_squads import CountrySquads
+from infrastructure.persistence.repositories.teams import TeamsRepository
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.country_teams import CountryTeamsScraper
 
@@ -123,7 +124,6 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
                         page = await scraper.scrape(clubs_url)
 
                     async with get_session(self._session_factory) as session:
-                        from infrastructure.persistence.repositories.teams import TeamsRepository
                         repo = TeamsRepository(session, gender_map=gender_map)
                         await repo.upsert(page.teams)
                         await session.commit()
