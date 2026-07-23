@@ -118,13 +118,14 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
                         scraper = CountryTeamsScraper(
                             engine=engine,
                             settings=self._settings.scraping,
-                            session_factory=self._session_factory,
                             fk_country=fk_country,
                         )
                         page = await scraper.scrape(clubs_url)
 
                     async with get_session(self._session_factory) as session:
-                        await scraper.persist(page, session, gender_map=gender_map)
+                        from infrastructure.persistence.repositories.teams import TeamsRepository
+                        repo = TeamsRepository(session, gender_map=gender_map)
+                        await repo.upsert(page.teams)
                         await session.commit()
 
                     self._processed += 1

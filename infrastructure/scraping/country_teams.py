@@ -16,11 +16,9 @@ from typing import Literal
 
 from bs4 import BeautifulSoup
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.scraper import ParsingError
 from domains.club.models import Team, TeamsPage
-from infrastructure.persistence.repositories.teams import TeamsRepository
 from ports.browser import ScrapingEngine
 from ports.scraper import BaseScraper, ScraperConfig
 
@@ -70,11 +68,9 @@ class CountryTeamsScraper(BaseScraper[TeamsPage]):
         self,
         engine: ScrapingEngine,
         settings: ScraperConfig,
-        session_factory: async_sessionmaker[AsyncSession],
         fk_country: str,
     ) -> None:
         super().__init__(engine, settings)
-        self._session_factory = session_factory
         self._fk_country = fk_country
 
     async def parse(self, html: str) -> TeamsPage:
@@ -156,29 +152,6 @@ class CountryTeamsScraper(BaseScraper[TeamsPage]):
                 logger.warning("Skipping invalid team row: %s", exc)
 
         return TeamsPage(fk_country=self._fk_country, teams=teams)
-
-    async def persist(
-        self,
-        page: TeamsPage,
-        session: AsyncSession,
-        gender_map: dict[str, int] | None = None,
-    ) -> int:
-        """Upsert a parsed TeamsPage into the database.
-
-        The caller owns the session transaction and must call session.commit().
-
-        Args:
-            page: A TeamsPage produced by parse().
-            session: Open async SQLAlchemy session from the caller.
-            gender_map: Optional pre-loaded {gender_value: id} map to avoid
-                        a repeated SELECT on tbl_gender per call.
-
-        Returns:
-            Number of team rows processed.
-        """
-        repo = TeamsRepository(session, gender_map=gender_map)
-        await repo.upsert(page.teams)
-        return len(page.teams)
 
     async def scrape(self, url: str) -> TeamsPage:
         """Full pipeline: fetch HTML → parse → return page (no persist).
