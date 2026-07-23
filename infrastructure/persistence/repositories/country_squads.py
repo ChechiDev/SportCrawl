@@ -50,14 +50,14 @@ class CountrySquadsRepository:
         try:
             # 1. Batch-insert unique confederations — ON CONFLICT DO NOTHING
             unique_confederations = {
-                row.confederation
-                for row in rows
-                if row.confederation is not None
+                row.confederation for row in rows if row.confederation is not None
             }
             if unique_confederations:
-                stmt_conf = pg_insert(Confederation).values(
-                    [{"conf_name": name} for name in unique_confederations]
-                ).on_conflict_do_nothing(constraint="uq_confederations_conf_name")
+                stmt_conf = (
+                    pg_insert(Confederation)
+                    .values([{"conf_name": name} for name in unique_confederations])
+                    .on_conflict_do_nothing(constraint="uq_confederations_conf_name")
+                )
                 await self._session.execute(stmt_conf)
 
             # 2. Batch-upsert all squad rows — ON CONFLICT (pk) DO UPDATE

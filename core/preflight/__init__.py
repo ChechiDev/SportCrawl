@@ -1,4 +1,5 @@
 """Preflight check orchestration for the sportcrawl pipeline."""
+
 from __future__ import annotations
 
 import asyncio
@@ -36,7 +37,13 @@ _ALEMBIC_INI = Path(__file__).parent.parent.parent / "alembic.ini"
 async def _run_migrations(console: Console) -> None:
     console.print("  --> Running: alembic upgrade head ...")
     proc = await asyncio.create_subprocess_exec(
-        "uv", "run", "alembic", "-c", str(_ALEMBIC_INI), "upgrade", "head",
+        "uv",
+        "run",
+        "alembic",
+        "-c",
+        str(_ALEMBIC_INI),
+        "upgrade",
+        "head",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

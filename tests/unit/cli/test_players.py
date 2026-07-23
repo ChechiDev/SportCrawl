@@ -1,4 +1,5 @@
 """Unit tests for cli.players."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -29,9 +30,7 @@ def _passing_result(name="DB reachable"):
 
 
 def _failing_result(name="DB reachable"):
-    return CheckResult(
-        name=name, passed=False, detail="Cannot connect", fatal=True
-    )
+    return CheckResult(name=name, passed=False, detail="Cannot connect", fatal=True)
 
 
 class TestPlayersStart:

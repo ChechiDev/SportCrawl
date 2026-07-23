@@ -66,9 +66,7 @@ class ScrapeJobProcessor:
         self._position_cache = position_cache
         self._valid_countries = valid_countries
 
-    async def process(
-        self, job: _Job, html: str
-    ) -> tuple[str, str | None] | None:
+    async def process(self, job: _Job, html: str) -> tuple[str, str | None] | None:
         """Parse, resolve FKs, persist, and mark the job done or failed.
 
         Args:
@@ -108,9 +106,7 @@ class ScrapeJobProcessor:
                     raw.national_team_name
                 )
             if raw.citizenship_name is not None:
-                raw.fk_citizenship = self._country_name_cache.get(
-                    raw.citizenship_name
-                )
+                raw.fk_citizenship = self._country_name_cache.get(raw.citizenship_name)
             if raw.youth_nat_team_name is not None:
                 raw.fk_youth_nat_team = self._country_name_cache.get(
                     raw.youth_nat_team_name
@@ -137,9 +133,7 @@ class ScrapeJobProcessor:
             return (raw.full_name or raw.player_id or "unknown", country_id)
 
         except Exception as exc:
-            logger.error(
-                "job %d failed: %s", job.id, exc, exc_info=False
-            )
+            logger.error("job %d failed: %s", job.id, exc, exc_info=False)
             try:
                 await self._queue_repo.mark_failed(
                     job.id,  # type: ignore[arg-type]
@@ -161,9 +155,9 @@ class ScrapeJobProcessor:
         for code in (raw.position_1, raw.position_2, raw.position_3):
             if code is not None:
                 if code not in self._position_cache:
-                    self._position_cache[code] = (
-                        await self._player_info_repo.upsert_position(code)
-                    )
+                    self._position_cache[
+                        code
+                    ] = await self._player_info_repo.upsert_position(code)
                 pos_ids.append(self._position_cache[code])
             else:
                 pos_ids.append(None)

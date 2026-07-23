@@ -67,7 +67,7 @@ async def bearer_auth_middleware(
     if not auth_header.startswith("Bearer "):
         return web.json_response({"error": "unauthorized"}, status=401)
 
-    provided = auth_header[len("Bearer "):]
+    provided = auth_header[len("Bearer ") :]
     if not hmac.compare_digest(provided, token):
         return web.json_response({"error": "unauthorized"}, status=401)
 

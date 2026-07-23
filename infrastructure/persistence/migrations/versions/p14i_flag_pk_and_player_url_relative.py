@@ -76,6 +76,5 @@ def downgrade() -> None:
 
     # IF NOT EXISTS: p14j downgrade may have already recreated this index
     op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_flags_flag_id"
-        " ON sch_shared.tbl_flags (flag_id)"
+        "CREATE INDEX IF NOT EXISTS ix_flags_flag_id ON sch_shared.tbl_flags (flag_id)"
     )

@@ -71,21 +71,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info DROP COLUMN club_url"
-        )
-    )
-    op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info DROP COLUMN club_name"
-        )
-    )
-    op.execute(
-        sa.text(
-            "DROP INDEX sch_shared.ix_player_info_fk_youth_nat_team"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE sch_shared.tbl_player_info DROP COLUMN club_url"))
+    op.execute(sa.text("ALTER TABLE sch_shared.tbl_player_info DROP COLUMN club_name"))
+    op.execute(sa.text("DROP INDEX sch_shared.ix_player_info_fk_youth_nat_team"))
     op.execute(
         sa.text(
             "ALTER TABLE sch_shared.tbl_player_info "
@@ -93,15 +81,9 @@ def downgrade() -> None:
         )
     )
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_youth_nat_team"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_youth_nat_team")
     )
-    op.execute(
-        sa.text(
-            "DROP INDEX sch_shared.ix_player_info_fk_citizenship"
-        )
-    )
+    op.execute(sa.text("DROP INDEX sch_shared.ix_player_info_fk_citizenship"))
     op.execute(
         sa.text(
             "ALTER TABLE sch_shared.tbl_player_info "
@@ -109,7 +91,5 @@ def downgrade() -> None:
         )
     )
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_citizenship"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_citizenship")
     )

@@ -113,9 +113,7 @@ async def _load_country_name_cache(
     """
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text(
-                "SELECT country_name, country_id FROM sch_shared.tbl_countries"
-            )
+            sa.text("SELECT country_name, country_id FROM sch_shared.tbl_countries")
         )
         return {row[0]: row[1] for row in result.fetchall()}
 
@@ -242,9 +240,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     full_name = result[0] if result else "unknown"
                     self._labels[self._worker_id] = escape(full_name or "unknown")
 
-                except (
-                    PageLoadError, RateLimitError, BrowserException
-                ) as exc:
+                except (PageLoadError, RateLimitError, BrowserException) as exc:
                     attempt += 1
                     if isinstance(exc, BrowserException):
                         self._labels[self._worker_id] = (
@@ -258,7 +254,8 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         except Exception as mark_err:
                             logger.error(
                                 "[worker-%d] mark_failed error: %s",
-                                self._worker_id, mark_err,
+                                self._worker_id,
+                                mark_err,
                             )
                         browser_restart = True
                         break
@@ -275,7 +272,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         except Exception as mark_err:
                             logger.error(
                                 "[worker-%d] failed to mark job %d as failed: %s",
-                                self._worker_id, job.id, mark_err,
+                                self._worker_id,
+                                job.id,
+                                mark_err,
                             )
                     else:
                         self._labels[self._worker_id] = (
@@ -328,9 +327,7 @@ async def _seed_queue(
         Number of newly inserted rows (0 when all players already queued).
     """
     async with get_session(session_factory) as session:
-        result = await session.execute(
-            sa.select(Player.player_id, Player.player_url)
-        )
+        result = await session.execute(sa.select(Player.player_id, Player.player_url))
         players = result.fetchall()
 
     if not players:
@@ -370,9 +367,7 @@ async def _seed_queue(
 
 async def main(workers: int | None = None, seed: bool | None = None) -> None:
     if workers is None or seed is None:
-        parser = argparse.ArgumentParser(
-            description="Scrape FBRef player info pages."
-        )
+        parser = argparse.ArgumentParser(description="Scrape FBRef player info pages.")
         parser.add_argument(
             "--workers",
             metavar="N",
@@ -443,7 +438,10 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
 
     logger.info(
         "Launching %d worker(s)… (%d done, %d pending, %d total)",
-        workers, already_done, pending_total, already_done + pending_total,
+        workers,
+        already_done,
+        pending_total,
+        already_done + pending_total,
     )
 
     worker_labels: dict[int, str] = {}
@@ -502,7 +500,11 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
     logger.info(
         "Done. workers=%d | scraped=%d | elapsed=%.1fs"
         " | rate=%.2f/s | ETA full run=%.1fh",
-        workers, total, elapsed, rate, eta_hours,
+        workers,
+        total,
+        elapsed,
+        rate,
+        eta_hours,
     )
 
 

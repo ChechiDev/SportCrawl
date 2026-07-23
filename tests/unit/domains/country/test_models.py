@@ -75,92 +75,116 @@ _ENG_FLAG = f"{_FLAG_CDN}/gb.gif"
 def test_country_raw_data_missing_country_name_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(  # type: ignore[call-arg]
-            country_id="ENG", country_url=_ENG_URL,
-            flag_id="gb", flag_url=_ENG_FLAG,
+            country_id="ENG",
+            country_url=_ENG_URL,
+            flag_id="gb",
+            flag_url=_ENG_FLAG,
         )
 
 
 def test_country_raw_data_missing_country_url_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(  # type: ignore[call-arg]
-            country_id="ENG", country_name="England",
-            flag_id="gb", flag_url=_ENG_FLAG,
+            country_id="ENG",
+            country_name="England",
+            flag_id="gb",
+            flag_url=_ENG_FLAG,
         )
 
 
 def test_country_raw_data_missing_flag_id_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(  # type: ignore[call-arg]
-            country_id="ENG", country_name="England",
-            country_url=_ENG_URL, flag_url=_ENG_FLAG,
+            country_id="ENG",
+            country_name="England",
+            country_url=_ENG_URL,
+            flag_url=_ENG_FLAG,
         )
 
 
 def test_country_raw_data_missing_flag_url_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(  # type: ignore[call-arg]
-            country_id="ENG", country_name="England",
-            country_url=_ENG_URL, flag_id="gb",
+            country_id="ENG",
+            country_name="England",
+            country_url=_ENG_URL,
+            flag_id="gb",
         )
 
 
 def test_country_raw_data_missing_country_id_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(  # type: ignore[call-arg]
-            country_name="England", country_url=_ENG_URL,
-            flag_id="gb", flag_url=_ENG_FLAG,
+            country_name="England",
+            country_url=_ENG_URL,
+            flag_id="gb",
+            flag_url=_ENG_FLAG,
         )
 
 
 def test_country_raw_data_country_id_too_short_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(
-            country_id="E", country_name="England",
+            country_id="E",
+            country_name="England",
             country_url="/en/country/E/England-Football",
-            flag_id="gb", flag_url=_ENG_FLAG,
+            flag_id="gb",
+            flag_url=_ENG_FLAG,
         )
 
 
 def test_country_raw_data_country_id_too_long_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(
-            country_id="ENGL", country_name="England",
+            country_id="ENGL",
+            country_name="England",
             country_url="/en/country/ENGL/England-Football",
-            flag_id="gb", flag_url=_ENG_FLAG,
+            flag_id="gb",
+            flag_url=_ENG_FLAG,
         )
 
 
 def test_country_raw_data_country_name_empty_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(
-            country_id="ENG", country_name="",
-            country_url=_ENG_URL, flag_id="gb", flag_url=_ENG_FLAG,
+            country_id="ENG",
+            country_name="",
+            country_url=_ENG_URL,
+            flag_id="gb",
+            flag_url=_ENG_FLAG,
         )
 
 
 def test_country_raw_data_flag_id_too_short_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(
-            country_id="ENG", country_name="England",
+            country_id="ENG",
+            country_name="England",
             country_url=_ENG_URL,
-            flag_id="g", flag_url=f"{_FLAG_CDN}/g.gif",
+            flag_id="g",
+            flag_url=f"{_FLAG_CDN}/g.gif",
         )
 
 
 def test_country_raw_data_flag_id_too_long_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(
-            country_id="ENG", country_name="England",
+            country_id="ENG",
+            country_name="England",
             country_url=_ENG_URL,
-            flag_id="gbr", flag_url=f"{_FLAG_CDN}/gbr.gif",
+            flag_id="gbr",
+            flag_url=f"{_FLAG_CDN}/gbr.gif",
         )
 
 
 def test_country_raw_data_flag_url_empty_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(
-            country_id="ENG", country_name="England",
-            country_url=_ENG_URL, flag_id="gb", flag_url="",
+            country_id="ENG",
+            country_name="England",
+            country_url=_ENG_URL,
+            flag_id="gb",
+            flag_url="",
         )
 
 
@@ -171,27 +195,36 @@ def test_country_raw_data_flag_url_empty_raises() -> None:
 
 def test_confederation_normalised_to_uppercase() -> None:
     c = CountryRawData(
-        country_id="ENG", country_name="England",
+        country_id="ENG",
+        country_name="England",
         country_url="/en/country/ENG/England-Football",
-        confederation="uefa", flag_id="gb", flag_url=f"{_FLAG_CDN}/gb.gif",
+        confederation="uefa",
+        flag_id="gb",
+        flag_url=f"{_FLAG_CDN}/gb.gif",
     )
     assert c.confederation == "UEFA"
 
 
 def test_confederation_mixed_case_normalised() -> None:
     c = CountryRawData(
-        country_id="BRA", country_name="Brazil",
+        country_id="BRA",
+        country_name="Brazil",
         country_url="/en/country/BRA/Brazil-Football",
-        confederation="Conmebol", flag_id="br", flag_url=f"{_FLAG_CDN}/br.gif",
+        confederation="Conmebol",
+        flag_id="br",
+        flag_url=f"{_FLAG_CDN}/br.gif",
     )
     assert c.confederation == "CONMEBOL"
 
 
 def test_confederation_none_preserved() -> None:
     c = CountryRawData(
-        country_id="AFG", country_name="Afghanistan",
+        country_id="AFG",
+        country_name="Afghanistan",
         country_url="/en/country/AFG/Afghanistan-Football",
-        confederation=None, flag_id="af", flag_url=f"{_FLAG_CDN}/af.gif",
+        confederation=None,
+        flag_id="af",
+        flag_url=f"{_FLAG_CDN}/af.gif",
     )
     assert c.confederation is None
 
@@ -209,14 +242,20 @@ def test_country_page_empty() -> None:
 def test_country_page_with_rows() -> None:
     rows = [
         CountryRawData(
-            country_id="ENG", country_name="England",
+            country_id="ENG",
+            country_name="England",
             country_url="/en/country/ENG/England-Football",
-            confederation="UEFA", flag_id="gb", flag_url=f"{_FLAG_CDN}/gb.gif",
+            confederation="UEFA",
+            flag_id="gb",
+            flag_url=f"{_FLAG_CDN}/gb.gif",
         ),
         CountryRawData(
-            country_id="AFG", country_name="Afghanistan",
+            country_id="AFG",
+            country_name="Afghanistan",
             country_url="/en/country/AFG/Afghanistan-Football",
-            confederation="AFC", flag_id="af", flag_url=f"{_FLAG_CDN}/af.gif",
+            confederation="AFC",
+            flag_id="af",
+            flag_url=f"{_FLAG_CDN}/af.gif",
         ),
     ]
     page = CountryPage(countries=rows)

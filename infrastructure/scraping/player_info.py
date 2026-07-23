@@ -45,9 +45,18 @@ _EXPIRES_RE = re.compile(
     re.IGNORECASE,
 )
 _MONTHS = {
-    "january": 1, "february": 2, "march": 3, "april": 4,
-    "may": 5, "june": 6, "july": 7, "august": 8,
-    "september": 9, "october": 10, "november": 11, "december": 12,
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
 }
 
 
@@ -204,8 +213,7 @@ def _parse_citizenship_name(soup: BeautifulSoup | Tag) -> str | None:
 
 
 def _parse_youth_nat_team_name(soup: BeautifulSoup | Tag) -> str | None:
-    """Extract youth national team name from paragraph.
-    """
+    """Extract youth national team name from paragraph."""
     for strong in soup.find_all("strong"):
         if "Youth National Team" in strong.get_text():
             p = strong.find_parent("p")

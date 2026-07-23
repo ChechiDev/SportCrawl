@@ -17,6 +17,7 @@ from typing import Any
 import sqlalchemy as sa
 from rich.console import Console
 from rich.live import Live
+from rich.markup import escape as _escape
 from rich.text import Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,6 +26,7 @@ from core.application.base_worker import BaseWorker
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.shared.country_squads import CountrySquads
+from infrastructure.persistence.repositories.teams import TeamsRepository
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.country_teams import CountryTeamsScraper
 
@@ -35,7 +37,12 @@ _root_logger.handlers.clear()
 _root_logger.setLevel(logging.CRITICAL)
 
 for _noisy in (
-    "pydoll", "websockets", "asyncio", "ports", "ports.scraper", "infrastructure"
+    "pydoll",
+    "websockets",
+    "asyncio",
+    "ports",
+    "ports.scraper",
+    "infrastructure",
 ):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
@@ -67,6 +74,7 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
         self._settings = settings
         self._queue = queue
         self._country_names = country_names or {}
+        self._browser_restart_counts: dict[str, int] = {}
 
     @property
     def profile_dir(self) -> str:
@@ -111,31 +119,46 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
                         scraper = CountryTeamsScraper(
                             engine=engine,
                             settings=self._settings.scraping,
-                            session_factory=self._session_factory,
                             fk_country=fk_country,
                         )
                         page = await scraper.scrape(clubs_url)
 
                     async with get_session(self._session_factory) as session:
-                        await scraper.persist(page, session, gender_map=gender_map)
+                        repo = TeamsRepository(session, gender_map=gender_map)
+                        await repo.upsert(page.teams)
                         await session.commit()
 
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed
                     country_display = self._country_names.get(fk_country, fk_country)
                     self._labels[self._worker_id] = (
-                        f"{country_display}: {len(page.teams)} teams"
+                        f"{_escape(country_display)}: {len(page.teams)} Teams"
                     )
                     break
 
                 except Exception as exc:
                     if isinstance(exc, _BrowserException):
-                        self._labels[self._worker_id] = (
-                            "[bold red]ERROR[/] Browser error — Restarting"
+                        restart_count = (
+                            self._browser_restart_counts.get(fk_country, 0) + 1
                         )
+                        self._browser_restart_counts[fk_country] = restart_count
+                        if restart_count >= 3:
+                            self._labels[self._worker_id] = (
+                                f"[bold red]FAILED[/] {_escape(fk_country)} — "
+                                f"max restarts reached"
+                            )
+                            logger.error(
+                                "Permanently failed %s after %d browser restarts",
+                                fk_country,
+                                restart_count,
+                            )
+                        else:
+                            self._labels[self._worker_id] = (
+                                "[bold red]ERROR[/] Browser error — Restarting"
+                            )
+                            # Put the item back so another worker can claim it
+                            await self._queue.put((fk_country, clubs_url))
                         browser_restart = True
-                        # Put the item back so another worker can claim it
-                        await self._queue.put((fk_country, clubs_url))
                         break
 
                     if attempt < max_attempts:
@@ -166,9 +189,9 @@ async def main(workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.select(CountrySquads.fk_country, CountrySquads.clubs_url).where(
-                CountrySquads.clubs_url.isnot(None)
-            ).order_by(CountrySquads.fk_country)
+            sa.select(CountrySquads.fk_country, CountrySquads.clubs_url)
+            .where(CountrySquads.clubs_url.isnot(None))
+            .order_by(CountrySquads.fk_country)
         )
         rows = result.fetchall()
 
@@ -193,8 +216,13 @@ async def main(workers: int = 1) -> None:
     ) as live:
         display_task = asyncio.create_task(
             run_display_loop(
-                workers, worker_labels, worker_counts,
-                0, total, stop_event, live,
+                workers,
+                worker_labels,
+                worker_counts,
+                0,
+                total,
+                stop_event,
+                live,
             )
         )
         results = await asyncio.gather(
@@ -221,7 +249,9 @@ async def main(workers: int = 1) -> None:
         live.update(done_text)
 
     grand_total = sum(r for r in results if isinstance(r, int))
-    logger.debug("Done. %d countries processed across %d worker(s).", grand_total, workers)
+    logger.debug(
+        "Done. %d countries processed across %d worker(s).", grand_total, workers
+    )
 
 
 def run() -> None:

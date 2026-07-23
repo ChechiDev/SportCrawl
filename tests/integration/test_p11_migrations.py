@@ -127,18 +127,14 @@ class TestP11Migrations:
         try:
             async with engine.connect() as conn:
                 async with AsyncSession(bind=conn) as session:
-                    assert await _table_exists(
-                        session, "tbl_players", "sch_shared"
-                    )
+                    assert await _table_exists(session, "tbl_players", "sch_shared")
                     assert await _table_exists(
                         session, "tbl_player_positions", "sch_shared"
                     )
                     assert await _table_exists(
                         session, "player_discovery_batch", "sch_infra"
                     )
-                    assert await _table_exists(
-                        session, "player_queue_ref", "sch_infra"
-                    )
+                    assert await _table_exists(session, "player_queue_ref", "sch_infra")
                     assert await _view_exists(
                         session,
                         "v_player_scrape_progress",
@@ -181,9 +177,7 @@ class TestP11Migrations:
                         session, "scrape_queue", "locked_at", "sch_infra"
                     )
                     # Player tables should still exist (only p11b rolled back)
-                    assert await _table_exists(
-                        session, "tbl_players", "sch_shared"
-                    )
+                    assert await _table_exists(session, "tbl_players", "sch_shared")
                     assert await _table_exists(
                         session, "tbl_player_positions", "sch_shared"
                     )
@@ -208,9 +202,7 @@ class TestP11Migrations:
                         "sch_football",
                     )
                     # Player tables dropped
-                    assert not await _table_exists(
-                        session, "tbl_players", "sch_shared"
-                    )
+                    assert not await _table_exists(session, "tbl_players", "sch_shared")
                     assert not await _table_exists(
                         session, "tbl_player_positions", "sch_shared"
                     )
@@ -221,9 +213,7 @@ class TestP11Migrations:
                         session, "player_queue_ref", "sch_football"
                     )
                     # scrape_queue still exists (only player tables removed)
-                    assert await _table_exists(
-                        session, "scrape_queue", "sch_infra"
-                    )
+                    assert await _table_exists(session, "scrape_queue", "sch_infra")
         finally:
             await engine.dispose()
 

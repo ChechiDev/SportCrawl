@@ -26,9 +26,7 @@ def upgrade() -> None:
     # copy data, drop old table.
 
     # Step 1: rename existing table and its constraints
-    op.execute(
-        "ALTER TABLE sch_shared.tbl_player_info RENAME TO tbl_player_info_old"
-    )
+    op.execute("ALTER TABLE sch_shared.tbl_player_info RENAME TO tbl_player_info_old")
     op.execute(
         "ALTER TABLE sch_shared.tbl_player_info_old "
         "RENAME CONSTRAINT tbl_player_info_pkey TO tbl_player_info_old_pkey"
@@ -156,9 +154,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Reverse: move fk_national_team back to the end (same rename strategy)
-    op.execute(
-        "ALTER TABLE sch_shared.tbl_player_info RENAME TO tbl_player_info_old"
-    )
+    op.execute("ALTER TABLE sch_shared.tbl_player_info RENAME TO tbl_player_info_old")
     op.execute(
         "ALTER TABLE sch_shared.tbl_player_info_old "
         "RENAME CONSTRAINT tbl_player_info_pkey TO tbl_player_info_old_pkey"

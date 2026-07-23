@@ -70,9 +70,7 @@ def migrate_db(_integration_db_url: URL) -> None:
     - ``CREATE SCHEMA IF NOT EXISTS sch_infra`` (migration a3f8c1d29e5b)
     - The ``trg_scrape_queue_updated_at`` trigger (migration 134f2e68682a)
     """
-    ini_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "alembic.ini"
-    )
+    ini_path = os.path.join(os.path.dirname(__file__), "..", "..", "alembic.ini")
     ini_path = os.path.normpath(ini_path)
 
     cfg = AlembicConfig(ini_path)

@@ -40,6 +40,7 @@ class ScrapeQueueRepository:
 
     def __init__(self, session: object, job_type: str) -> None:
         from sqlalchemy.ext.asyncio import AsyncSession
+
         self._session: AsyncSession = session  # type: ignore[assignment]
         self._job_type = job_type
 
@@ -192,9 +193,7 @@ class ScrapeQueueJobRepository(BaseRepository[ScrapeQueue]):
                 cause=exc,
             ) from exc
 
-    async def recover_stale(
-        self, domain: str, ttl_minutes: int = 30
-    ) -> int:
+    async def recover_stale(self, domain: str, ttl_minutes: int = 30) -> int:
         """Reset IN_PROGRESS rows older than *ttl_minutes* back to PENDING.
 
         Issues a single UPDATE that sets status=PENDING and locked_at=NULL for

@@ -59,8 +59,8 @@ class BaseWorker[TJob](ABC):
         self._session_factory = session_factory
         self._fetch_gate = fetch_gate
         self._profile_base = profile_base
-        self._labels = worker_labels   # shared dict — mutated in place for live display
-        self._counts = worker_counts   # shared dict — mutated in place for live display
+        self._labels = worker_labels  # shared dict — mutated in place for live display
+        self._counts = worker_counts  # shared dict — mutated in place for live display
         self._processed = 0
 
     # -------------------------------------------------------------------------

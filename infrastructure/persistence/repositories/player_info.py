@@ -54,9 +54,7 @@ class PlayerInfoRepository:
                 after insert (should not happen in normal operation).
         """
         async with repo_error_context("upsert_position", "upsert_position failed"):
-            stmt_insert = pg_insert(PlayerPosition).values(
-                position_code=position_code
-            )
+            stmt_insert = pg_insert(PlayerPosition).values(position_code=position_code)
             stmt_insert = stmt_insert.on_conflict_do_nothing(
                 index_elements=["position_code"]
             )

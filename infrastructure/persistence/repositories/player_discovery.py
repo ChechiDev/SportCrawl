@@ -57,9 +57,7 @@ class PlayerDiscoveryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def bulk_enqueue(
-        self, rows: list[PlayerRawData], country_id: str
-    ) -> int:
+    async def bulk_enqueue(self, rows: list[PlayerRawData], country_id: str) -> int:
         """Bulk-insert player discovery data for a single country page.
 
         Args:
@@ -135,8 +133,7 @@ class PlayerDiscoveryRepository:
             # 4. PlayerQueueRef — chunked
             if queue_ids:
                 ref_values = [
-                    {"queue_id": qid, "country_id": country_id}
-                    for qid in queue_ids
+                    {"queue_id": qid, "country_id": country_id} for qid in queue_ids
                 ]
                 for chunk in _chunked(ref_values, _CHUNK_SIZE):
                     stmt_ref = pg_insert(PlayerQueueRef).values(chunk)

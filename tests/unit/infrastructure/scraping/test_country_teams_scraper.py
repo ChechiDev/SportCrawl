@@ -159,8 +159,7 @@ _INVALID_SEASON_HTML = """
 def _make_scraper(fk_country: str = "ENG") -> CountryTeamsScraper:
     engine: Any = MagicMock(spec=ScrapingEngine)
     settings: Any = MagicMock(spec=ScrapingSettings)
-    session_factory: Any = MagicMock()
-    return CountryTeamsScraper(engine, settings, session_factory, fk_country=fk_country)
+    return CountryTeamsScraper(engine, settings, fk_country=fk_country)
 
 
 # ---------------------------------------------------------------------------

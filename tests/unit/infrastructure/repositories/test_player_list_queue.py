@@ -113,5 +113,7 @@ class TestRecoverStale:
         assert count == 2
         call_args = session.execute.call_args
         # The SQL text and params are passed; verify job_type param is 'player_list'
-        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})  # noqa: E501
+        params = (
+            call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
+        )  # noqa: E501
         assert params.get("job_type") == "player_list"

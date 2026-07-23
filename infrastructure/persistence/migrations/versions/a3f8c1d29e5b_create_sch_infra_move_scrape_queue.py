@@ -43,9 +43,7 @@ def upgrade() -> None:
     # Drop the server default before the type change — PostgreSQL cannot
     # automatically cast the 'PENDING' text default to the new schema-qualified
     # enum during ALTER COLUMN TYPE.
-    op.execute(
-        "ALTER TABLE public.scrape_queue ALTER COLUMN status DROP DEFAULT"
-    )
+    op.execute("ALTER TABLE public.scrape_queue ALTER COLUMN status DROP DEFAULT")
 
     # Migrate the status column to the new schema-qualified enum.
     # Table is still in public at this point — use fully-qualified reference.
@@ -85,9 +83,7 @@ def downgrade() -> None:
     )
 
     # Drop the schema-qualified default before reverting the type.
-    op.execute(
-        "ALTER TABLE public.scrape_queue ALTER COLUMN status DROP DEFAULT"
-    )
+    op.execute("ALTER TABLE public.scrape_queue ALTER COLUMN status DROP DEFAULT")
 
     # Restore the status column to the public enum.
     # Table is back in public — use fully-qualified reference.

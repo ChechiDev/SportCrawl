@@ -242,10 +242,7 @@ class PydollEngine(ScriptableEngine):
         if self._tab is None:
             raise PageLoadError("No active tab — call navigate() first", url=url)
         content: str = await self._wait_for_challenge(self._tab, url)
-        if (
-            "too many requests" in content.lower()
-            or "rate limit" in content.lower()
-        ):
+        if "too many requests" in content.lower() or "rate limit" in content.lower():
             raise RateLimitError(f"Rate limit detected at {url}", url=url)
         return content
 

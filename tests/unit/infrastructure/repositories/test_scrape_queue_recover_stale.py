@@ -139,9 +139,7 @@ class TestLockedAtLifecycle:
         """mark_done must set locked_at to None."""
         session = _make_session()
         stale_time = datetime.now(UTC) - timedelta(minutes=5)
-        row = _make_row(
-            status=ScrapeStatus.IN_PROGRESS, locked_at=stale_time
-        )
+        row = _make_row(status=ScrapeStatus.IN_PROGRESS, locked_at=stale_time)
 
         repo = _make_repo(session)
         await repo.mark_done(row)
@@ -152,9 +150,7 @@ class TestLockedAtLifecycle:
         """mark_failed must set locked_at to None regardless of status outcome."""
         session = _make_session()
         stale_time = datetime.now(UTC) - timedelta(minutes=5)
-        row = _make_row(
-            status=ScrapeStatus.IN_PROGRESS, locked_at=stale_time
-        )
+        row = _make_row(status=ScrapeStatus.IN_PROGRESS, locked_at=stale_time)
         row.retry_count = 0
 
         repo = _make_repo(session)

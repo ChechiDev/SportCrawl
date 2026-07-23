@@ -146,6 +146,7 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         session = _make_session(player_rowcount=1)
         # Extend side_effect so the second bulk_enqueue call also has results.
         from unittest.mock import MagicMock as _MM
+
         extra = _MM()
         extra.rowcount = 0
         extra.scalars.return_value.all.return_value = []

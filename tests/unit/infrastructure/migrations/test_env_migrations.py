@@ -87,9 +87,7 @@ class TestEnvMigrationsSettingsFallback:
                 import infrastructure.persistence.migrations.env  # noqa: PLC0415, F401
 
         warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert any(
-            "falling back" in r.getMessage().lower() for r in warning_records
-        ), (
+        assert any("falling back" in r.getMessage().lower() for r in warning_records), (
             f"Expected a WARNING containing 'falling back', "
             f"got records: {[(r.levelno, r.getMessage()) for r in caplog.records]}"
         )
@@ -146,9 +144,7 @@ class TestEnvMigrationsUnexpectedException:
 
         with mock.patch.dict(sys.modules, patches):
             with caplog.at_level(logging.ERROR):
-                with pytest.raises(
-                    RuntimeError, match="Simulated unexpected failure"
-                ):
+                with pytest.raises(RuntimeError, match="Simulated unexpected failure"):
                     # noqa: PLC0415
                     import infrastructure.persistence.migrations.env  # noqa: F401
 

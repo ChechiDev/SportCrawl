@@ -45,7 +45,8 @@ class BaseRepository[T: DeclarativeBase](ABC):
         """Fetch entity by primary key. Returns None if absent."""
         try:
             return await self._session.get(
-                self._model_class, id  # type: ignore[arg-type]
+                self._model_class,  # type: ignore[arg-type]
+                id,
             )
         except SQLAlchemyError as exc:
             raise RepositoryError("get failed", operation="get", cause=exc) from exc
@@ -124,6 +125,4 @@ class BaseRepository[T: DeclarativeBase](ABC):
             result = await self._session.execute(stmt)
             return list(result.scalars().all())  # type: ignore[arg-type]
         except SQLAlchemyError as exc:
-            raise RepositoryError(
-                "list failed", operation="list", cause=exc
-            ) from exc
+            raise RepositoryError("list failed", operation="list", cause=exc) from exc

@@ -17,12 +17,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import sys
+import termios
 import time
+from typing import Any
 
 import sqlalchemy as sa
 from rich.console import Console, Group
 from rich.live import Live
-from rich.markup import escape
 from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
@@ -105,6 +107,39 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Terminal input suppression
+# ---------------------------------------------------------------------------
+
+
+def _suppress_input() -> Any:
+    """Disable terminal echo so keypresses don't corrupt the Live display.
+
+    Ctrl+C (SIGINT) is unaffected — it is a signal, not a stdin character.
+    Returns the saved terminal state to pass to _restore_input().
+    Returns None if stdin is not a tty (e.g. piped input or CI).
+    """
+    try:
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        new = termios.tcgetattr(fd)
+        new[3] &= ~(termios.ECHO | termios.ICANON)  # disable echo + canonical mode
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
+        return old
+    except (termios.error, OSError, ValueError):
+        return None
+
+
+def _restore_input(saved: Any) -> None:
+    """Restore terminal state saved by _suppress_input()."""
+    if saved is None:
+        return
+    try:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, saved)
+    except (termios.error, OSError, ValueError):
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Unified display
 # ---------------------------------------------------------------------------
 
@@ -134,13 +169,13 @@ def _build_unified_display(
     s1_table.add_column(style="bold green")
     s1_table.add_column()
     if s1_total and s1_done >= s1_total:
-        s1_table.add_row("OK", f"All teams in {s1_total} countries scraped")
+        s1_table.add_row("[cyan]✓[/cyan]", f"All teams in {s1_total} countries scraped")
     else:
         for i in range(1, s1_workers + 1):
             own = s1_counts.get(i, 0)
             label = s1_labels.get(i, "starting crawl...")
             row = f"[Crawl-{i}] [{own} | {s1_total_str}] {label}"
-            s1_table.add_row("RUN", escape(row))
+            s1_table.add_row("RUN", row)
     s1_table_padded = Padding(s1_table, pad=(0, 0, 0, 2))
 
     # --- Step 2 ---
@@ -154,13 +189,15 @@ def _build_unified_display(
     s2_table.add_column(style="bold green")
     s2_table.add_column()
     if s2_total and s2_done >= s2_total:
-        s2_table.add_row("OK", f"All players in {s2_total} countries already scraped")
+        s2_table.add_row(
+            "[cyan]✓[/cyan]", f"All players in {s2_total} countries already scraped"
+        )
     else:
         for i in range(1, s2_workers + 1):
             own = s2_counts.get(i, 0)
             label = s2_labels.get(i, "starting crawl...")
             row = f"[Crawl-{i}] [{own} | {s2_total_str}] {label}"
-            s2_table.add_row("RUN", escape(row))
+            s2_table.add_row("RUN", row)
 
     # --- Step 3 ---
     s3_done = s3_initial_db + sum(s3_counts.values())
@@ -183,34 +220,60 @@ def _build_unified_display(
         s3_table.add_column(style="bold green")
         s3_table.add_column()
         if s3_total and s3_done >= s3_total:
-            s3_table.add_row("OK", f"{s3_total:,} player info records already scraped")
+            s3_table.add_row(
+                "[cyan]✓[/cyan]", f"{s3_total:,} player info records already scraped"
+            )
         else:
             for i in range(1, s3_workers + 1):
                 own = s3_counts.get(i, 0)
                 label = s3_labels.get(i, "starting crawl...")
                 row = f"[Crawl-{i}] [{own} | {s3_total_str}] {label}"
-                s3_table.add_row("RUN", escape(row))
+                s3_table.add_row("RUN", row)
         s3_table_padded = Padding(s3_table, pad=(0, 0, 0, 2))
         if note_renderables:
             return Group(
-                s1_header, s1_table_padded, Text(""),
-                s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
-                Text(""), *note_renderables,
+                s1_header,
+                s1_table_padded,
+                Text(""),
+                s2_header,
+                s2_table_padded,
+                Text(""),
+                s3_header,
+                s3_table_padded,
+                Text(""),
+                *note_renderables,
             )
         return Group(
-            s1_header, s1_table_padded, Text(""),
-            s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
+            s1_header,
+            s1_table_padded,
+            Text(""),
+            s2_header,
+            s2_table_padded,
+            Text(""),
+            s3_header,
+            s3_table_padded,
         )
 
     if note_renderables:
         return Group(
-            s1_header, s1_table_padded, Text(""),
-            s2_header, s2_table_padded, Text(""), s3_header,
-            Text(""), *note_renderables,
+            s1_header,
+            s1_table_padded,
+            Text(""),
+            s2_header,
+            s2_table_padded,
+            Text(""),
+            s3_header,
+            Text(""),
+            *note_renderables,
         )
     return Group(
-        s1_header, s1_table_padded, Text(""),
-        s2_header, s2_table_padded, Text(""), s3_header,
+        s1_header,
+        s1_table_padded,
+        Text(""),
+        s2_header,
+        s2_table_padded,
+        Text(""),
+        s3_header,
     )
 
 
@@ -253,9 +316,18 @@ async def _display_loop(
 ) -> None:
     while not stop_event.is_set():
         renderable = _build_unified_display(
-            s1_labels, s1_counts, s1_workers, s1_total,
-            s2_labels, s2_counts, s2_workers, s2_total,
-            s3_labels, s3_counts, s3_workers, s3_total_ref[0],
+            s1_labels,
+            s1_counts,
+            s1_workers,
+            s1_total,
+            s2_labels,
+            s2_counts,
+            s2_workers,
+            s2_total,
+            s3_labels,
+            s3_counts,
+            s3_workers,
+            s3_total_ref[0],
             s3_ready_event.is_set(),
             s2_initial_db=s2_initial_db,
             s3_initial_db=s3_initial_db,
@@ -263,9 +335,18 @@ async def _display_loop(
         live.update(renderable)
         await asyncio.sleep(0.5)
     renderable = _build_unified_display(
-        s1_labels, s1_counts, s1_workers, s1_total,
-        s2_labels, s2_counts, s2_workers, s2_total,
-        s3_labels, s3_counts, s3_workers, s3_total_ref[0],
+        s1_labels,
+        s1_counts,
+        s1_workers,
+        s1_total,
+        s2_labels,
+        s2_counts,
+        s2_workers,
+        s2_total,
+        s3_labels,
+        s3_counts,
+        s3_workers,
+        s3_total_ref[0],
         s3_ready_event.is_set(),
         s2_initial_db=s2_initial_db,
         s3_initial_db=s3_initial_db,
@@ -350,9 +431,9 @@ async def main(
     if with_teams:
         async with get_session(session_factory) as session:
             result = await session.execute(
-                sa.select(CountrySquads.fk_country, CountrySquads.clubs_url).where(
-                    CountrySquads.clubs_url.isnot(None)
-                ).order_by(CountrySquads.fk_country)
+                sa.select(CountrySquads.fk_country, CountrySquads.clubs_url)
+                .where(CountrySquads.clubs_url.isnot(None))
+                .order_by(CountrySquads.fk_country)
             )
             s1_rows = [(r[0], r[1]) for r in result.fetchall()]
             names_result = await session.execute(
@@ -455,161 +536,191 @@ async def main(
     s3_total_ref: list[int] = [s3_total]
 
     initial_renderable = _build_unified_display(
-        s1_labels, s1_counts, workers, s1_total,
-        s2_labels, s2_counts, workers, s2_total,
-        s3_labels, s3_counts, workers, s3_total_ref[0],
+        s1_labels,
+        s1_counts,
+        workers,
+        s1_total,
+        s2_labels,
+        s2_counts,
+        workers,
+        s2_total,
+        s3_labels,
+        s3_counts,
+        workers,
+        s3_total_ref[0],
         False,
         s2_initial_db=s2_initial_db,
         s3_initial_db=s3_initial_db,
     )
 
-    with Live(
-        initial_renderable,
-        console=_console,
-        refresh_per_second=2,
-        vertical_overflow="crop"
-    ) as live:
-        display_task = asyncio.create_task(
-            _display_loop(
-                s1_labels, s1_counts, workers, s1_total,
-                s2_labels, s2_counts, workers, s2_total,
-                s3_labels, s3_counts, workers, s3_total_ref,
-                step3_ready, stop_event, live,
-                s2_initial_db=s2_initial_db,
-                s3_initial_db=s3_initial_db,
+    _saved_term = _suppress_input()
+    try:
+        with Live(
+            initial_renderable,
+            console=_console,
+            refresh_per_second=2,
+            vertical_overflow="crop",
+        ) as live:
+            display_task = asyncio.create_task(
+                _display_loop(
+                    s1_labels,
+                    s1_counts,
+                    workers,
+                    s1_total,
+                    s2_labels,
+                    s2_counts,
+                    workers,
+                    s2_total,
+                    s3_labels,
+                    s3_counts,
+                    workers,
+                    s3_total_ref,
+                    step3_ready,
+                    stop_event,
+                    live,
+                    s2_initial_db=s2_initial_db,
+                    s3_initial_db=s3_initial_db,
+                )
             )
-        )
 
-        poller_task = asyncio.create_task(
-            _s3_total_poller(session_factory, s3_total_ref, stop_event)
-        )
-
-        trigger_task = asyncio.create_task(
-            _trigger_watcher(
-                session_factory, trigger_count,
-                step3_ready, step2_done,
+            poller_task = asyncio.create_task(
+                _s3_total_poller(session_factory, s3_total_ref, stop_event)
             )
-        )
 
-        # --- Step 1 workers — Teams, runs from the start in parallel with step 2 ---
-        s1_tasks: list[asyncio.Task[int]] = []
-        if with_teams:
-            s1_tasks = [
+            trigger_task = asyncio.create_task(
+                _trigger_watcher(
+                    session_factory,
+                    trigger_count,
+                    step3_ready,
+                    step2_done,
+                )
+            )
+
+            # Step 1: Teams workers (run in parallel with step 2)
+            s1_tasks: list[asyncio.Task[int]] = []
+            if with_teams:
+                s1_tasks = [
+                    asyncio.create_task(
+                        CountryTeamsWorker(
+                            worker_id=i + 1,
+                            session_factory=session_factory,
+                            fetch_gate=s1_fetch_gate,
+                            profile_base=settings.scraping.chrome_profile_dir,
+                            worker_labels=s1_labels,
+                            worker_counts=s1_counts,
+                            settings=settings,
+                            queue=s1_queue,
+                            country_names=s1_country_names,
+                        ).run()
+                    )
+                    for i in range(workers)
+                ]
+
+            # Step 2: Players workers (background tasks for step 3 start)
+            s2_tasks = [
                 asyncio.create_task(
-                    CountryTeamsWorker(
+                    PlayerListWorker(
                         worker_id=i + 1,
                         session_factory=session_factory,
-                        fetch_gate=s1_fetch_gate,
+                        fetch_gate=s2_fetch_gate,
                         profile_base=settings.scraping.chrome_profile_dir,
-                        worker_labels=s1_labels,
-                        worker_counts=s1_counts,
+                        worker_labels=s2_labels,
+                        worker_counts=s2_counts,
                         settings=settings,
-                        queue=s1_queue,
-                        country_names=s1_country_names,
+                        url_to_name=s2_url_to_name,
+                        code_to_name=s2_code_to_name,
                     ).run()
                 )
                 for i in range(workers)
             ]
 
-        # --- Step 2 workers — run as background tasks so step 3 can start mid-way ---
-        s2_tasks = [
-            asyncio.create_task(
-                PlayerListWorker(
-                    worker_id=i + 1,
-                    session_factory=session_factory,
-                    fetch_gate=s2_fetch_gate,
-                    profile_base=settings.scraping.chrome_profile_dir,
-                    worker_labels=s2_labels,
-                    worker_counts=s2_counts,
-                    settings=settings,
-                    url_to_name=s2_url_to_name,
-                    code_to_name=s2_code_to_name,
-                ).run()
-            )
-            for i in range(workers)
-        ]
+            # --- Wait for trigger (tbl_players count >= trigger_count) ---
+            await step3_ready.wait()
 
-        # --- Wait for trigger (tbl_players count >= trigger_count) ---
-        await step3_ready.wait()
-
-        async with get_session(session_factory) as session:
-            stale3 = await PlayerInfoQueueRepository(session).recover_all_stale()
-            await session.commit()
-        if stale3:
-            logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
-            _notifications.add(f"Resumed: {stale3} interrupted jobs restored to queue")
-
-        # Seed step-3 queue from tbl_players (idempotent)
-        await _seed_player_info_queue(session_factory)
-
-        # Refresh total for display after seeding
-        async with get_session(session_factory) as session:
-            result = await session.execute(
-                sa.text(
-                    "SELECT count(*) FROM sch_infra.scrape_queue"
-                    " WHERE job_type='player_info'"
+            async with get_session(session_factory) as session:
+                stale3 = await PlayerInfoQueueRepository(session).recover_all_stale()
+                await session.commit()
+            if stale3:
+                logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
+                _notifications.add(
+                    f"Resumed: {stale3} interrupted jobs restored to queue"
                 )
+
+            # Seed step-3 queue from tbl_players (idempotent)
+            await _seed_player_info_queue(session_factory)
+
+            # Refresh total for display after seeding
+            async with get_session(session_factory) as session:
+                result = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_infra.scrape_queue"
+                        " WHERE job_type='player_info'"
+                    )
+                )
+                s3_total_ref[0] = int(result.scalar() or 0)
+
+            # Re-seed every 30s so step 3 workers pick up players added by step 2
+            # while it is still running (without this, workers stall on empty queue).
+            reseeder_task = asyncio.create_task(
+                _player_info_reseeder(session_factory, step2_done)
             )
-            s3_total_ref[0] = int(result.scalar() or 0)
 
-        # Re-seed every 30s so step 3 workers pick up players added by step 2
-        # while it is still running (without this, workers stall on empty queue).
-        reseeder_task = asyncio.create_task(
-            _player_info_reseeder(session_factory, step2_done)
-        )
+            # --- Step 3 workers — run concurrently with remaining step 2 work ---
+            s3_tasks = [
+                asyncio.create_task(
+                    PlayerInfoWorker(
+                        worker_id=i + 1,
+                        session_factory=session_factory,
+                        fetch_gate=s3_fetch_gate,
+                        profile_base=settings.scraping.chrome_profile_dir,
+                        worker_labels=s3_labels,
+                        worker_counts=s3_counts,
+                        position_cache=position_cache,
+                        valid_countries=valid_countries,
+                        country_name_cache=country_name_cache,
+                        fbref_base_url=settings.scraping.fbref_base_url,
+                        step2_done=step2_done,
+                    ).run()
+                )
+                for i in range(workers)
+            ]
 
-        # --- Step 3 workers — run concurrently with remaining step 2 work ---
-        s3_tasks = [
-            asyncio.create_task(
-                PlayerInfoWorker(
-                    worker_id=i + 1,
-                    session_factory=session_factory,
-                    fetch_gate=s3_fetch_gate,
-                    profile_base=settings.scraping.chrome_profile_dir,
-                    worker_labels=s3_labels,
-                    worker_counts=s3_counts,
-                    position_cache=position_cache,
-                    valid_countries=valid_countries,
-                    country_name_cache=country_name_cache,
-                    fbref_base_url=settings.scraping.fbref_base_url,
-                    step2_done=step2_done,
-                ).run()
-            )
-            for i in range(workers)
-        ]
+            # Wait for step 2, signal done, let reseeder do its final seed, drain step 3
+            s2_results = await asyncio.gather(*s2_tasks, return_exceptions=True)
+            step2_done.set()
+            await reseeder_task  # waits for final seed after step2_done is set
+            s3_results = await asyncio.gather(*s3_tasks, return_exceptions=True)
 
-        # Wait for step 2, signal done, let reseeder do its final seed, drain step 3
-        s2_results = await asyncio.gather(*s2_tasks, return_exceptions=True)
-        step2_done.set()
-        await reseeder_task  # waits for final seed after step2_done is set
-        s3_results = await asyncio.gather(*s3_tasks, return_exceptions=True)
+            # Wait for step 1 (Teams) — may still be running while s2/s3 were executing
+            if s1_tasks:
+                s1_results = await asyncio.gather(*s1_tasks, return_exceptions=True)
+            else:
+                s1_results = []
 
-        # Wait for step 1 (Teams) — may still be running while s2/s3 were executing
-        if s1_tasks:
-            s1_results = await asyncio.gather(*s1_tasks, return_exceptions=True)
-        else:
-            s1_results = []
-
-        trigger_task.cancel()
-        poller_task.cancel()
-        await asyncio.gather(trigger_task, poller_task, return_exceptions=True)
-        stop_event.set()
-        await display_task
+            trigger_task.cancel()
+            poller_task.cancel()
+            await asyncio.gather(trigger_task, poller_task, return_exceptions=True)
+            stop_event.set()
+            await display_task
+    finally:
+        _restore_input(_saved_term)
 
     s1_grand = sum(r for r in s1_results if isinstance(r, int))
     s2_grand = sum(r for r in s2_results if isinstance(r, int))
     s3_grand = sum(r for r in s3_results if isinstance(r, int))
     logger.info(
         "Pipeline done. step1=%d jobs | step2=%d jobs | step3=%d jobs | workers=%d",
-        s1_grand, s2_grand, s3_grand, workers,
+        s1_grand,
+        s2_grand,
+        s3_grand,
+        workers,
     )
 
 
 def run() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Pipeline: scrape players (step 2) then player info (step 3) "
-            "concurrently."
+            "Pipeline: scrape players (step 2) then player info (step 3) concurrently."
         )
     )
     parser.add_argument(

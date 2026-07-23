@@ -1,4 +1,5 @@
 """Unit tests for core.preflight.checks — RED phase."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -27,6 +28,7 @@ def _mock_conn(fetchval=None, fetchrow=None, fetch=None):
 
 # ── check_db_reachable ──────────────────────────────────────────────────────
 
+
 class TestCheckDbReachable:
     async def test_pass_when_connect_succeeds(self):
         conn = _mock_conn()
@@ -45,6 +47,7 @@ class TestCheckDbReachable:
 
 # ── check_alembic_initialized ───────────────────────────────────────────────
 
+
 class TestCheckAlembicInitialized:
     async def test_pass_when_table_exists(self):
         conn = _mock_conn(fetchval=True)
@@ -62,6 +65,7 @@ class TestCheckAlembicInitialized:
 
 
 # ── check_alembic_revision ──────────────────────────────────────────────────
+
 
 class TestCheckAlembicRevision:
     async def test_pass_when_revision_matches(self):
@@ -82,6 +86,7 @@ class TestCheckAlembicRevision:
 
 # ── check_schemas_exist ─────────────────────────────────────────────────────
 
+
 class TestCheckSchemasExist:
     async def test_pass_when_both_schemas_present(self):
         rows = [MagicMock(), MagicMock()]  # 2 rows
@@ -100,6 +105,7 @@ class TestCheckSchemasExist:
 
 
 # ── check_tables_exist ──────────────────────────────────────────────────────
+
 
 class TestCheckTablesExist:
     async def test_pass_countries_all_present(self):
@@ -130,6 +136,7 @@ class TestCheckTablesExist:
 
 # ── check_seed_data ─────────────────────────────────────────────────────────
 
+
 class TestCheckSeedData:
     async def test_pass_players_phase_when_countries_exist(self):
         conn = _mock_conn(fetchval=100)
@@ -158,6 +165,7 @@ class TestCheckSeedData:
 
 
 # ── check_stale_queue ───────────────────────────────────────────────────────
+
 
 class TestCheckStaleQueue:
     async def test_pass_when_no_stale_jobs(self):

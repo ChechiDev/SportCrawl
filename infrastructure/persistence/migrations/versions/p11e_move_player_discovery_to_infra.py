@@ -31,14 +31,10 @@ def upgrade() -> None:
     op.execute("DROP VIEW IF EXISTS sch_football.v_player_scrape_progress")
 
     # 2. Move player_queue_ref first (no dependents other than the view)
-    op.execute(
-        "ALTER TABLE sch_football.player_queue_ref SET SCHEMA sch_infra"
-    )
+    op.execute("ALTER TABLE sch_football.player_queue_ref SET SCHEMA sch_infra")
 
     # 3. Move player_discovery_batch
-    op.execute(
-        "ALTER TABLE sch_football.player_discovery_batch SET SCHEMA sch_infra"
-    )
+    op.execute("ALTER TABLE sch_football.player_discovery_batch SET SCHEMA sch_infra")
 
     # 4. Recreate view in sch_football referencing sch_infra tables
     op.execute(
@@ -64,12 +60,8 @@ def downgrade() -> None:
     op.execute("DROP VIEW IF EXISTS sch_football.v_player_scrape_progress")
 
     # 2. Move tables back to sch_football
-    op.execute(
-        "ALTER TABLE sch_infra.player_queue_ref SET SCHEMA sch_football"
-    )
-    op.execute(
-        "ALTER TABLE sch_infra.player_discovery_batch SET SCHEMA sch_football"
-    )
+    op.execute("ALTER TABLE sch_infra.player_queue_ref SET SCHEMA sch_football")
+    op.execute("ALTER TABLE sch_infra.player_discovery_batch SET SCHEMA sch_football")
 
     # 3. Recreate view pointing to sch_football tables
     op.execute(

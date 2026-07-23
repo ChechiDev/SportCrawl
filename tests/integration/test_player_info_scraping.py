@@ -100,21 +100,15 @@ async def session_factory_with_player(
     async with factory() as session:
         async with session.begin():
             await session.execute(
-                text(
-                    "DELETE FROM sch_infra.scrape_queue WHERE url = :url"
-                ),
+                text("DELETE FROM sch_infra.scrape_queue WHERE url = :url"),
                 {"url": _PLAYER_URL},
             )
             await session.execute(
-                text(
-                    "DELETE FROM sch_shared.tbl_player_info WHERE player_id = :pid"
-                ),
+                text("DELETE FROM sch_shared.tbl_player_info WHERE player_id = :pid"),
                 {"pid": _PLAYER_ID},
             )
             await session.execute(
-                text(
-                    "DELETE FROM sch_shared.tbl_players WHERE player_id = :pid"
-                ),
+                text("DELETE FROM sch_shared.tbl_players WHERE player_id = :pid"),
                 {"pid": _PLAYER_ID},
             )
 
@@ -145,6 +139,7 @@ async def test_worker_inserts_player_info_and_marks_done(
     ):
         # Configure engine as async context manager yielding a mock engine
         from unittest.mock import MagicMock
+
         mock_engine_instance = AsyncMock()
         mock_engine_instance.navigate = AsyncMock()
         mock_engine_instance.wait_for_challenge = AsyncMock(
@@ -191,10 +186,7 @@ async def test_worker_inserts_player_info_and_marks_done(
     # Verify scrape_queue row is DONE
     async with factory() as session:
         result = await session.execute(
-            text(
-                "SELECT status FROM sch_infra.scrape_queue"
-                " WHERE url = :url"
-            ),
+            text("SELECT status FROM sch_infra.scrape_queue WHERE url = :url"),
             {"url": _PLAYER_URL},
         )
         status_row = result.fetchone()

@@ -41,18 +41,12 @@ def upgrade() -> None:
         )
     )
     op.execute(sa.text("DROP TABLE sch_shared.tbl_flags"))
+    op.execute(sa.text("ALTER TABLE sch_shared.tbl_flags_new RENAME TO tbl_flags"))
     op.execute(
-        sa.text("ALTER TABLE sch_shared.tbl_flags_new RENAME TO tbl_flags")
+        sa.text("ALTER INDEX sch_shared.tbl_flags_new_pkey RENAME TO tbl_flags_pkey")
     )
     op.execute(
-        sa.text(
-            "ALTER INDEX sch_shared.tbl_flags_new_pkey RENAME TO tbl_flags_pkey"
-        )
-    )
-    op.execute(
-        sa.text(
-            "CREATE INDEX ix_flags_flag_id ON sch_shared.tbl_flags (flag_id)"
-        )
+        sa.text("CREATE INDEX ix_flags_flag_id ON sch_shared.tbl_flags (flag_id)")
     )
     op.execute(
         sa.text(
@@ -94,18 +88,12 @@ def downgrade() -> None:
         )
     )
     op.execute(sa.text("DROP TABLE sch_shared.tbl_flags"))
+    op.execute(sa.text("ALTER TABLE sch_shared.tbl_flags_new RENAME TO tbl_flags"))
     op.execute(
-        sa.text("ALTER TABLE sch_shared.tbl_flags_new RENAME TO tbl_flags")
+        sa.text("ALTER INDEX sch_shared.tbl_flags_new_pkey RENAME TO tbl_flags_pkey")
     )
     op.execute(
-        sa.text(
-            "ALTER INDEX sch_shared.tbl_flags_new_pkey RENAME TO tbl_flags_pkey"
-        )
-    )
-    op.execute(
-        sa.text(
-            "CREATE INDEX ix_flags_flag_id ON sch_shared.tbl_flags (flag_id)"
-        )
+        sa.text("CREATE INDEX ix_flags_flag_id ON sch_shared.tbl_flags (flag_id)")
     )
     op.execute(
         sa.text(

@@ -36,7 +36,7 @@ def build_worker_table(
         own = worker_counts.get(i, 0)
         label = worker_labels.get(i, "Starting crawl...")
         if label.startswith(_COOLDOWN_PREFIX):
-            end = float(label[len(_COOLDOWN_PREFIX):])
+            end = float(label[len(_COOLDOWN_PREFIX) :])
             remaining = max(0, int(end - time.monotonic()))
             label = f"[bold orange1]COOLDOWN[/] Resuming in {remaining}s"
         base = escape(f"[Crawl-{i}] [{own} | {total_str}] ")
@@ -62,14 +62,22 @@ async def run_display_loop(
     while not stop_event.is_set():
         notes = get_notifications() if get_notifications is not None else None
         table = build_worker_table(
-            worker_labels, worker_counts, num_workers, already_done, total_jobs,
+            worker_labels,
+            worker_counts,
+            num_workers,
+            already_done,
+            total_jobs,
             notes,
         )
         live.update(table)
         await asyncio.sleep(0.5)
     notes = get_notifications() if get_notifications is not None else None
     table = build_worker_table(
-        worker_labels, worker_counts, num_workers, already_done, total_jobs,
+        worker_labels,
+        worker_counts,
+        num_workers,
+        already_done,
+        total_jobs,
         notes,
     )
     live.update(table)

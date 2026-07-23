@@ -8,7 +8,6 @@ Alembic tracks during autogenerate. The function must:
 - Return True for column-type objects
 """
 
-
 from infrastructure.persistence.migrations._filters import include_name
 
 

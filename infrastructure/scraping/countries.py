@@ -72,8 +72,7 @@ class CountryScraper(BaseScraper[CountryPage]):
 
         for row in rows:
             cells_by_stat = {
-                cell.get("data-stat"): cell
-                for cell in row.find_all(["th", "td"])
+                cell.get("data-stat"): cell for cell in row.find_all(["th", "td"])
             }
 
             if "country" not in cells_by_stat:
