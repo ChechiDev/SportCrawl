@@ -119,7 +119,7 @@ The three scraping stages run concurrently in a single unified display:
 
 ## Scraping Example
 
-```bash
+```console
 ❯ uv run sportcrawl --all --workers 5
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    _____ ____  ____  ____  ______   __________  ___ _       ____ 
@@ -178,7 +178,7 @@ uv run sportcrawl reset
 > This only clears scraped data. It does not drop schemas or roll back migrations.
 
 ## Reset Example
-```bash
+```console
 ❯ uv run sportcrawl reset
 ╭────────────────────────────── Reset Database ──────────────────────────────╮
 │ WARNING                                                                     │
