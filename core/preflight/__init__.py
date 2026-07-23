@@ -98,7 +98,7 @@ async def run_checks(
                     render_compact(results, console)
                 return results
 
-    if phase in ("players", "player_info"):
+    if phase in ("players", "player_info", "club_teams"):
         result = await _run(
             lambda: check_seed_data(dsn, phase),  # type: ignore[arg-type]
             "Checking seed data...",

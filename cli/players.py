@@ -13,7 +13,6 @@ from config.settings import Settings
 from core.preflight import run_checks
 from core.preflight.checks import check_stale_queue
 from core.preflight.result import CheckResult
-from scripts.scrape_players import main_all, main_countries
 
 players_app = typer.Typer(name="players", help="Scrape players pipeline")
 console = Console()
@@ -100,7 +99,8 @@ async def _seed_with_retry(
                 raise typer.Exit(code=1)
             console.print(
                 f"  [yellow]⚠[/yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s"
-                f" ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}"
+                f" ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}",
+                end="\r",
             )
             await asyncio.sleep(_SEED_RETRY_WAIT)
 
@@ -160,7 +160,7 @@ async def _run(
 
     if not skip_preflight:
         console.print("[bold white]Checking requirements...[/bold white]")
-        results = await run_checks(dsn, "players", console, compact=False)
+        results = await run_checks(dsn, "club_teams", console, compact=False)
 
         seed_failed = next(
             (r for r in results if r.name == "Seed data" and not r.passed), None
@@ -234,34 +234,17 @@ async def _run(
         console.print("[red]Specify --country or --all.[/red]")
         raise typer.Exit(code=1)
 
-    # Launch teams scraping as an independent OS process so it runs in parallel
-    # with the players pipeline without sharing the event loop or browser resources.
-    import sys
-    teams_proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "scripts.scrape_country_teams",
-    )
-
-    if with_player_info and all_countries:
-        from scripts.scrape_pipeline import main as pipeline_main
-
-        console.print()
-        await pipeline_main(workers=workers, all_countries=True)
-        await teams_proc.wait()
-        return
+    from rich.rule import Rule
+    from scripts.scrape_pipeline import main as pipeline_main
 
     console.print()
-    console.print("[bold]Scraping Players[/bold]")
-    if all_countries:
-        await main_all(workers=workers)
+    console.print(Rule(style="blue dim"))
+    console.print()
+    if with_player_info and all_countries:
+        await pipeline_main(workers=workers, all_countries=True, with_teams=True)
     else:
-        codes = [c.strip().upper() for c in country.split(",") if c.strip()]  # type: ignore[union-attr]
-        await main_countries(codes, workers=workers)
-
-    if with_player_info:
-        console.print()
-        console.print("[bold]Scraping Single Player Stats[/bold]")
-        from scripts.scrape_player_info import main as scrape_info
-
-        await scrape_info(workers=workers, seed=True)
-
-    await teams_proc.wait()
+        await pipeline_main(
+            workers=workers,
+            all_countries=all_countries,
+            with_teams=True,
+        )

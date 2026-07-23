@@ -1,6 +1,7 @@
-"""Pipeline orchestrator — runs step 2 (scrape_players) and step 3 (scrape_player_info)
-concurrently.
+"""Pipeline orchestrator — runs step 1 (scrape_country_teams), step 2 (scrape_players),
+and step 3 (scrape_player_info) concurrently.
 
+Step 1 (Teams) and step 2 (Players) start immediately in parallel.
 Step 3 starts automatically while step 2 is still running, triggered by a configurable
 pending-job threshold in the player_info queue.
 
@@ -47,6 +48,8 @@ from scripts.scrape_players import (
     _load_all_countries,
 )
 from scripts.scrape_players import _seed_queue as _seed_player_list_queue
+from scripts.scrape_country_teams import CountryTeamsWorker
+from infrastructure.persistence.models.shared.country_squads import CountrySquads
 
 # force=True resets any handlers set by scrape_players / scrape_player_info at
 # import time so all log output routes through the single Live-display console.
@@ -107,6 +110,10 @@ logger = logging.getLogger(__name__)
 
 
 def _build_unified_display(
+    s1_labels: dict[int, str],
+    s1_counts: dict[int, int],
+    s1_workers: int,
+    s1_total: int,
     s2_labels: dict[int, str],
     s2_counts: dict[int, int],
     s2_workers: int,
@@ -119,6 +126,23 @@ def _build_unified_display(
     s2_initial_db: int = 0,
     s3_initial_db: int = 0,
 ) -> Group:
+    # --- Step 1: Teams ---
+    s1_done = sum(s1_counts.values())
+    s1_total_str = f"{s1_done}/{s1_total}" if s1_total else str(s1_done)
+    s1_header = Text.assemble(("Scraping Teams", "bold"))
+    s1_table = Table.grid(padding=(0, 2))
+    s1_table.add_column(style="bold green")
+    s1_table.add_column()
+    if s1_total and s1_done >= s1_total:
+        s1_table.add_row("OK", f"All teams in {s1_total} countries scraped")
+    else:
+        for i in range(1, s1_workers + 1):
+            own = s1_counts.get(i, 0)
+            label = s1_labels.get(i, "starting crawl...")
+            row = f"[Crawl-{i}] [{own} | {s1_total_str}] {label}"
+            s1_table.add_row("RUN", escape(row))
+    s1_table_padded = Padding(s1_table, pad=(0, 0, 0, 2))
+
     # --- Step 2 ---
     s2_done = s2_initial_db + sum(s2_counts.values())
     s2_total_str = f"{s2_done}/{s2_total}" if s2_total else str(s2_done)
@@ -169,19 +193,25 @@ def _build_unified_display(
         s3_table_padded = Padding(s3_table, pad=(0, 0, 0, 2))
         if note_renderables:
             return Group(
+                s1_header, s1_table_padded, Text(""),
                 s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
                 Text(""), *note_renderables,
             )
         return Group(
+            s1_header, s1_table_padded, Text(""),
             s2_header, s2_table_padded, Text(""), s3_header, s3_table_padded,
         )
 
     if note_renderables:
         return Group(
+            s1_header, s1_table_padded, Text(""),
             s2_header, s2_table_padded, Text(""), s3_header,
             Text(""), *note_renderables,
         )
-    return Group(s2_header, s2_table_padded, Text(""), s3_header)
+    return Group(
+        s1_header, s1_table_padded, Text(""),
+        s2_header, s2_table_padded, Text(""), s3_header,
+    )
 
 
 async def _s3_total_poller(
@@ -203,6 +233,10 @@ async def _s3_total_poller(
 
 
 async def _display_loop(
+    s1_labels: dict[int, str],
+    s1_counts: dict[int, int],
+    s1_workers: int,
+    s1_total: int,
     s2_labels: dict[int, str],
     s2_counts: dict[int, int],
     s2_workers: int,
@@ -219,6 +253,7 @@ async def _display_loop(
 ) -> None:
     while not stop_event.is_set():
         renderable = _build_unified_display(
+            s1_labels, s1_counts, s1_workers, s1_total,
             s2_labels, s2_counts, s2_workers, s2_total,
             s3_labels, s3_counts, s3_workers, s3_total_ref[0],
             s3_ready_event.is_set(),
@@ -228,6 +263,7 @@ async def _display_loop(
         live.update(renderable)
         await asyncio.sleep(0.5)
     renderable = _build_unified_display(
+        s1_labels, s1_counts, s1_workers, s1_total,
         s2_labels, s2_counts, s2_workers, s2_total,
         s3_labels, s3_counts, s3_workers, s3_total_ref[0],
         s3_ready_event.is_set(),
@@ -299,11 +335,34 @@ async def main(
     workers: int = 1,
     trigger_count: int = 100,
     all_countries: bool = False,
+    with_teams: bool = True,
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
     pool_size = max(workers * 8, settings.db.pool_size)
     settings.db.pool_size = pool_size
     session_factory = create_session_factory(settings.db)
+
+    # --- Load step 1 (Teams) work items ---
+    from infrastructure.persistence.models.shared.country import Country
+
+    s1_rows: list[tuple[str, str]] = []
+    s1_country_names: dict[str, str] = {}
+    if with_teams:
+        async with get_session(session_factory) as session:
+            result = await session.execute(
+                sa.select(CountrySquads.fk_country, CountrySquads.clubs_url).where(
+                    CountrySquads.clubs_url.isnot(None)
+                ).order_by(CountrySquads.fk_country)
+            )
+            s1_rows = [(r[0], r[1]) for r in result.fetchall()]
+            names_result = await session.execute(
+                sa.select(Country.country_id, Country.country_name)
+            )
+            s1_country_names = {r[0]: r[1] for r in names_result.fetchall()}
+    s1_total = len(s1_rows)
+    s1_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+    for row in s1_rows:
+        await s1_queue.put((row[0], row[1]))
 
     # --- Seed and recover step 2 ---
     if all_countries:
@@ -380,19 +439,23 @@ async def main(
     step3_ready: asyncio.Event = asyncio.Event()
 
     # Shared display state
+    s1_labels: dict[int, str] = {}
+    s1_counts: dict[int, int] = {}
     s2_labels: dict[int, str] = {}
     s2_counts: dict[int, int] = {}
     s3_labels: dict[int, str] = {}
     s3_counts: dict[int, int] = {}
     stop_event: asyncio.Event = asyncio.Event()
 
-    # Separate fetch gates — step 2 and step 3 hit different URLs
+    # Separate fetch gates — each step hits different URLs
+    s1_fetch_gate = asyncio.Semaphore(1)
     s2_fetch_gate = asyncio.Semaphore(1)
     s3_fetch_gate = asyncio.Semaphore(1)
 
     s3_total_ref: list[int] = [s3_total]
 
     initial_renderable = _build_unified_display(
+        s1_labels, s1_counts, workers, s1_total,
         s2_labels, s2_counts, workers, s2_total,
         s3_labels, s3_counts, workers, s3_total_ref[0],
         False,
@@ -408,6 +471,7 @@ async def main(
     ) as live:
         display_task = asyncio.create_task(
             _display_loop(
+                s1_labels, s1_counts, workers, s1_total,
                 s2_labels, s2_counts, workers, s2_total,
                 s3_labels, s3_counts, workers, s3_total_ref,
                 step3_ready, stop_event, live,
@@ -426,6 +490,26 @@ async def main(
                 step3_ready, step2_done,
             )
         )
+
+        # --- Step 1 workers — Teams, runs from the start in parallel with step 2 ---
+        s1_tasks: list[asyncio.Task[int]] = []
+        if with_teams:
+            s1_tasks = [
+                asyncio.create_task(
+                    CountryTeamsWorker(
+                        worker_id=i + 1,
+                        session_factory=session_factory,
+                        fetch_gate=s1_fetch_gate,
+                        profile_base=settings.scraping.chrome_profile_dir,
+                        worker_labels=s1_labels,
+                        worker_counts=s1_counts,
+                        settings=settings,
+                        queue=s1_queue,
+                        country_names=s1_country_names,
+                    ).run()
+                )
+                for i in range(workers)
+            ]
 
         # --- Step 2 workers — run as background tasks so step 3 can start mid-way ---
         s2_tasks = [
@@ -500,17 +584,24 @@ async def main(
         await reseeder_task  # waits for final seed after step2_done is set
         s3_results = await asyncio.gather(*s3_tasks, return_exceptions=True)
 
+        # Wait for step 1 (Teams) — may still be running while s2/s3 were executing
+        if s1_tasks:
+            s1_results = await asyncio.gather(*s1_tasks, return_exceptions=True)
+        else:
+            s1_results = []
+
         trigger_task.cancel()
         poller_task.cancel()
         await asyncio.gather(trigger_task, poller_task, return_exceptions=True)
         stop_event.set()
         await display_task
 
+    s1_grand = sum(r for r in s1_results if isinstance(r, int))
     s2_grand = sum(r for r in s2_results if isinstance(r, int))
     s3_grand = sum(r for r in s3_results if isinstance(r, int))
     logger.info(
-        "Pipeline done. step2=%d jobs | step3=%d jobs | workers=%d",
-        s2_grand, s3_grand, workers,
+        "Pipeline done. step1=%d jobs | step2=%d jobs | step3=%d jobs | workers=%d",
+        s1_grand, s2_grand, s3_grand, workers,
     )
 
 

@@ -42,8 +42,7 @@ class TestPlayersStart:
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
-            patch("cli.players.main_all", AsyncMock()),
-            patch("scripts.scrape_country_teams.main", AsyncMock()),
+            patch("scripts.scrape_pipeline.main", AsyncMock()),
         ):
             result = runner.invoke(players_app, ["--all"])
         assert result.exit_code == 0
@@ -64,67 +63,67 @@ class TestPlayersStart:
         with (
             patch("cli.players.Settings", return_value=_make_settings()),
             patch("cli.players.run_checks", mock_run_checks),
-            patch("cli.players.main_all", AsyncMock()),
+            patch("scripts.scrape_pipeline.main", AsyncMock()),
         ):
             runner.invoke(players_app, ["--all", "--skip-preflight"])
         mock_run_checks.assert_not_called()
 
-    def test_country_flag_calls_main_single(self):
-        mock_main_single = AsyncMock()
+    def test_country_flag_calls_pipeline(self):
+        mock_pipeline = AsyncMock()
         with (
             patch("cli.players.Settings", return_value=_make_settings()),
             patch(
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
-            patch("cli.players.main_countries", mock_main_single),
+            patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--country", "ARG"])
-        mock_main_single.assert_called_once()
-        call_url = mock_main_single.call_args[0][0]
-        assert "ARG" in call_url
+        mock_pipeline.assert_called_once()
+        _, kwargs = mock_pipeline.call_args
+        assert kwargs.get("with_teams") is True
 
-    def test_all_flag_calls_main_all(self):
-        mock_main_all = AsyncMock()
+    def test_all_flag_calls_pipeline(self):
+        mock_pipeline = AsyncMock()
         with (
             patch("cli.players.Settings", return_value=_make_settings()),
             patch(
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
-            patch("cli.players.main_all", mock_main_all),
+            patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all"])
-        mock_main_all.assert_called_once()
+        mock_pipeline.assert_called_once()
 
-    def test_workers_flag_forwarded_to_main_all(self):
-        """--workers N must be forwarded as workers=N to main_all (FR-8)."""
-        mock_main_all = AsyncMock()
+    def test_workers_flag_forwarded_to_pipeline(self):
+        """--workers N must be forwarded as workers=N to pipeline main (FR-8)."""
+        mock_pipeline = AsyncMock()
         with (
             patch("cli.players.Settings", return_value=_make_settings()),
             patch(
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
-            patch("cli.players.main_all", mock_main_all),
+            patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all", "--workers", "4"])
-        mock_main_all.assert_called_once()
-        _, kwargs = mock_main_all.call_args
+        mock_pipeline.assert_called_once()
+        _, kwargs = mock_pipeline.call_args
         assert kwargs.get("workers") == 4
 
     def test_default_workers_is_one(self):
-        """Omitting --workers must call main_all with workers=1."""
-        mock_main_all = AsyncMock()
+        """Omitting --workers must call pipeline main with workers=1."""
+        mock_pipeline = AsyncMock()
         with (
             patch("cli.players.Settings", return_value=_make_settings()),
             patch(
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
-            patch("cli.players.main_all", mock_main_all),
+            patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all"])
-        mock_main_all.assert_called_once()
-        _, kwargs = mock_main_all.call_args
+        mock_pipeline.assert_called_once()
+        _, kwargs = mock_pipeline.call_args
         assert kwargs.get("workers") == 1

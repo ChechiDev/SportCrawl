@@ -211,11 +211,11 @@ async def check_tables_exist(
 
 
 async def check_seed_data(
-    dsn: str, phase: Literal["players", "player_info"]
+    dsn: str, phase: Literal["players", "player_info", "club_teams"]
 ) -> CheckResult:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
-        if phase == "players":
+        if phase in ("players", "club_teams"):
             count = await conn.fetchval(
                 "SELECT COUNT(*) FROM sch_shared.tbl_countries"
             )
