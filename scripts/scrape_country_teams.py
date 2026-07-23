@@ -86,10 +86,9 @@ class CountryTeamsWorker(BaseWorker[tuple[str, str]]):
 
     async def run_claim_loop(self, engine: Any) -> int:
         import sqlalchemy as _sa
+        from pydoll.exceptions import BrowserException as _BrowserException
 
         from infrastructure.persistence.models.shared.gender import Gender as _Gender
-
-        from pydoll.exceptions import BrowserException as _BrowserException
 
         # Pre-load gender map once per browser session to avoid repeated SELECTs.
         gender_map: dict[str, int] | None = None

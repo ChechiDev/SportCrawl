@@ -235,6 +235,7 @@ async def _run(
         raise typer.Exit(code=1)
 
     from rich.rule import Rule
+
     from scripts.scrape_pipeline import main as pipeline_main
 
     console.print()

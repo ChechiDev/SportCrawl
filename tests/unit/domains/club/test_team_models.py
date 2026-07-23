@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from domains.club.models import Team, TeamsPage
 
-
 # ---------------------------------------------------------------------------
 # Team — valid construction
 # ---------------------------------------------------------------------------

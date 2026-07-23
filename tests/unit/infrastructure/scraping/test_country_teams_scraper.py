@@ -17,7 +17,6 @@ from domains.club.models import TeamsPage
 from infrastructure.scraping.country_teams import CountryTeamsScraper
 from ports.browser import ScrapingEngine
 
-
 # ---------------------------------------------------------------------------
 # HTML fixtures
 # ---------------------------------------------------------------------------

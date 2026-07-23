@@ -29,6 +29,7 @@ from rich.text import Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
+from infrastructure.persistence.models.shared.country_squads import CountrySquads
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
@@ -36,6 +37,7 @@ from infrastructure.persistence.repositories.player_list_queue import (
     PlayerListQueueRepository,
 )
 from infrastructure.persistence.session import create_session_factory, get_session
+from scripts.scrape_country_teams import CountryTeamsWorker
 from scripts.scrape_player_info import (
     PlayerInfoWorker,
     _load_country_ids,
@@ -48,8 +50,6 @@ from scripts.scrape_players import (
     _load_all_countries,
 )
 from scripts.scrape_players import _seed_queue as _seed_player_list_queue
-from scripts.scrape_country_teams import CountryTeamsWorker
-from infrastructure.persistence.models.shared.country_squads import CountrySquads
 
 # force=True resets any handlers set by scrape_players / scrape_player_info at
 # import time so all log output routes through the single Live-display console.
