@@ -417,6 +417,7 @@ async def main(
     trigger_count: int = 100,
     all_countries: bool = False,
     with_teams: bool = True,
+    country: list[str] | None = None,
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
     pool_size = max(workers * 8, settings.db.pool_size)
@@ -436,11 +437,15 @@ async def main(
                 .order_by(CountrySquads.fk_country)
             )
             s1_rows = [(r[0], r[1]) for r in result.fetchall()]
+            if country:
+                country_upper = {c.upper() for c in country}
+                s1_rows = [row for row in s1_rows if row[0] in country_upper]
             names_result = await session.execute(
                 sa.select(Country.country_id, Country.country_name)
             )
             s1_country_names = {r[0]: r[1] for r in names_result.fetchall()}
     s1_total = len(s1_rows)
+    s1_worker_count = min(len(s1_rows), workers) if s1_rows else 0
     s1_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
     for row in s1_rows:
         await s1_queue.put((row[0], row[1]))
@@ -448,10 +453,18 @@ async def main(
     # --- Seed and recover step 2 ---
     if all_countries:
         countries = await _load_all_countries(session_factory)
+    elif country:
+        country_upper = {c.upper() for c in country}
+        all_loaded = await _load_all_countries(session_factory)
+        countries = [c for c in all_loaded if c[0] in country_upper]
     else:
         # Default: seed nothing (assume queue already populated).
         # If no --all flag, users rely on existing queue state.
         countries = []
+
+    if not s1_rows and not countries:
+        logger.warning("No matching countries found for filter: %s", country)
+        return
 
     s2_url_to_name: dict[str, str] = {url: name for _, url, name in countries}
     s2_code_to_name: dict[str, str] = {}
@@ -460,6 +473,7 @@ async def main(
         if m:
             s2_code_to_name[m.group(1).upper()] = name
 
+    s2_worker_count = min(len(countries), workers) if countries else 0
     s2_total = 0
     if countries:
         await _seed_player_list_queue(session_factory, countries)
@@ -538,11 +552,11 @@ async def main(
     initial_renderable = _build_unified_display(
         s1_labels,
         s1_counts,
-        workers,
+        s1_worker_count,
         s1_total,
         s2_labels,
         s2_counts,
-        workers,
+        s2_worker_count,
         s2_total,
         s3_labels,
         s3_counts,
@@ -565,11 +579,11 @@ async def main(
                 _display_loop(
                     s1_labels,
                     s1_counts,
-                    workers,
+                    s1_worker_count,
                     s1_total,
                     s2_labels,
                     s2_counts,
-                    workers,
+                    s2_worker_count,
                     s2_total,
                     s3_labels,
                     s3_counts,
@@ -613,7 +627,7 @@ async def main(
                             country_names=s1_country_names,
                         ).run()
                     )
-                    for i in range(workers)
+                    for i in range(s1_worker_count)
                 ]
 
             # Step 2: Players workers (background tasks for step 3 start)
@@ -631,7 +645,7 @@ async def main(
                         code_to_name=s2_code_to_name,
                     ).run()
                 )
-                for i in range(workers)
+                for i in range(s2_worker_count)
             ]
 
             # --- Wait for trigger (tbl_players count >= trigger_count) ---
