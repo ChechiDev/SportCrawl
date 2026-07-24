@@ -247,11 +247,23 @@ async def _run(
     console.print()
     console.print(Rule(style="blue dim"))
     console.print()
+    country_list = [c.strip().upper() for c in country.split(",")] if country else None
+    if all_countries and country_list:
+        console.print(
+            "[yellow]Warning:[/] --all and --country are mutually exclusive. "
+            "--all takes precedence."
+        )
     if with_player_info and all_countries:
-        await pipeline_main(workers=workers, all_countries=True, with_teams=True)
+        await pipeline_main(
+            workers=workers,
+            all_countries=True,
+            country=country_list,
+            with_teams=True,
+        )
     else:
         await pipeline_main(
             workers=workers,
             all_countries=all_countries,
+            country=country_list,
             with_teams=True,
         )
