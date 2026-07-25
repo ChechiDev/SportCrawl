@@ -471,20 +471,41 @@ async def main(
     s1_done_initial = 0
     if with_teams:
         async with get_session(session_factory) as session:
-            result = await session.execute(
-                sa.text(
-                    "SELECT count(*) FROM sch_shared.tbl_country_squads"
-                    " WHERE clubs_url IS NOT NULL"
+            if s1_country_filter:
+                # Scope total and done to the requested countries only
+                result = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                        " WHERE clubs_url IS NOT NULL AND fk_country = ANY(:codes)"
+                    ),
+                    {"codes": list(s1_country_filter)},
                 )
-            )
-            s1_total = int(result.scalar() or 0)
-            result2 = await session.execute(
-                sa.text(
-                    "SELECT count(*) FROM sch_infra.scrape_queue"
-                    " WHERE job_type='team_list' AND status='DONE'"
+                s1_total = int(result.scalar() or 0)
+                result2 = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_infra.scrape_queue q"
+                        " JOIN sch_shared.tbl_country_squads cs ON cs.clubs_url = q.url"
+                        " WHERE q.job_type='team_list' AND q.status='DONE'"
+                        " AND cs.fk_country = ANY(:codes)"
+                    ),
+                    {"codes": list(s1_country_filter)},
                 )
-            )
-            s1_done_initial = int(result2.scalar() or 0)
+                s1_done_initial = int(result2.scalar() or 0)
+            else:
+                result = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                        " WHERE clubs_url IS NOT NULL"
+                    )
+                )
+                s1_total = int(result.scalar() or 0)
+                result2 = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_infra.scrape_queue"
+                        " WHERE job_type='team_list' AND status='DONE'"
+                    )
+                )
+                s1_done_initial = int(result2.scalar() or 0)
     pending = s1_total - s1_done_initial
     s1_worker_count = min(pending, workers) if pending else 0
 
@@ -522,7 +543,6 @@ async def main(
         await session.commit()
     if stale:
         logger.info("Resumed: %d interrupted jobs restored to queue", stale)
-        _notifications.add(f"Resumed: {stale} interrupted jobs restored to queue")
 
     # Count actual pending step-2 jobs (covers the case where --all was not passed
     # but jobs already exist in the queue).
@@ -697,9 +717,6 @@ async def main(
                 await session.commit()
             if stale3:
                 logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
-                _notifications.add(
-                    f"Resumed: {stale3} interrupted jobs restored to queue"
-                )
 
             # Seed step-3 queue from tbl_players (idempotent)
             await _seed_player_info_queue(session_factory)
