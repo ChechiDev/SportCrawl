@@ -38,8 +38,12 @@ from infrastructure.persistence.repositories.player_info_queue import (
 from infrastructure.persistence.repositories.player_list_queue import (
     PlayerListQueueRepository,
 )
+from infrastructure.persistence.repositories.team_list_queue import (
+    TeamListQueueRepository,
+)
 from infrastructure.persistence.session import create_session_factory, get_session
 from scripts.scrape_country_teams import CountryTeamsWorker
+from scripts.scrape_country_teams import _seed_queue as _seed_country_teams_queue
 from scripts.scrape_player_info import (
     PlayerInfoWorker,
     _load_country_ids,
@@ -444,11 +448,32 @@ async def main(
                 sa.select(Country.country_id, Country.country_name)
             )
             s1_country_names = {r[0]: r[1] for r in names_result.fetchall()}
-    s1_total = len(s1_rows)
-    s1_worker_count = min(len(s1_rows), workers) if s1_rows else 0
-    s1_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
-    for row in s1_rows:
-        await s1_queue.put((row[0], row[1]))
+    # Build lookup map for workers: clubs_url → fk_country
+    s1_url_to_country: dict[str, str] = {
+        clubs_url: fk_country for fk_country, clubs_url in s1_rows
+    }
+    # Determine country_filter for s1 workers from --country arg
+    s1_country_filter: set[str] | None = (
+        {c.upper() for c in country} if country else None
+    )
+
+    if with_teams:
+        await _seed_country_teams_queue(session_factory, s1_rows)
+        async with get_session(session_factory) as session:
+            await TeamListQueueRepository(session).recover_all_stale()
+            await session.commit()
+
+    s1_total = 0
+    if with_teams:
+        async with get_session(session_factory) as session:
+            result = await session.execute(
+                sa.text(
+                    "SELECT count(*) FROM sch_infra.scrape_queue"
+                    " WHERE job_type='team_list' AND status='PENDING'"
+                )
+            )
+            s1_total = int(result.scalar() or 0)
+    s1_worker_count = min(s1_total, workers) if s1_total else 0
 
     # --- Seed and recover step 2 ---
     if all_countries:
@@ -623,7 +648,8 @@ async def main(
                             worker_labels=s1_labels,
                             worker_counts=s1_counts,
                             settings=settings,
-                            queue=s1_queue,
+                            url_to_country=s1_url_to_country,
+                            country_filter=s1_country_filter,
                             country_names=s1_country_names,
                         ).run()
                     )
@@ -757,13 +783,23 @@ def run() -> None:
         dest="all_countries",
         help="Seed all countries from the database into the player_list queue.",
     )
+    parser.add_argument(
+        "--country",
+        type=str,
+        default=None,
+        help="Comma-separated country codes to filter (e.g. ARG,BRA).",
+    )
     args = parser.parse_args()
+    country_list = (
+        [c.strip().upper() for c in args.country.split(",")] if args.country else None
+    )
 
     asyncio.run(
         main(
             workers=args.workers,
             trigger_count=args.trigger_count,
             all_countries=args.all_countries,
+            country=country_list,
         )
     )
 
