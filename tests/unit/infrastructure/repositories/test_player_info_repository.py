@@ -162,3 +162,34 @@ class TestUpsertPhoto:
 
         call_tables = [c.args[0] for c in mock_pg_insert.call_args_list]
         assert PlayerPhoto in call_tables
+
+
+class TestUpsertCitizenship:
+    async def test_upsert_citizenship_executes_insert(self) -> None:
+        """upsert_citizenship must call session.execute with the correct SQL."""
+        session = _make_session()
+
+        repo = PlayerInfoRepository(session)
+        await repo.upsert_citizenship(player_id=_PLAYER_ID, fk_country="ARG")
+
+        session.execute.assert_called_once()
+        call_args = session.execute.call_args
+        # First positional arg is the sa.text statement
+        sql_text = str(call_args[0][0])
+        assert "tbl_player_citizenship" in sql_text
+        assert "ON CONFLICT" in sql_text
+        # Second arg is the bind params dict
+        params = call_args[0][1]
+        assert params["player_id"] == _PLAYER_ID
+        assert params["fk_country"] == "ARG"
+
+    async def test_upsert_citizenship_passes_correct_params(self) -> None:
+        """upsert_citizenship must bind player_id and fk_country correctly."""
+        session = _make_session()
+
+        repo = PlayerInfoRepository(session)
+        await repo.upsert_citizenship(player_id="xyz99999", fk_country="BRA")
+
+        params = session.execute.call_args[0][1]
+        assert params["player_id"] == "xyz99999"
+        assert params["fk_country"] == "BRA"

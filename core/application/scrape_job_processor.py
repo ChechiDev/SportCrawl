@@ -36,6 +36,7 @@ class _PlayerInfoRepo(Protocol):
     ) -> None: ...
     async def upsert_photo(self, player_id: str, photo_url: str | None) -> None: ...
     async def upsert_position(self, position_code: str) -> int: ...
+    async def upsert_citizenship(self, player_id: str, fk_country: str) -> None: ...
 
 
 class ScrapeJobProcessor:
@@ -105,20 +106,27 @@ class ScrapeJobProcessor:
                 raw.fk_national_team = self._country_name_cache.get(
                     raw.national_team_name
                 )
-            if raw.citizenship_name is not None:
-                raw.fk_citizenship = self._country_name_cache.get(raw.citizenship_name)
             if raw.youth_nat_team_name is not None:
                 raw.fk_youth_nat_team = self._country_name_cache.get(
                     raw.youth_nat_team_name
                 )
+            if raw.citizenship_name is not None:
+                fk_citizenship = self._country_name_cache.get(raw.citizenship_name)
+                if fk_citizenship and fk_citizenship in self._valid_countries:
+                    raw.fk_citizenship = fk_citizenship
+                else:
+                    if raw.citizenship_name:
+                        logger.warning(
+                            "Citizenship name not found in cache: %r",
+                            raw.citizenship_name,
+                        )
+                    raw.fk_citizenship = None
 
             # Validate resolved FK country IDs against the allowed set
             if raw.fk_country_birth not in self._valid_countries:
                 raw.fk_country_birth = None
             if raw.fk_national_team not in self._valid_countries:
                 raw.fk_national_team = None
-            if raw.fk_citizenship not in self._valid_countries:
-                raw.fk_citizenship = None
             if raw.fk_youth_nat_team not in self._valid_countries:
                 raw.fk_youth_nat_team = None
 
@@ -127,6 +135,10 @@ class ScrapeJobProcessor:
 
             await self._player_info_repo.upsert_player_info(raw, pos_ids)
             await self._player_info_repo.upsert_photo(raw.player_id, raw.photo_url)
+            if raw.fk_citizenship is not None:
+                await self._player_info_repo.upsert_citizenship(
+                    raw.player_id, raw.fk_citizenship
+                )
             await self._queue_repo.mark_done(job.id)  # type: ignore[arg-type]
 
             country_id = raw.fk_national_team or raw.fk_country_birth

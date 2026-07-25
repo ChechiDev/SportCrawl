@@ -134,40 +134,6 @@ class TestScrapeJobProcessorSuccess:
         upserted_raw: PlayerInfoRawData = call_args[0][0]
         assert upserted_raw.fk_country_birth == "ESP"
 
-    async def test_success_resolves_citizenship_from_cache(self) -> None:
-        """citizenship_name → fk_citizenship resolved from country_name_cache."""
-
-        raw = _make_raw_data()
-        raw.citizenship_name = "Spain"
-        page = _make_page(raw)
-        job = _make_job()
-
-        scraper = MagicMock()
-        scraper.parse.return_value = page
-
-        player_info_repo = AsyncMock()
-        player_info_repo.upsert_player_info = AsyncMock()
-        player_info_repo.upsert_photo = AsyncMock()
-        player_info_repo.upsert_position = AsyncMock(return_value=2)
-
-        queue_repo = AsyncMock()
-        queue_repo.mark_done = AsyncMock()
-
-        country_name_cache = {"Spain": "ESP"}
-        processor = ScrapeJobProcessor(
-            scraper=scraper,
-            queue_repo=queue_repo,
-            player_info_repo=player_info_repo,
-            country_name_cache=country_name_cache,
-            position_cache={},
-            valid_countries=frozenset(["ESP"]),
-        )
-
-        await processor.process(job, "<html></html>")
-
-        call_args = player_info_repo.upsert_player_info.call_args
-        upserted_raw: PlayerInfoRawData = call_args[0][0]
-        assert upserted_raw.fk_citizenship == "ESP"
 
     async def test_success_resolves_youth_nat_team_from_cache(self) -> None:
         """youth_nat_team_name → fk_youth_nat_team resolved from country_name_cache."""
@@ -203,6 +169,109 @@ class TestScrapeJobProcessorSuccess:
         call_args = player_info_repo.upsert_player_info.call_args
         upserted_raw: PlayerInfoRawData = call_args[0][0]
         assert upserted_raw.fk_youth_nat_team == "ESP"
+
+    async def test_success_resolves_citizenship_and_calls_upsert_citizenship(
+        self,
+    ) -> None:
+        """citizenship_name → fk_citizenship resolved; upsert_citizenship is called."""
+
+        raw = _make_raw_data()
+        raw.citizenship_name = "Argentina"
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+        player_info_repo.upsert_citizenship = AsyncMock()
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["ARG"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        player_info_repo.upsert_citizenship.assert_called_once_with("abc12345", "ARG")
+
+    async def test_citizenship_not_called_when_name_is_none(self) -> None:
+        """upsert_citizenship must NOT be called when citizenship_name is absent."""
+
+        raw = _make_raw_data()
+        raw.citizenship_name = None
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+        player_info_repo.upsert_citizenship = AsyncMock()
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["ARG"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        player_info_repo.upsert_citizenship.assert_not_called()
+
+    async def test_citizenship_not_called_when_country_not_in_valid_set(
+        self,
+    ) -> None:
+        """upsert_citizenship must NOT be called when citizenship FK is invalid."""
+
+        raw = _make_raw_data()
+        raw.citizenship_name = "Argentina"
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+        player_info_repo.upsert_citizenship = AsyncMock()
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["BRA"]),  # ARG excluded
+        )
+
+        await processor.process(job, "<html></html>")
+
+        player_info_repo.upsert_citizenship.assert_not_called()
 
     async def test_invalid_country_id_is_nullified(self) -> None:
         """FK country IDs not in valid_countries must be set to None before upsert."""

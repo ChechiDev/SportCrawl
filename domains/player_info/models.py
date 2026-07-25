@@ -61,8 +61,8 @@ class PlayerInfoRawData(BaseModel):
     youth_nat_team_name: str | None = None
     club_name: str | None = None
     club_url: str | None = None
-    fk_citizenship: str | None = None
     fk_youth_nat_team: str | None = None
+    fk_citizenship: str | None = None
 
 
 class PlayerInfoPage(BaseModel):

@@ -90,15 +90,6 @@ class PlayerInfo(Base):
     player_foot: Mapped[str | None] = mapped_column(String(20), nullable=True)
     player_wages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     player_expires: Mapped[date | None] = mapped_column(Date, nullable=True)
-    fk_citizenship: Mapped[str | None] = mapped_column(
-        String(10),
-        ForeignKey(
-            "sch_shared.tbl_countries.country_id",
-            ondelete="SET NULL",
-            name="tbl_player_info_fk_citizenship_fkey",
-        ),
-        nullable=True,
-    )
     fk_youth_nat_team: Mapped[str | None] = mapped_column(
         String(10),
         ForeignKey(
@@ -128,7 +119,6 @@ class PlayerInfo(Base):
         Index("ix_player_info_fk_ply_pos_1", "fk_ply_pos_1"),
         Index("ix_player_info_fk_ply_pos_2", "fk_ply_pos_2"),
         Index("ix_player_info_fk_ply_pos_3", "fk_ply_pos_3"),
-        Index("ix_player_info_fk_citizenship", "fk_citizenship"),
         Index("ix_player_info_fk_youth_nat_team", "fk_youth_nat_team"),
         {"schema": "sch_shared"},
     )

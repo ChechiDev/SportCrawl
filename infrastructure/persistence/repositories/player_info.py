@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,7 +103,6 @@ class PlayerInfoRepository:
                 "player_id": raw.player_id,
                 "fk_country_birth": raw.fk_country_birth,
                 "fk_national_team": raw.fk_national_team,
-                "fk_citizenship": raw.fk_citizenship,
                 "fk_youth_nat_team": raw.fk_youth_nat_team,
                 "city_name": raw.city_name,
                 "player_born": raw.player_born,
@@ -124,7 +124,6 @@ class PlayerInfoRepository:
                 set_={
                     "fk_country_birth": stmt.excluded.fk_country_birth,
                     "fk_national_team": stmt.excluded.fk_national_team,
-                    "fk_citizenship": stmt.excluded.fk_citizenship,
                     "fk_youth_nat_team": stmt.excluded.fk_youth_nat_team,
                     "city_name": stmt.excluded.city_name,
                     "player_born": stmt.excluded.player_born,
@@ -170,3 +169,23 @@ class PlayerInfoRepository:
                 set_={"player_photo_url": stmt.excluded.player_photo_url},
             )
             await self._session.execute(stmt)
+
+    async def upsert_citizenship(self, player_id: str, fk_country: str) -> None:
+        """Insert a citizenship row, ignoring if the pair already exists.
+
+        Args:
+            player_id: FBRef slug (FK → tbl_players.player_id).
+            fk_country: country_id FK (FK → tbl_countries.country_id).
+
+        Raises:
+            RepositoryError: if the insert fails.
+        """
+        async with repo_error_context("upsert_citizenship", "upsert_citizenship failed"):
+            stmt = sa.text(
+                "INSERT INTO sch_shared.tbl_player_citizenship (player_id, fk_country)"
+                " VALUES (:player_id, :fk_country)"
+                " ON CONFLICT (player_id, fk_country) DO NOTHING"
+            )
+            await self._session.execute(
+                stmt, {"player_id": player_id, "fk_country": fk_country}
+            )

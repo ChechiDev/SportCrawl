@@ -26,7 +26,7 @@ class PlayerCitizenship(Base):
         ),
         primary_key=True,
     )
-    country_id: Mapped[str] = mapped_column(
+    fk_country: Mapped[str] = mapped_column(
         String(10),
         ForeignKey(
             "sch_shared.tbl_countries.country_id",
@@ -37,6 +37,6 @@ class PlayerCitizenship(Base):
     )
 
     __table_args__ = (
-        Index("ix_player_citizenship_country_id", "country_id"),
+        Index("ix_tbl_player_citizenship_fk_country", "fk_country"),
         {"schema": "sch_shared"},
     )
