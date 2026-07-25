@@ -38,8 +38,12 @@ from infrastructure.persistence.repositories.player_info_queue import (
 from infrastructure.persistence.repositories.player_list_queue import (
     PlayerListQueueRepository,
 )
+from infrastructure.persistence.repositories.team_list_queue import (
+    TeamListQueueRepository,
+)
 from infrastructure.persistence.session import create_session_factory, get_session
 from scripts.scrape_country_teams import CountryTeamsWorker
+from scripts.scrape_country_teams import _seed_queue as _seed_country_teams_queue
 from scripts.scrape_player_info import (
     PlayerInfoWorker,
     _load_country_ids,
@@ -158,11 +162,12 @@ def _build_unified_display(
     s3_workers: int,
     s3_total: int,
     s3_ready: bool,
+    s1_done_initial: int = 0,
     s2_initial_db: int = 0,
     s3_initial_db: int = 0,
 ) -> Group:
     # --- Step 1: Teams ---
-    s1_done = sum(s1_counts.values())
+    s1_done = s1_done_initial + sum(s1_counts.values())
     s1_total_str = f"{s1_done}/{s1_total}" if s1_total else str(s1_done)
     s1_header = Text.assemble(("Scraping Teams", "bold"))
     s1_table = Table.grid(padding=(0, 2))
@@ -311,6 +316,7 @@ async def _display_loop(
     s3_ready_event: asyncio.Event,
     stop_event: asyncio.Event,
     live: Live,
+    s1_done_initial: int = 0,
     s2_initial_db: int = 0,
     s3_initial_db: int = 0,
 ) -> None:
@@ -329,6 +335,7 @@ async def _display_loop(
             s3_workers,
             s3_total_ref[0],
             s3_ready_event.is_set(),
+            s1_done_initial=s1_done_initial,
             s2_initial_db=s2_initial_db,
             s3_initial_db=s3_initial_db,
         )
@@ -348,6 +355,7 @@ async def _display_loop(
         s3_workers,
         s3_total_ref[0],
         s3_ready_event.is_set(),
+        s1_done_initial=s1_done_initial,
         s2_initial_db=s2_initial_db,
         s3_initial_db=s3_initial_db,
     )
@@ -444,11 +452,41 @@ async def main(
                 sa.select(Country.country_id, Country.country_name)
             )
             s1_country_names = {r[0]: r[1] for r in names_result.fetchall()}
-    s1_total = len(s1_rows)
-    s1_worker_count = min(len(s1_rows), workers) if s1_rows else 0
-    s1_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
-    for row in s1_rows:
-        await s1_queue.put((row[0], row[1]))
+    # Build lookup map for workers: clubs_url → fk_country
+    s1_url_to_country: dict[str, str] = {
+        clubs_url: fk_country for fk_country, clubs_url in s1_rows
+    }
+    # Determine country_filter for s1 workers from --country arg
+    s1_country_filter: set[str] | None = (
+        {c.upper() for c in country} if country else None
+    )
+
+    if with_teams:
+        await _seed_country_teams_queue(session_factory, s1_rows)
+        async with get_session(session_factory) as session:
+            await TeamListQueueRepository(session).recover_all_stale()
+            await session.commit()
+
+    s1_total = 0
+    s1_done_initial = 0
+    if with_teams:
+        async with get_session(session_factory) as session:
+            result = await session.execute(
+                sa.text(
+                    "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                    " WHERE clubs_url IS NOT NULL"
+                )
+            )
+            s1_total = int(result.scalar() or 0)
+            result2 = await session.execute(
+                sa.text(
+                    "SELECT count(*) FROM sch_infra.scrape_queue"
+                    " WHERE job_type='team_list' AND status='DONE'"
+                )
+            )
+            s1_done_initial = int(result2.scalar() or 0)
+    pending = s1_total - s1_done_initial
+    s1_worker_count = min(pending, workers) if pending else 0
 
     # --- Seed and recover step 2 ---
     if all_countries:
@@ -563,6 +601,7 @@ async def main(
         workers,
         s3_total_ref[0],
         False,
+        s1_done_initial=s1_done_initial,
         s2_initial_db=s2_initial_db,
         s3_initial_db=s3_initial_db,
     )
@@ -592,6 +631,7 @@ async def main(
                     step3_ready,
                     stop_event,
                     live,
+                    s1_done_initial=s1_done_initial,
                     s2_initial_db=s2_initial_db,
                     s3_initial_db=s3_initial_db,
                 )
@@ -623,7 +663,8 @@ async def main(
                             worker_labels=s1_labels,
                             worker_counts=s1_counts,
                             settings=settings,
-                            queue=s1_queue,
+                            url_to_country=s1_url_to_country,
+                            country_filter=s1_country_filter,
                             country_names=s1_country_names,
                         ).run()
                     )
@@ -757,13 +798,23 @@ def run() -> None:
         dest="all_countries",
         help="Seed all countries from the database into the player_list queue.",
     )
+    parser.add_argument(
+        "--country",
+        type=str,
+        default=None,
+        help="Comma-separated country codes to filter (e.g. ARG,BRA).",
+    )
     args = parser.parse_args()
+    country_list = (
+        [c.strip().upper() for c in args.country.split(",")] if args.country else None
+    )
 
     asyncio.run(
         main(
             workers=args.workers,
             trigger_count=args.trigger_count,
             all_countries=args.all_countries,
+            country=country_list,
         )
     )
 
