@@ -162,11 +162,12 @@ def _build_unified_display(
     s3_workers: int,
     s3_total: int,
     s3_ready: bool,
+    s1_done_initial: int = 0,
     s2_initial_db: int = 0,
     s3_initial_db: int = 0,
 ) -> Group:
     # --- Step 1: Teams ---
-    s1_done = sum(s1_counts.values())
+    s1_done = s1_done_initial + sum(s1_counts.values())
     s1_total_str = f"{s1_done}/{s1_total}" if s1_total else str(s1_done)
     s1_header = Text.assemble(("Scraping Teams", "bold"))
     s1_table = Table.grid(padding=(0, 2))
@@ -315,6 +316,7 @@ async def _display_loop(
     s3_ready_event: asyncio.Event,
     stop_event: asyncio.Event,
     live: Live,
+    s1_done_initial: int = 0,
     s2_initial_db: int = 0,
     s3_initial_db: int = 0,
 ) -> None:
@@ -333,6 +335,7 @@ async def _display_loop(
             s3_workers,
             s3_total_ref[0],
             s3_ready_event.is_set(),
+            s1_done_initial=s1_done_initial,
             s2_initial_db=s2_initial_db,
             s3_initial_db=s3_initial_db,
         )
@@ -352,6 +355,7 @@ async def _display_loop(
         s3_workers,
         s3_total_ref[0],
         s3_ready_event.is_set(),
+        s1_done_initial=s1_done_initial,
         s2_initial_db=s2_initial_db,
         s3_initial_db=s3_initial_db,
     )
@@ -464,16 +468,25 @@ async def main(
             await session.commit()
 
     s1_total = 0
+    s1_done_initial = 0
     if with_teams:
         async with get_session(session_factory) as session:
             result = await session.execute(
                 sa.text(
-                    "SELECT count(*) FROM sch_infra.scrape_queue"
-                    " WHERE job_type='team_list' AND status='PENDING'"
+                    "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                    " WHERE clubs_url IS NOT NULL"
                 )
             )
             s1_total = int(result.scalar() or 0)
-    s1_worker_count = min(s1_total, workers) if s1_total else 0
+            result2 = await session.execute(
+                sa.text(
+                    "SELECT count(*) FROM sch_infra.scrape_queue"
+                    " WHERE job_type='team_list' AND status='DONE'"
+                )
+            )
+            s1_done_initial = int(result2.scalar() or 0)
+    pending = s1_total - s1_done_initial
+    s1_worker_count = min(pending, workers) if pending else 0
 
     # --- Seed and recover step 2 ---
     if all_countries:
@@ -588,6 +601,7 @@ async def main(
         workers,
         s3_total_ref[0],
         False,
+        s1_done_initial=s1_done_initial,
         s2_initial_db=s2_initial_db,
         s3_initial_db=s3_initial_db,
     )
@@ -617,6 +631,7 @@ async def main(
                     step3_ready,
                     stop_event,
                     live,
+                    s1_done_initial=s1_done_initial,
                     s2_initial_db=s2_initial_db,
                     s3_initial_db=s3_initial_db,
                 )
