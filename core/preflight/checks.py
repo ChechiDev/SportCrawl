@@ -49,6 +49,11 @@ _REVISION_ORDER = [
     "p16b",
     "p17a",
     "p18a",
+    "p19a",
+    "p20a",
+    "p21a",
+    "p22a",
+    "p23a",
 ]
 
 
@@ -57,7 +62,13 @@ def _revision_gte(current: str, minimum: str) -> bool:
     try:
         return _REVISION_ORDER.index(current) >= _REVISION_ORDER.index(minimum)
     except ValueError:
-        return current == minimum
+        logger.warning(
+            "Revision not found in _REVISION_ORDER: current=%r minimum=%r — "
+            "treating DB as out of date to force upgrade",
+            current,
+            minimum,
+        )
+        return False
 
 
 _COUNTRIES_TABLES = [

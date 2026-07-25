@@ -33,7 +33,7 @@ def _make_raw_data() -> PlayerInfoRawData:
         fk_country_birth=None,
         country_birth_name="Argentina",
         national_team_name="Argentina",
-        fk_national_team=None,
+        fk_nat_team=None,
         city_name="Buenos Aires",
         player_born=None,
         player_height=180,
@@ -308,7 +308,41 @@ class TestScrapeJobProcessorSuccess:
         call_args = player_info_repo.upsert_player_info.call_args
         upserted_raw: PlayerInfoRawData = call_args[0][0]
         assert upserted_raw.fk_country_birth is None
-        assert upserted_raw.fk_national_team is None
+        assert upserted_raw.fk_nat_team is None
+
+    async def test_success_resolves_nat_team_from_cache(self) -> None:
+        """national_team_name → fk_nat_team resolved from country_name_cache."""
+
+        raw = _make_raw_data()
+        raw.national_team_name = "Argentina"
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["ARG"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        call_args = player_info_repo.upsert_player_info.call_args
+        upserted_raw: PlayerInfoRawData = call_args[0][0]
+        assert upserted_raw.fk_nat_team == "ARG"
 
 
 class TestScrapeJobProcessorCityUpsert:
@@ -440,3 +474,80 @@ class TestScrapeJobProcessorFailure:
 
         queue_repo.mark_failed.assert_called_once()
         queue_repo.mark_done.assert_not_called()
+
+
+class TestScrapeJobProcessorTeamStub:
+    async def test_upsert_team_stub_called_when_fk_team_is_set(self) -> None:
+        """upsert_team_stub must be called before upsert_player_info when fk_team is set."""
+        raw = _make_raw_data()
+        raw.fk_team = "0e08d4eb"
+        raw.club_url = "https://fbref.com/en/squads/0e08d4eb/Barcelona"
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        call_order: list[str] = []
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock(
+            side_effect=lambda *a, **kw: call_order.append("upsert_player_info")
+        )
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+        player_info_repo.upsert_team_stub = AsyncMock(
+            side_effect=lambda *a, **kw: call_order.append("upsert_team_stub")
+        )
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["ARG"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        player_info_repo.upsert_team_stub.assert_called_once_with(
+            "0e08d4eb", "https://fbref.com/en/squads/0e08d4eb/Barcelona"
+        )
+        assert call_order == ["upsert_team_stub", "upsert_player_info"]
+
+    async def test_upsert_team_stub_not_called_when_fk_team_is_none(self) -> None:
+        """upsert_team_stub must NOT be called when fk_team is None."""
+        raw = _make_raw_data()
+        raw.fk_team = None
+        raw.club_url = None
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+        player_info_repo.upsert_team_stub = AsyncMock()
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["ARG"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        player_info_repo.upsert_team_stub.assert_not_called()

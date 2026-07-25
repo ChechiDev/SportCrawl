@@ -35,6 +35,7 @@ from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
 logger = logging.getLogger(__name__)
 
 _HEIGHT_RE = re.compile(r"(\d+)\s*cm", re.IGNORECASE)
+_TEAM_ID_RE = re.compile(r"/en/squads/([a-f0-9]{8})/")
 _WEIGHT_RE = re.compile(r"(\d+)\s*kg", re.IGNORECASE)
 _WAGES_RE = re.compile(r"£([\d,]+)")
 _EXPIRES_RE = re.compile(
@@ -58,6 +59,37 @@ _MONTHS = {
     "november": 11,
     "december": 12,
 }
+
+
+def _extract_team_id(club_url: str | None) -> str | None:
+    """Extract the 8-char hex team_id from a FBRef squad URL.
+
+    Args:
+        club_url: Relative URL like '/en/squads/0e08d4eb/Valle-Egues-Stats', or None.
+
+    Returns:
+        8-char hex string (e.g. '0e08d4eb') or None if no match.
+    """
+    if club_url is None:
+        return None
+    m = _TEAM_ID_RE.search(club_url)
+    return m.group(1) if m else None
+
+
+def _calculate_age(born: date | None) -> int | None:
+    """Calculate age in years from birth date.
+
+    Uses simple integer division of days — close enough for scraping purposes.
+
+    Args:
+        born: Date of birth, or None.
+
+    Returns:
+        Age in whole years, or None.
+    """
+    if born is None:
+        return None
+    return (date.today() - born).days // 365
 
 
 def _clean(raw: str) -> str | None:
@@ -355,6 +387,9 @@ class PlayerInfoScraper:
         player_wages, player_expires = _parse_wages_expires(scope)
         photo_url = _parse_photo(soup)
 
+        team_id = _extract_team_id(club_url)
+        player_age = _calculate_age(player_born)
+
         raw = PlayerInfoRawData(
             player_id=self._player_id,
             full_name=full_name,
@@ -362,13 +397,15 @@ class PlayerInfoScraper:
             fk_country_birth=None,
             country_birth_name=country_birth_name,
             national_team_name=national_team_name,
-            fk_national_team=None,
+            fk_nat_team=None,
             citizenship_name=citizenship_name,
             youth_nat_team_name=youth_nat_team_name,
             club_name=club_name,
             club_url=club_url,
+            fk_team=team_id,
             city_name=city_name,
             player_born=player_born,
+            player_age=player_age,
             player_height=player_height,
             player_weight=player_weight,
             position_1=position_1,

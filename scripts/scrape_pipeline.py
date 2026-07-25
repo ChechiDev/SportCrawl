@@ -709,6 +709,13 @@ async def main(
                 for i in range(s2_worker_count)
             ]
 
+            # Fire trigger immediately if there are no step-2 workers (players
+            # already scraped or no countries queued) — avoids a deadlock where
+            # step2_done is only set after step3_ready, making the watcher fallback
+            # unreachable.
+            if not s2_tasks:
+                step3_ready.set()
+
             # --- Wait for trigger (tbl_players count >= trigger_count) ---
             await step3_ready.wait()
 
