@@ -21,13 +21,13 @@ from core.preflight.checks import (
 from core.preflight.renderer import render_check, render_compact
 from core.preflight.result import CheckResult
 
-REQUIRED_HEAD = "p17a"
+REQUIRED_HEAD = "p18a"
 _CHECK_DISPLAY_DELAY_S = 1.5
 
 MINIMUM_REVISION: dict[str, str] = {
     "countries": "p10d_add_fk_ondelete",
     "players": "p16b",
-    "player_info": "p17a",
+    "player_info": "p18a",
     "club_teams": "p16b",
 }
 

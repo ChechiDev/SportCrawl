@@ -164,6 +164,61 @@ class TestUpsertPhoto:
         assert PlayerPhoto in call_tables
 
 
+class TestUpsertCity:
+    async def test_upsert_city_inserts_new_city_and_returns_id(self) -> None:
+        """upsert_city must execute INSERT and return the city_id from SELECT."""
+        session = _make_session()
+
+        result_insert = MagicMock()
+        result_select = MagicMock()
+        result_select.scalar.return_value = 99
+        session.execute.side_effect = [result_insert, result_select]
+
+        repo = PlayerInfoRepository(session)
+        city_id = await repo.upsert_city("Buenos Aires")
+
+        assert city_id == 99
+        assert session.execute.call_count == 2
+        # First call: INSERT
+        first_sql = str(session.execute.call_args_list[0][0][0])
+        assert "tbl_cities" in first_sql
+        assert "ON CONFLICT" in first_sql
+        first_params = session.execute.call_args_list[0][0][1]
+        assert first_params["city_name"] == "Buenos Aires"
+
+    async def test_upsert_city_returns_existing_id_on_conflict(self) -> None:
+        """upsert_city must return the existing city_id even when INSERT is a no-op."""
+        session = _make_session()
+
+        result_insert = MagicMock()
+        result_select = MagicMock()
+        result_select.scalar.return_value = 7
+        session.execute.side_effect = [result_insert, result_select]
+
+        repo = PlayerInfoRepository(session)
+        city_id = await repo.upsert_city("Rosario")
+
+        assert city_id == 7
+
+    async def test_upsert_player_info_uses_fk_city_not_city_name(self) -> None:
+        """upsert_player_info must pass fk_city (int FK), not city_name (string)."""
+        session = _make_session()
+        raw = _make_raw()
+        raw.fk_city = 42
+        pos_ids: tuple[int | None, int | None, int | None] = (1, None, None)
+
+        with _pg_insert_mock(_REPO_MODULE) as mock_pg_insert:
+            stmt_mock = mock_pg_insert.return_value
+            repo = PlayerInfoRepository(session)
+            await repo.upsert_player_info(raw=raw, pos_ids=pos_ids)
+
+        # The values dict passed to .values() must contain fk_city, not city_name
+        values_call_kwargs = stmt_mock.values.call_args[1]
+        assert "fk_city" in values_call_kwargs
+        assert "city_name" not in values_call_kwargs
+        assert values_call_kwargs["fk_city"] == 42
+
+
 class TestUpsertCitizenship:
     async def test_upsert_citizenship_executes_insert(self) -> None:
         """upsert_citizenship must call session.execute with the correct SQL."""

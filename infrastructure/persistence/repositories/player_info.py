@@ -104,7 +104,7 @@ class PlayerInfoRepository:
                 "fk_country_birth": raw.fk_country_birth,
                 "fk_national_team": raw.fk_national_team,
                 "fk_youth_nat_team": raw.fk_youth_nat_team,
-                "city_name": raw.city_name,
+                "fk_city": raw.fk_city,
                 "player_born": raw.player_born,
                 "player_height": raw.player_height,
                 "player_weight": raw.player_weight,
@@ -125,7 +125,7 @@ class PlayerInfoRepository:
                     "fk_country_birth": stmt.excluded.fk_country_birth,
                     "fk_national_team": stmt.excluded.fk_national_team,
                     "fk_youth_nat_team": stmt.excluded.fk_youth_nat_team,
-                    "city_name": stmt.excluded.city_name,
+                    "fk_city": stmt.excluded.fk_city,
                     "player_born": stmt.excluded.player_born,
                     "player_height": stmt.excluded.player_height,
                     "player_weight": stmt.excluded.player_weight,
@@ -169,6 +169,38 @@ class PlayerInfoRepository:
                 set_={"player_photo_url": stmt.excluded.player_photo_url},
             )
             await self._session.execute(stmt)
+
+    async def upsert_city(self, city_name: str) -> int:
+        """Insert city if not exists, return city_id.
+
+        Args:
+            city_name: Free-text birth city name.
+
+        Returns:
+            The city_id (existing or newly created).
+
+        Raises:
+            RepositoryError: if any database operation fails.
+        """
+        async with repo_error_context("upsert_city", "upsert_city failed"):
+            await self._session.execute(
+                sa.text(
+                    "INSERT INTO sch_shared.tbl_cities (city_name)"
+                    " VALUES (:city_name)"
+                    " ON CONFLICT (city_name) DO NOTHING"
+                ),
+                {"city_name": city_name},
+            )
+            result = await self._session.execute(
+                sa.text(
+                    "SELECT city_id FROM sch_shared.tbl_cities WHERE city_name = :city_name"
+                ),
+                {"city_name": city_name},
+            )
+            city_id = result.scalar()
+            if city_id is None:
+                raise ValueError(f"City not found after upsert: {city_name!r}")
+            return int(city_id)
 
     async def upsert_citizenship(self, player_id: str, fk_country: str) -> None:
         """Insert a citizenship row, ignoring if the pair already exists.

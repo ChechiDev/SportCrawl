@@ -46,6 +46,7 @@ class PlayerInfoRawData(BaseModel):
     national_team_name: str | None = None
     fk_national_team: str | None = None
     city_name: str | None = None
+    fk_city: int | None = None
     player_born: date | None = None
     player_height: int | None = None
     player_weight: int | None = None

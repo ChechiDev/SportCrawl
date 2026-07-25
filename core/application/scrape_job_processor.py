@@ -37,6 +37,7 @@ class _PlayerInfoRepo(Protocol):
     async def upsert_photo(self, player_id: str, photo_url: str | None) -> None: ...
     async def upsert_position(self, position_code: str) -> int: ...
     async def upsert_citizenship(self, player_id: str, fk_country: str) -> None: ...
+    async def upsert_city(self, city_name: str) -> int: ...
 
 
 class ScrapeJobProcessor:
@@ -132,6 +133,9 @@ class ScrapeJobProcessor:
 
             # Resolve position codes to surrogate IDs
             pos_ids = await self._resolve_positions(raw)
+
+            if raw.city_name is not None:
+                raw.fk_city = await self._player_info_repo.upsert_city(raw.city_name)
 
             await self._player_info_repo.upsert_player_info(raw, pos_ids)
             await self._player_info_repo.upsert_photo(raw.player_id, raw.photo_url)

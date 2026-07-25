@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 
 from bs4 import BeautifulSoup, Tag
 
@@ -138,14 +138,43 @@ def _parse_height_weight(soup: BeautifulSoup | Tag) -> tuple[int | None, int | N
     return None, None
 
 
+def _find_born_paragraph(soup: BeautifulSoup | Tag) -> Tag | None:
+    """Return the <p> that contains <strong>Born:</strong>."""
+    for strong in soup.find_all("strong"):
+        if not isinstance(strong, Tag):
+            continue
+        if strong.get_text(strip=True) in ("Born:", "Born"):
+            p = strong.find_parent("p")
+            if p and isinstance(p, Tag):
+                return p
+    return None
+
+
+def _find_birth_location_text(born_p: Tag) -> str | None:
+    """Return cleaned text of the span containing 'in City, Country' inside the Born <p>."""
+    for span in born_p.find_all("span"):
+        if not isinstance(span, Tag):
+            continue
+        # Strip ASCII whitespace AND \xa0 (non-breaking space from &nbsp;)
+        text = span.get_text(strip=True).strip("\xa0").strip()
+        if text.startswith("in "):
+            return text
+    return None
+
+
 def _parse_birth(soup: BeautifulSoup | Tag) -> tuple[date | None, str | None]:
-    """Extract birth date and city from the necro-birth span."""
+    """Extract birth date and city from the Born paragraph."""
     player_born: date | None = None
     city_name: str | None = None
 
-    birth_span = soup.find("span", id="necro-birth")
-    if birth_span and isinstance(birth_span, Tag):
-        data_birth = birth_span.get("data-birth")
+    born_p = _find_born_paragraph(soup)
+    if not born_p:
+        return player_born, city_name
+
+    # Try data-birth attribute first (necro-birth span), fall back to text parse
+    necro = born_p.find("span", id="necro-birth")
+    if necro and isinstance(necro, Tag):
+        data_birth = necro.get("data-birth")
         if data_birth:
             try:
                 parts = str(data_birth).split("-")
@@ -153,36 +182,49 @@ def _parse_birth(soup: BeautifulSoup | Tag) -> tuple[date | None, str | None]:
             except (ValueError, IndexError):
                 pass
 
-        # City comes after "in" in the born paragraph: "... ) in Mataró, Spain"
-        parent = birth_span.find_parent("p")
-        if parent and isinstance(parent, Tag):
-            full_text = parent.get_text(separator=" ", strip=True)
-            # Match "in <City>" — the city ends at a comma or end of meaningful text
-            m = re.search(
-                r"\bin\s+([\w\s\-áéíóúàèìòùäëïöüñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÑÇ]+?)"
-                r"(?:\s*,|\s*$)",
-                full_text,
-            )
-            if m:
-                city_name = m.group(1).strip() or None
+    if player_born is None:
+        # Fall back: parse date from the first span whose text looks like a date
+        for span in born_p.find_all("span"):
+            if not isinstance(span, Tag):
+                continue
+            if span.get("id") == "necro-birth":
+                continue
+            text = span.get_text(strip=True).strip("\xa0").strip()
+            if not text or text.startswith("in ") or text.startswith("f-i"):
+                continue
+            try:
+                player_born = datetime.strptime(text, "%B %d, %Y").date()
+                break
+            except ValueError:
+                pass
+
+    location_text = _find_birth_location_text(born_p)
+    if location_text:
+        m = re.search(
+            r"^in\s+([\w\s\-áéíóúàèìòùäëïöüñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÑÇ]+?)"
+            r"(?:\s*,|$)",
+            location_text,
+        )
+        if m:
+            city_name = m.group(1).strip() or None
 
     return player_born, city_name
 
 
 def _parse_country_birth_name(soup: BeautifulSoup | Tag) -> str | None:
-    """Extract birth country name from 'in City, Country' text near necro-birth span."""
-    birth_span = soup.find("span", id="necro-birth")
-    if not birth_span or not isinstance(birth_span, Tag):
+    """Extract birth country name from the dedicated 'in City, Country' span."""
+    born_p = _find_born_paragraph(soup)
+    if not born_p:
         return None
-    parent = birth_span.find_parent("p")
-    if not parent or not isinstance(parent, Tag):
+    location_text = _find_birth_location_text(born_p)
+    if not location_text:
         return None
-    full_text = parent.get_text(separator=" ", strip=True).strip()
-    m = re.search(r"\bin\s+[^,]+,\s*([A-Za-z\s\-]+)", full_text)
+    # "in City, Country" → country is after the comma
+    m = re.search(r",\s*([A-Za-zÀ-ÖØ-öø-ÿ\s\-]+)$", location_text)
     if m:
         return _clean(m.group(1))
-    # Fallback: "in <Country>" with no city
-    m2 = re.search(r"\bin\s+([A-Za-z\s\-]+)", full_text)
+    # Fallback: "in Country" with no city
+    m2 = re.search(r"^in\s+([A-Za-zÀ-ÖØ-öø-ÿ\s\-]+)$", location_text)
     if m2:
         return _clean(m2.group(1))
     return None

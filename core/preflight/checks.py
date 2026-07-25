@@ -48,6 +48,7 @@ _REVISION_ORDER = [
     "p16a",
     "p16b",
     "p17a",
+    "p18a",
 ]
 
 

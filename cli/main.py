@@ -164,7 +164,7 @@ def reset_db(
             "[bold red]WARNING[/bold red]\n\n"
             "This will delete ALL scraped data:\n"
             "  • sch_shared: countries, players, player_info, photos, positions,\n"
-            "    country_squads, teams, competition\n"
+            "    country_squads, teams, competition, cities, player_citizenship\n"
             "  • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
             "Schemas and migrations will NOT be touched.",
             title="[red]Reset Database[/red]",
@@ -197,11 +197,13 @@ async def _do_reset(console: Console) -> None:
         tables = [
             ("sch_shared", "tbl_player_info"),
             ("sch_shared", "tbl_player_photo"),
+            ("sch_shared", "tbl_player_citizenship"),
             ("sch_shared", "tbl_player_positions"),
             ("sch_shared", "tbl_players"),
             ("sch_shared", "tbl_teams"),
             ("sch_shared", "tbl_country_squads"),
             ("sch_shared", "tbl_competition"),
+            ("sch_shared", "tbl_cities"),
             ("sch_shared", "tbl_countries"),
             ("sch_shared", "tbl_confederations"),
             ("sch_shared", "tbl_gender"),

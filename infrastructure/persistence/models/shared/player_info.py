@@ -56,7 +56,15 @@ class PlayerInfo(Base):
         ),
         nullable=True,
     )
-    city_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    fk_city: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "sch_shared.tbl_cities.city_id",
+            ondelete="SET NULL",
+            name="tbl_player_info_fk_city_fkey",
+        ),
+        nullable=True,
+    )
     player_born: Mapped[date | None] = mapped_column(Date, nullable=True)
     player_height: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     player_weight: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
@@ -120,5 +128,6 @@ class PlayerInfo(Base):
         Index("ix_player_info_fk_ply_pos_2", "fk_ply_pos_2"),
         Index("ix_player_info_fk_ply_pos_3", "fk_ply_pos_3"),
         Index("ix_player_info_fk_youth_nat_team", "fk_youth_nat_team"),
+        Index("ix_player_info_fk_city", "fk_city"),
         {"schema": "sch_shared"},
     )

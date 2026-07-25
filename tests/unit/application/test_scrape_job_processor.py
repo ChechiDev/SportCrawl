@@ -311,6 +311,76 @@ class TestScrapeJobProcessorSuccess:
         assert upserted_raw.fk_national_team is None
 
 
+class TestScrapeJobProcessorCityUpsert:
+    async def test_upsert_city_called_when_city_name_is_set(self) -> None:
+        """upsert_city must be called with city_name when it is not None."""
+        raw = _make_raw_data()
+        raw.city_name = "Buenos Aires"
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+        player_info_repo.upsert_city = AsyncMock(return_value=55)
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["ARG"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        player_info_repo.upsert_city.assert_called_once_with("Buenos Aires")
+        # fk_city must be set on the raw object before upsert_player_info is called
+        call_args = player_info_repo.upsert_player_info.call_args
+        upserted_raw: PlayerInfoRawData = call_args[0][0]
+        assert upserted_raw.fk_city == 55
+
+    async def test_upsert_city_not_called_when_city_name_is_none(self) -> None:
+        """upsert_city must NOT be called when city_name is None."""
+        raw = _make_raw_data()
+        raw.city_name = None
+        page = _make_page(raw)
+        job = _make_job()
+
+        scraper = MagicMock()
+        scraper.parse.return_value = page
+
+        player_info_repo = AsyncMock()
+        player_info_repo.upsert_player_info = AsyncMock()
+        player_info_repo.upsert_photo = AsyncMock()
+        player_info_repo.upsert_position = AsyncMock(return_value=1)
+        player_info_repo.upsert_city = AsyncMock(return_value=1)
+
+        queue_repo = AsyncMock()
+        queue_repo.mark_done = AsyncMock()
+
+        processor = ScrapeJobProcessor(
+            scraper=scraper,
+            queue_repo=queue_repo,
+            player_info_repo=player_info_repo,
+            country_name_cache={"Argentina": "ARG"},
+            position_cache={},
+            valid_countries=frozenset(["ARG"]),
+        )
+
+        await processor.process(job, "<html></html>")
+
+        player_info_repo.upsert_city.assert_not_called()
+
+
 class TestScrapeJobProcessorFailure:
     async def test_scraper_parse_error_calls_mark_failed(self) -> None:
         """If scraper.parse raises, processor calls mark_failed with the error."""
