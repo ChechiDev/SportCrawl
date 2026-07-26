@@ -155,6 +155,15 @@ def upgrade() -> None:
         sa.text("ALTER TABLE sch_shared.tbl_player_info_new RENAME TO tbl_player_info")
     )
 
+    # 4b. Rename auto-generated PK constraint to match the canonical name so
+    # migration p14d's downgrade (which renames tbl_player_info_pkey) still works.
+    op.execute(
+        sa.text(
+            "ALTER TABLE sch_shared.tbl_player_info "
+            "RENAME CONSTRAINT tbl_player_info_new_pkey TO tbl_player_info_pkey"
+        )
+    )
+
     # 5. Create indexes
     op.execute(
         sa.text(
@@ -329,6 +338,14 @@ def downgrade() -> None:
     # 4. Rename old table back
     op.execute(
         sa.text("ALTER TABLE sch_shared.tbl_player_info_old RENAME TO tbl_player_info")
+    )
+
+    # 4b. Restore canonical PK constraint name so p14d downgrade can find it.
+    op.execute(
+        sa.text(
+            "ALTER TABLE sch_shared.tbl_player_info "
+            "RENAME CONSTRAINT tbl_player_info_old_pkey TO tbl_player_info_pkey"
+        )
     )
 
     # 5. Recreate original indexes

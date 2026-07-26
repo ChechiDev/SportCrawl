@@ -35,11 +35,17 @@ def upgrade() -> None:
     )
     op.execute(
         sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info "
-            "ADD CONSTRAINT tbl_player_info_fk_team_fkey "
-            "FOREIGN KEY (fk_team) "
-            "REFERENCES sch_shared.tbl_teams(team_id) "
-            "ON DELETE SET NULL"
+            "DO $$ BEGIN "
+            "IF NOT EXISTS ("
+            "  SELECT 1 FROM pg_constraint"
+            "  WHERE conname = 'tbl_player_info_fk_team_fkey'"
+            ") THEN "
+            "  ALTER TABLE sch_shared.tbl_player_info "
+            "  ADD CONSTRAINT tbl_player_info_fk_team_fkey "
+            "  FOREIGN KEY (fk_team) "
+            "  REFERENCES sch_shared.tbl_teams(team_id) "
+            "  ON DELETE SET NULL; "
+            "END IF; END $$"
         )
     )
 
