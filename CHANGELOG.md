@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-07-26
+
+### Fixed
+- `PlayerListScraper` now raises `PageLoadError` when 0 players are parsed and no \"N Players\" count header is present — CF challenge pages no longer get marked as DONE; jobs requeue automatically via the never-die policy
+- `CountryPlayersScraper` maps FBRef country code `EIR` (Ireland) to `IRL` (Republic of Ireland) via `_COUNTRY_ID_ALIASES`
+- `upsert_players_url` no-match log downgraded from WARNING to DEBUG for historical/micro-nation countries not present in the DB
+
+### Changed
+- README: CLI section updated to `start` subcommand with `-a`/`-c`/`-w` shorthands; logo width increased to 1024
+
 ## [0.20.0] — 2026-07-25
 
 ### Added
