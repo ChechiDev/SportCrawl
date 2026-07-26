@@ -34,10 +34,10 @@ def downgrade() -> None:
             "  IF EXISTS ("
             "    SELECT 1 FROM pg_tables"
             "    WHERE schemaname = 'sch_infra'"
-            "    AND tablename = 'tbl_player_queue_ref'"
+            "    AND tablename = 'player_queue_ref'"
             "  ) THEN "
             "    CREATE INDEX IF NOT EXISTS ix_player_queue_ref_queue_id"
-            "    ON sch_infra.tbl_player_queue_ref (queue_id);"
+            "    ON sch_infra.player_queue_ref (queue_id);"
             "  END IF;"
             "END $$"
         )
