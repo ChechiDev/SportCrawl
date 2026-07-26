@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -21,3 +23,14 @@ class CountryRawData(BaseModel):
 
 class CountryPage(BaseModel):
     countries: list[CountryRawData]
+
+
+@dataclass
+class CountryPlayersRawData:
+    country_name: str
+    players_url: str
+
+
+@dataclass
+class CountryPlayersPage:
+    entries: list[CountryPlayersRawData]

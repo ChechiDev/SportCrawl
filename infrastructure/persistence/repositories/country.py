@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.repository import RepositoryError
-from domains.country.models import CountryRawData
+from domains.country.models import CountryPlayersRawData, CountryRawData
 from infrastructure.persistence.models.shared.confederation import Confederation
 from infrastructure.persistence.models.shared.country import Country
 from infrastructure.persistence.models.shared.flag import Flag
@@ -107,5 +107,29 @@ class CountryRepository:
             raise RepositoryError(
                 "CountryRepository.upsert failed",
                 operation="upsert",
+                cause=exc,
+            ) from exc
+
+    async def upsert_players_url(self, entries: list[CountryPlayersRawData]) -> None:
+        """Update players_url on tbl_countries rows matching by country_name.
+
+        Args:
+            entries: Parsed country-players index data from the scraper.
+
+        Raises:
+            RepositoryError: if any database operation fails.
+        """
+        try:
+            for entry in entries:
+                stmt = (
+                    sa.update(Country)
+                    .where(Country.country_name == entry.country_name)
+                    .values(players_url=entry.players_url, updated_at=func.now())
+                )
+                await self._session.execute(stmt)
+        except SQLAlchemyError as exc:
+            raise RepositoryError(
+                "CountryRepository.upsert_players_url failed",
+                operation="upsert_players_url",
                 cause=exc,
             ) from exc

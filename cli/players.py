@@ -61,6 +61,26 @@ async def _seed_country_squads(settings: Settings) -> None:
         await scraper.scrape(_SQUADS_URL)
 
 
+async def _seed_country_players_urls(settings: Settings) -> None:
+    import logging
+
+    logging.getLogger("pydoll").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure").setLevel(logging.WARNING)
+    logging.getLogger("ports.scraper").setLevel(logging.ERROR)
+
+    from infrastructure.browser.pydoll_engine import PydollEngine
+    from infrastructure.persistence.session import create_session_factory
+    from infrastructure.scraping.country_players import CountryPlayersScraper
+
+    _PLAYERS_INDEX_URL = "https://fbref.com/en/players/country/"
+    session_factory = create_session_factory(settings.db)
+    async with PydollEngine(
+        profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-players-urls"
+    ) as engine:
+        scraper = CountryPlayersScraper(engine, settings.scraping, session_factory)
+        await scraper.scrape(_PLAYERS_INDEX_URL)
+
+
 async def _seed_with_retry(
     seed_fn: Callable[[], Awaitable[None]],
     count_sql: str,
@@ -172,7 +192,7 @@ async def _run(
             await conn.close()
 
         if existing_countries:
-            console.print(f"  [cyan]✓[/cyan]  {existing_countries} countries loaded.{' ' * 40}")
+            console.print(f"  [cyan]✓[/cyan]  {existing_countries} Countries loaded successfully.{' ' * 40}")
         else:
             country_count = await _seed_with_retry(
                 lambda: _seed_countries(settings),
@@ -180,7 +200,7 @@ async def _run(
                 "countries",
                 dsn,
             )
-            console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
+            console.print(f"  [cyan]✓[/cyan]  {country_count} Countries loaded successfully.{' ' * 40}")
 
         conn = await asyncpg.connect(dsn, timeout=5)
         try:
@@ -189,7 +209,7 @@ async def _run(
             await conn.close()
 
         if existing_squads:
-            console.print(f"  [cyan]✓[/cyan]  {existing_squads} country squads loaded.{' ' * 40}")
+            console.print(f"  [cyan]✓[/cyan]  {existing_squads} Country Teams loaded successfully.{' ' * 40}")
         else:
             squads_count = await _seed_with_retry(
                 lambda: _seed_country_squads(settings),
@@ -197,7 +217,26 @@ async def _run(
                 "country squads",
                 dsn,
             )
-            console.print(f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}")
+            console.print(f"  [cyan]✓[/cyan]  {squads_count} Country Teams loaded successfully.{' ' * 40}")
+
+        conn = await asyncpg.connect(dsn, timeout=5)
+        try:
+            missing_players_url = await conn.fetchval(
+                "SELECT count(*) FROM sch_shared.tbl_countries WHERE players_url IS NULL"
+            )
+        finally:
+            await conn.close()
+
+        if missing_players_url:
+            players_url_count = await _seed_with_retry(
+                lambda: _seed_country_players_urls(settings),
+                "SELECT count(*) FROM sch_shared.tbl_countries WHERE players_url IS NOT NULL",
+                "country players URLs",
+                dsn,
+            )
+            console.print(f"  [cyan]✓[/cyan]  {players_url_count} Countries with Players loaded successfully.{' ' * 40}")
+        else:
+            console.print(f"  [cyan]✓[/cyan]  All Countries with Players loaded successfully.{' ' * 40}")
 
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:

@@ -54,17 +54,7 @@ for _noisy in (
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
-_FBREF_BASE = "https://fbref.com"
-_BASE_URL = "https://fbref.com/en/country/players/{code}/{code}-Football"
 _COUNTRY_CODE_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
-
-COUNTRY_URLS: dict[str, str] = {
-    "ESP": "https://fbref.com/en/country/players/ESP/Spain-Football",
-    "ARG": "https://fbref.com/en/country/players/ARG/Argentina-Football",
-    "BRA": "https://fbref.com/en/country/players/BRA/Brazil-Football",
-    "FRA": "https://fbref.com/en/country/players/FRA/France-Football",
-    "ENG": "https://fbref.com/en/country/players/ENG/England-Football",
-}
 
 
 class PlayerListWorker(BaseWorker["ScrapeQueue"]):
@@ -116,7 +106,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
             engine, self._settings.scraping, self._session_factory
         )
 
-    async def run_claim_loop(self, engine: Any) -> int:  # engine unused: S2 scraper holds its own ref
+    async def run_claim_loop(self, engine: Any) -> int:  # noqa: ARG002
         """Drain player_list jobs for one browser session.
 
         Returns:
@@ -224,28 +214,20 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                 raise CooldownRequired
 
 
-def _players_url(country_url: str) -> str:
-    """Derive player-list URL from country_url stored in DB.
-
-    /en/country/AFG/Afghanistan-Football
-    → https://fbref.com/en/country/players/AFG/Afghanistan-Football
-    """
-    path = country_url.replace("/en/country/", "/en/country/players/", 1)
-    return f"{_FBREF_BASE}{path}"
-
-
 async def _load_all_countries(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> list[tuple[str, str, str]]:
-    """Return (country_id, player_list_url, country_name) for every country."""
+    """Return (country_id, players_url, country_name) for every country with a players_url."""
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.select(
-                Country.country_id, Country.country_url, Country.country_name
-            ).order_by(Country.country_name)
+                Country.country_id, Country.players_url, Country.country_name
+            )
+            .where(Country.players_url.is_not(None))
+            .order_by(Country.country_name)
         )
         return [
-            (row.country_id, _players_url(row.country_url), row.country_name)
+            (row.country_id, row.players_url, row.country_name)
             for row in result
         ]
 
@@ -412,11 +394,13 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     async with get_session(session_factory_tmp) as session:
         result = await session.execute(
             sa.select(
-                Country.country_id, Country.country_url, Country.country_name
-            ).where(Country.country_id.in_(upper_codes))
+                Country.country_id, Country.players_url, Country.country_name
+            )
+            .where(Country.country_id.in_(upper_codes))
+            .where(Country.players_url.is_not(None))
         )
         countries = [
-            (row.country_id, _players_url(row.country_url), row.country_name)
+            (row.country_id, row.players_url, row.country_name)
             for row in result
         ]
     total = len(countries)
@@ -507,12 +491,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape FBRef player lists.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
-        "--country",
-        metavar="CODE",
-        default="ESP",
-        help="FBRef country code (default: ESP).",
-    )
-    group.add_argument(
         "--url", metavar="URL", help="Full FBRef country player-list URL."
     )
     group.add_argument(
@@ -532,12 +510,10 @@ def main() -> None:
 
     if args.all_countries:
         asyncio.run(main_all(workers=args.workers))
+    elif args.url:
+        asyncio.run(main_single(args.url))
     else:
-        target_url = args.url or COUNTRY_URLS.get(
-            args.country.upper(),
-            _BASE_URL.format(code=args.country.upper()),
-        )
-        asyncio.run(main_single(target_url))
+        parser.error("Specify --url <URL> or --all")
 
 
 if __name__ == "__main__":
