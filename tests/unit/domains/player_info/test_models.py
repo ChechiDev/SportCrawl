@@ -19,7 +19,6 @@ def test_player_info_raw_data_all_none() -> None:
     """PlayerInfoRawData must allow all optional fields to be None."""
     raw = PlayerInfoRawData(
         player_id="abc123",
-        player_info_url="https://fbref.com/en/players/abc123/Test-Player",
     )
     assert raw.player_id == "abc123"
     assert raw.fk_country_birth is None
@@ -51,7 +50,6 @@ def test_player_info_raw_data_all_fields() -> None:
         player_foot="Left",
         player_wages=500000,
         player_expires=date(2025, 6, 30),
-        player_info_url="https://fbref.com/en/players/abc123/Test-Player",
         photo_url="https://cdn.fbref.com/photos/abc123.jpg",
     )
     assert raw.player_id == "abc123"
@@ -74,7 +72,6 @@ def test_player_info_raw_data_wages_zero_is_valid() -> None:
     raw = PlayerInfoRawData(
         player_id="abc123",
         player_wages=0,
-        player_info_url="https://fbref.com/en/players/abc123/Test-Player",
     )
     assert raw.player_wages == 0
     assert raw.player_wages is not None
@@ -84,7 +81,6 @@ def test_player_info_raw_data_has_player_age_field() -> None:
     """PlayerInfoRawData MUST have a player_age attribute, defaulting to None."""
     raw = PlayerInfoRawData(
         player_id="abc123",
-        player_info_url="https://fbref.com/en/players/abc123/Test-Player",
     )
     assert hasattr(raw, "player_age")
     assert raw.player_age is None
@@ -105,7 +101,6 @@ def test_player_info_page_wraps_list_of_raw_data() -> None:
     """PlayerInfoPage.players must be a list of PlayerInfoRawData."""
     raw = PlayerInfoRawData(
         player_id="abc123",
-        player_info_url="https://fbref.com/en/players/abc123/Test-Player",
     )
     page = PlayerInfoPage(players=[raw])
     assert len(page.players) == 1
@@ -116,12 +111,10 @@ def test_player_info_page_multiple_players() -> None:
     """PlayerInfoPage must accept multiple PlayerInfoRawData entries."""
     raw1 = PlayerInfoRawData(
         player_id="aaa111",
-        player_info_url="https://fbref.com/en/players/aaa111/Player-One",
     )
     raw2 = PlayerInfoRawData(
         player_id="bbb222",
         player_wages=0,
-        player_info_url="https://fbref.com/en/players/bbb222/Player-Two",
     )
     page = PlayerInfoPage(players=[raw1, raw2])
     assert len(page.players) == 2

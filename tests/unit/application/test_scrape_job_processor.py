@@ -29,7 +29,6 @@ def _make_job(job_id: int = 1) -> ScrapeQueue:
 def _make_raw_data() -> PlayerInfoRawData:
     return PlayerInfoRawData(
         player_id="abc12345",
-        player_info_url="https://fbref.com/en/players/abc12345/Test-Player",
         fk_country_birth=None,
         country_birth_name="Argentina",
         national_team_name="Argentina",

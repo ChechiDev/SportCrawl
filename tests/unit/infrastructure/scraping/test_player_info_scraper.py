@@ -18,7 +18,6 @@ _FIXTURE_PATH = Path(__file__).parents[3] / "fixtures" / "fbref_player_profile.h
 _PROFILE_HTML = _FIXTURE_PATH.read_text(encoding="utf-8")
 
 _PLAYER_ID = "d70ce98e"
-_PLAYER_URL = "https://fbref.com/en/players/d70ce98e/Lionel-Messi"
 
 _MISSING_FIELDS_HTML = """
 <html><body>
@@ -44,9 +43,9 @@ _WAGES_ZERO_HTML = """
 
 
 def _make_scraper(
-    player_id: str = _PLAYER_ID, player_url: str = _PLAYER_URL
+    player_id: str = _PLAYER_ID,
 ) -> PlayerInfoScraper:
-    return PlayerInfoScraper(player_id=player_id, player_info_url=player_url)
+    return PlayerInfoScraper(player_id=player_id)
 
 
 # ---------------------------------------------------------------------------
@@ -107,9 +106,7 @@ class TestPlayerInfoScraperParse:
 
     def test_parse_missing_optional_fields_returns_none(self) -> None:
         """Fields absent from HTML must yield None, not raise an error."""
-        scraper = PlayerInfoScraper(
-            player_id="ghost00x", player_info_url="https://fbref.com/ghost"
-        )
+        scraper = PlayerInfoScraper(player_id="ghost00x")
         result = scraper.parse(_MISSING_FIELDS_HTML)
 
         player = result.players[0]
@@ -121,9 +118,7 @@ class TestPlayerInfoScraperParse:
 
     def test_parse_wages_zero_is_not_none(self) -> None:
         """player_wages=0 must be stored as 0, not converted to None."""
-        scraper = PlayerInfoScraper(
-            player_id="cheap00x", player_info_url="https://fbref.com/cheap"
-        )
+        scraper = PlayerInfoScraper(player_id="cheap00x")
         result = scraper.parse(_WAGES_ZERO_HTML)
 
         assert result.players[0].player_wages == 0
@@ -240,18 +235,14 @@ class TestParsePopulatesFkTeamAndPlayerAge:
 
     def test_parse_sets_fk_team_none_when_no_club(self) -> None:
         """parse() must set fk_team=None when no Club paragraph present."""
-        scraper = PlayerInfoScraper(
-            player_id="ghost00x", player_info_url="https://fbref.com/ghost"
-        )
+        scraper = PlayerInfoScraper(player_id="ghost00x")
         result = scraper.parse(_MISSING_FIELDS_HTML)
 
         assert result.players[0].fk_team is None
 
     def test_parse_sets_player_age_none_when_no_born(self) -> None:
         """parse() must set player_age=None when player_born is absent."""
-        scraper = PlayerInfoScraper(
-            player_id="ghost00x", player_info_url="https://fbref.com/ghost"
-        )
+        scraper = PlayerInfoScraper(player_id="ghost00x")
         result = scraper.parse(_MISSING_FIELDS_HTML)
 
         assert result.players[0].player_age is None

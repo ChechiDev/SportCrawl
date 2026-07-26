@@ -18,7 +18,6 @@ from infrastructure.persistence.repositories.player_info import PlayerInfoReposi
 # ---------------------------------------------------------------------------
 
 _PLAYER_ID = "d70ce98e"
-_PLAYER_URL = "https://fbref.com/en/players/d70ce98e/Lionel-Messi"
 
 
 def _make_raw(
@@ -30,7 +29,6 @@ def _make_raw(
 ) -> PlayerInfoRawData:
     return PlayerInfoRawData(
         player_id=player_id,
-        player_info_url=_PLAYER_URL,
         player_born=date(1987, 6, 24),
         player_height=170,
         player_weight=72,

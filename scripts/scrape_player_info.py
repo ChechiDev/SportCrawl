@@ -234,7 +234,6 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
                     scraper = PlayerInfoScraper(
                         player_id=_player_id_from_url(job.url),
-                        player_info_url=job.url,
                     )
 
                     async with get_session(self._session_factory) as session:
