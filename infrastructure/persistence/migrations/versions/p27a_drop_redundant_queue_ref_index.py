@@ -17,10 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_index(
-        "ix_player_queue_ref_queue_id",
-        table_name="tbl_player_queue_ref",
-        schema="sch_infra",
+    # Guard: in some migration paths (e.g. p11 downgrade tests that re-upgrade
+    # from p10d), the index may live under a different schema/table name from
+    # an earlier version of the model. Use raw SQL DROP INDEX IF EXISTS to be safe.
+    op.execute(
+        sa.text("DROP INDEX IF EXISTS sch_infra.ix_player_queue_ref_queue_id")
     )
 
 
