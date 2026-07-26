@@ -34,6 +34,10 @@ from infrastructure.persistence.repositories.player_info import PlayerInfoReposi
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
+from infrastructure.persistence.repositories.player_std_stats import (
+    PlayerStdStatsRepository,
+)
+from infrastructure.scraping.player_std_stats import parse_player_std_stats
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.player_info import PlayerInfoScraper
 
@@ -251,6 +255,14 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             job,  # type: ignore[arg-type]
                             html,
                         )
+
+                        std_stats = parse_player_std_stats(
+                            html, _player_id_from_url(job.url)
+                        )
+                        if std_stats:
+                            stats_repo = PlayerStdStatsRepository(session)
+                            await stats_repo.upsert_bulk(std_stats)
+
                         await session.commit()
 
                     success = True

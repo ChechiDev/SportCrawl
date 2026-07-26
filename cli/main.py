@@ -223,6 +223,7 @@ async def _do_reset(console: Console) -> None:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         tables = [
+            ("sch_football", "tbl_player_std_stats"),
             ("sch_shared", "tbl_player_info"),
             ("sch_shared", "tbl_player_photo"),
             ("sch_shared", "tbl_player_citizenship"),
