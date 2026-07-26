@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 _FBREF_BASE = "https://fbref.com"
 _COUNTRY_ID_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
 
+# FBRef uses different country codes than our DB for some countries.
+_COUNTRY_ID_ALIASES: dict[str, str] = {
+    "EIR": "IRL",  # FBRef "Ireland" → DB "Republic of Ireland"
+}
+
 
 class CountryPlayersScraper(BaseScraper[CountryPlayersPage]):
     """Scraper for the FBref country-players index page.
@@ -78,6 +83,8 @@ class CountryPlayersScraper(BaseScraper[CountryPlayersPage]):
                 players_url = f"{_FBREF_BASE}{href}"
                 m = _COUNTRY_ID_RE.search(href)
                 country_id = m.group(1).upper() if m else None
+                if country_id in _COUNTRY_ID_ALIASES:
+                    country_id = _COUNTRY_ID_ALIASES[country_id]
 
                 if country_name:
                     entries.append(
