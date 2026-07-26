@@ -116,7 +116,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
             engine, self._settings.scraping, self._session_factory
         )
 
-    async def run_claim_loop(self, _engine: Any) -> int:
+    async def run_claim_loop(self, engine: Any) -> int:  # engine unused: S2 scraper holds its own ref
         """Drain player_list jobs for one browser session.
 
         Returns:
