@@ -15,7 +15,7 @@ class Flag(Base):
 
     __tablename__ = "tbl_flags"
 
-    flag_id: Mapped[str] = mapped_column(String(2), primary_key=True)
+    flag_id: Mapped[str] = mapped_column(String(3), primary_key=True)
     fk_country: Mapped[str] = mapped_column(
         String(10),
         ForeignKey("sch_shared.tbl_countries.country_id", ondelete="CASCADE"),
