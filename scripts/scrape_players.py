@@ -418,7 +418,6 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
             for row in result
         ]
     total = len(countries)
-    workers = 1
 
     settings.db.pool_size = max(workers * 2, settings.db.pool_size)
     session_factory = create_session_factory(settings.db)

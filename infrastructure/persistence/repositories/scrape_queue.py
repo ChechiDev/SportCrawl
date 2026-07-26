@@ -247,7 +247,11 @@ class ScrapeQueueJobRepository(BaseRepository[ScrapeQueue]):
                 stmt, {"domain": domain, "ttl": ttl_minutes}
             )
             rowcount = cast(CursorResult, result).rowcount  # type: ignore[type-arg]
-            assert rowcount is not None, "recover_stale: DML result has no rowcount"
+            if rowcount is None:
+                raise RepositoryError(
+                    "recover_stale: DML result has no rowcount",
+                    operation="recover_stale",
+                )
             return rowcount
         except SQLAlchemyError as exc:
             raise RepositoryError(

@@ -10,11 +10,17 @@ from __future__ import annotations
 import sqlalchemy as sa
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import cast
+
+import logging
 
 from core.exceptions.repository import RepositoryError
 from domains.country.models import CountryPlayersRawData, CountryRawData
+
+logger = logging.getLogger(__name__)
 from infrastructure.persistence.models.shared.confederation import Confederation
 from infrastructure.persistence.models.shared.country import Country
 from infrastructure.persistence.models.shared.flag import Flag
@@ -121,12 +127,22 @@ class CountryRepository:
         """
         try:
             for entry in entries:
+                if entry.country_id is not None:
+                    where_clause = Country.country_id == entry.country_id
+                else:
+                    where_clause = Country.country_name == entry.country_name
                 stmt = (
                     sa.update(Country)
-                    .where(Country.country_name == entry.country_name)
+                    .where(where_clause)
                     .values(players_url=entry.players_url, updated_at=func.now())
                 )
-                await self._session.execute(stmt)
+                result = await self._session.execute(stmt)
+                if cast(CursorResult, result).rowcount == 0:  # type: ignore[type-arg]
+                    logger.warning(
+                        "upsert_players_url: no row matched for country_id=%r name=%r",
+                        entry.country_id,
+                        entry.country_name,
+                    )
         except SQLAlchemyError as exc:
             raise RepositoryError(
                 "CountryRepository.upsert_players_url failed",

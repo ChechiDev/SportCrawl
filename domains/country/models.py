@@ -29,6 +29,7 @@ class CountryPage(BaseModel):
 class CountryPlayersRawData:
     country_name: str
     players_url: str
+    country_id: str | None = None
 
 
 @dataclass

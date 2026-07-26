@@ -11,6 +11,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+import re
 
 from bs4 import BeautifulSoup
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -25,6 +26,7 @@ from ports.scraper import BaseScraper, ScraperConfig
 logger = logging.getLogger(__name__)
 
 _FBREF_BASE = "https://fbref.com"
+_COUNTRY_ID_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
 
 
 class CountryPlayersScraper(BaseScraper[CountryPlayersPage]):
@@ -72,13 +74,17 @@ class CountryPlayersScraper(BaseScraper[CountryPlayersPage]):
                     continue
 
                 country_name = a_tag.get_text(strip=True)
-                players_url = f"{_FBREF_BASE}{a_tag['href']}"
+                href = str(a_tag["href"])
+                players_url = f"{_FBREF_BASE}{href}"
+                m = _COUNTRY_ID_RE.search(href)
+                country_id = m.group(1).upper() if m else None
 
                 if country_name:
                     entries.append(
                         CountryPlayersRawData(
                             country_name=country_name,
                             players_url=players_url,
+                            country_id=country_id,
                         )
                     )
 

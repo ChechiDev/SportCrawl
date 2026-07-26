@@ -12,7 +12,6 @@ import asyncio
 import typer
 from rich.console import Console
 
-from cli.players import players_app
 from config.settings import Settings
 from infrastructure.work_server.runtime import serve
 
@@ -21,8 +20,6 @@ app = typer.Typer(
     help="Sportcrawl — sports data, scraped at scale.",
     invoke_without_command=True,
 )
-app.add_typer(players_app, name="players")
-
 
 @app.callback()
 def default(

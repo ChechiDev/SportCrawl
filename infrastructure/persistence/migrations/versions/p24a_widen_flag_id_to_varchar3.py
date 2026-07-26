@@ -19,6 +19,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # WARNING: unsafe if 3-char flag codes (eng, nir, sct, wls) exist — truncates to 2 chars.
     op.execute(
         "ALTER TABLE sch_shared.tbl_flags ALTER COLUMN flag_id TYPE VARCHAR(2)"
+        " USING LEFT(flag_id, 2)"
     )
