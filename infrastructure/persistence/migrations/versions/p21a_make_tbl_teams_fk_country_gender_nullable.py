@@ -25,40 +25,24 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.execute(
         sa.text(
-            "ALTER TABLE sch_shared.tbl_teams "
-            "ALTER COLUMN fk_country DROP NOT NULL"
+            "ALTER TABLE sch_shared.tbl_teams ALTER COLUMN fk_country DROP NOT NULL"
         )
     )
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_teams "
-            "ALTER COLUMN fk_gender DROP NOT NULL"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_teams ALTER COLUMN fk_gender DROP NOT NULL")
     )
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_teams "
-            "ALTER COLUMN team_name DROP NOT NULL"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_teams ALTER COLUMN team_name DROP NOT NULL")
     )
 
 
 def downgrade() -> None:
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_teams "
-            "ALTER COLUMN team_name SET NOT NULL"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_teams ALTER COLUMN team_name SET NOT NULL")
     )
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_teams "
-            "ALTER COLUMN fk_country SET NOT NULL"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_teams ALTER COLUMN fk_country SET NOT NULL")
     )
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_teams "
-            "ALTER COLUMN fk_gender SET NOT NULL"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_teams ALTER COLUMN fk_gender SET NOT NULL")
     )

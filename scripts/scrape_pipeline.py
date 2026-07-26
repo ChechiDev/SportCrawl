@@ -153,7 +153,7 @@ _COOLDOWN_PREFIX = "__cooldown__"
 def _resolve_label(label: str) -> str:
     """Translate internal __cooldown__ labels to human-readable text."""
     if label.startswith(_COOLDOWN_PREFIX):
-        end = float(label[len(_COOLDOWN_PREFIX):])
+        end = float(label[len(_COOLDOWN_PREFIX) :])
         remaining = max(0, int(end - time.monotonic()))
         return f"[bold orange1]COOLDOWN[/] Resuming in {remaining}s"
     return label

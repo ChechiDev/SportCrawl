@@ -92,8 +92,6 @@ def test_country_raw_data_missing_country_url_raises() -> None:
         )
 
 
-
-
 def test_country_raw_data_missing_country_id_raises() -> None:
     with pytest.raises(ValidationError):
         CountryRawData(  # type: ignore[call-arg]

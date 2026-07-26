@@ -94,6 +94,7 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
             # Build relative player_url (strip domain if absolute)
             if href.startswith("http"):
                 from urllib.parse import urlparse
+
                 player_url = urlparse(href).path
             else:
                 player_url = href

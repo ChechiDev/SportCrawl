@@ -106,9 +106,7 @@ class ScrapeJobProcessor:
                         raw.country_birth_name,
                     )
             if raw.national_team_name is not None:
-                raw.fk_nat_team = self._country_name_cache.get(
-                    raw.national_team_name
-                )
+                raw.fk_nat_team = self._country_name_cache.get(raw.national_team_name)
             if raw.youth_nat_team_name is not None:
                 raw.fk_youth_nat_team = self._country_name_cache.get(
                     raw.youth_nat_team_name

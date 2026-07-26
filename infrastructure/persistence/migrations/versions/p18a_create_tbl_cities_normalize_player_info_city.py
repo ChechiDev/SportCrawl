@@ -83,18 +83,15 @@ def upgrade() -> None:
     )
 
     # 7. Drop city_name column
-    op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info DROP COLUMN city_name"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE sch_shared.tbl_player_info DROP COLUMN city_name"))
 
 
 def downgrade() -> None:
     # 7 reversed — re-add city_name
     op.execute(
         sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info ADD COLUMN city_name VARCHAR(150) NULL"
+            "ALTER TABLE sch_shared.tbl_player_info"
+            " ADD COLUMN city_name VARCHAR(150) NULL"
         )
     )
 
@@ -111,9 +108,7 @@ def downgrade() -> None:
     )
 
     # 6 reversed — drop index
-    op.execute(
-        sa.text("DROP INDEX sch_shared.ix_player_info_fk_city")
-    )
+    op.execute(sa.text("DROP INDEX sch_shared.ix_player_info_fk_city"))
 
     # 5 reversed — drop FK constraint
     op.execute(
@@ -124,13 +119,7 @@ def downgrade() -> None:
     )
 
     # 2 reversed — drop fk_city column
-    op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_city"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_city"))
 
     # 1 reversed — drop tbl_cities
-    op.execute(
-        sa.text("DROP TABLE sch_shared.tbl_cities")
-    )
+    op.execute(sa.text("DROP TABLE sch_shared.tbl_cities"))

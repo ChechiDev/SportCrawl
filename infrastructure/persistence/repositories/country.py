@@ -7,23 +7,23 @@ never calls session.commit().
 
 from __future__ import annotations
 
+import logging
+from typing import cast
+
 import sqlalchemy as sa
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import cast
-
-import logging
 
 from core.exceptions.repository import RepositoryError
 from domains.country.models import CountryPlayersRawData, CountryRawData
-
-logger = logging.getLogger(__name__)
 from infrastructure.persistence.models.shared.confederation import Confederation
 from infrastructure.persistence.models.shared.country import Country
 from infrastructure.persistence.models.shared.flag import Flag
+
+logger = logging.getLogger(__name__)
 
 
 class CountryRepository:

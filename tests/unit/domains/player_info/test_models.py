@@ -129,6 +129,6 @@ def test_player_info_page_multiple_players() -> None:
 
 
 def test_player_info_page_no_player_age_field() -> None:
-    """PlayerInfoPage itself has no player_age attribute (it lives on PlayerInfoRawData)."""
+    """PlayerInfoPage has no player_age attribute (it lives on PlayerInfoRawData)."""
     page = PlayerInfoPage(players=[])
     assert not hasattr(page, "player_age")

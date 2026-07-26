@@ -217,19 +217,14 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 async def _load_all_countries(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> list[tuple[str, str, str]]:
-    """Return (country_id, players_url, country_name) for every country with a players_url."""
+    """Return (country_id, players_url, country_name) for rows with players_url set."""
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.select(
-                Country.country_id, Country.players_url, Country.country_name
-            )
+            sa.select(Country.country_id, Country.players_url, Country.country_name)
             .where(Country.players_url.is_not(None))
             .order_by(Country.country_name)
         )
-        return [
-            (row.country_id, row.players_url, row.country_name)
-            for row in result
-        ]
+        return [(row.country_id, row.players_url, row.country_name) for row in result]
 
 
 async def _seed_queue(
@@ -407,15 +402,12 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     session_factory_tmp = create_session_factory(settings.db)
     async with get_session(session_factory_tmp) as session:
         result = await session.execute(
-            sa.select(
-                Country.country_id, Country.players_url, Country.country_name
-            )
+            sa.select(Country.country_id, Country.players_url, Country.country_name)
             .where(Country.country_id.in_(upper_codes))
             .where(Country.players_url.is_not(None))
         )
         countries = [
-            (row.country_id, row.players_url, row.country_name)
-            for row in result
+            (row.country_id, row.players_url, row.country_name) for row in result
         ]
     total = len(countries)
 
@@ -504,7 +496,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape FBRef player lists.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
-        "-c", "--country",
+        "-c",
+        "--country",
         metavar="CODE",
         help="ISO country code to scrape (e.g. ARG).",
     )
@@ -518,7 +511,8 @@ def main() -> None:
         help="Scrape all countries from the database.",
     )
     parser.add_argument(
-        "-w", "--workers",
+        "-w",
+        "--workers",
         metavar="N",
         type=int,
         default=1,

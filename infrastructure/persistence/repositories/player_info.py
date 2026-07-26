@@ -193,7 +193,8 @@ class PlayerInfoRepository:
             )
             result = await self._session.execute(
                 sa.text(
-                    "SELECT city_id FROM sch_shared.tbl_cities WHERE city_name = :city_name"
+                    "SELECT city_id FROM sch_shared.tbl_cities"
+                    " WHERE city_name = :city_name"
                 ),
                 {"city_name": city_name},
             )
@@ -238,7 +239,9 @@ class PlayerInfoRepository:
         Raises:
             RepositoryError: if the insert fails.
         """
-        async with repo_error_context("upsert_citizenship", "upsert_citizenship failed"):
+        async with repo_error_context(
+            "upsert_citizenship", "upsert_citizenship failed"
+        ):
             stmt = sa.text(
                 "INSERT INTO sch_shared.tbl_player_citizenship (player_id, fk_country)"
                 " VALUES (:player_id, :fk_country)"

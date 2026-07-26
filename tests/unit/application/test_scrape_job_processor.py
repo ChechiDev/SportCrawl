@@ -134,7 +134,6 @@ class TestScrapeJobProcessorSuccess:
         upserted_raw: PlayerInfoRawData = call_args[0][0]
         assert upserted_raw.fk_country_birth == "ESP"
 
-
     async def test_success_resolves_youth_nat_team_from_cache(self) -> None:
         """youth_nat_team_name → fk_youth_nat_team resolved from country_name_cache."""
 
@@ -478,7 +477,7 @@ class TestScrapeJobProcessorFailure:
 
 class TestScrapeJobProcessorTeamStub:
     async def test_upsert_team_stub_called_when_fk_team_is_set(self) -> None:
-        """upsert_team_stub must be called before upsert_player_info when fk_team is set."""
+        """upsert_team_stub is called before upsert_player_info when fk_team is set."""
         raw = _make_raw_data()
         raw.fk_team = "0e08d4eb"
         raw.club_url = "https://fbref.com/en/squads/0e08d4eb/Barcelona"

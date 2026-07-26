@@ -148,15 +148,11 @@ def upgrade() -> None:
     )
 
     # 3. Drop old table (CASCADE drops dependent views/FKs)
-    op.execute(
-        sa.text("DROP TABLE sch_shared.tbl_player_info CASCADE")
-    )
+    op.execute(sa.text("DROP TABLE sch_shared.tbl_player_info CASCADE"))
 
     # 4. Rename new table to canonical name
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info_new RENAME TO tbl_player_info"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_player_info_new RENAME TO tbl_player_info")
     )
 
     # 5. Create indexes
@@ -328,15 +324,11 @@ def downgrade() -> None:
     )
 
     # 3. Drop new table
-    op.execute(
-        sa.text("DROP TABLE sch_shared.tbl_player_info CASCADE")
-    )
+    op.execute(sa.text("DROP TABLE sch_shared.tbl_player_info CASCADE"))
 
     # 4. Rename old table back
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info_old RENAME TO tbl_player_info"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_player_info_old RENAME TO tbl_player_info")
     )
 
     # 5. Recreate original indexes

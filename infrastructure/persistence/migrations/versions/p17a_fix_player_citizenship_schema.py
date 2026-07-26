@@ -1,4 +1,4 @@
-"""Fix tbl_player_citizenship schema and drop redundant fk_citizenship from tbl_player_info.
+"""Fix tbl_player_citizenship schema; drop fk_citizenship from tbl_player_info.
 
 Revision ID: p17a
 Revises: p16b
@@ -46,9 +46,7 @@ def upgrade() -> None:
     )
 
     # 4. Drop index on fk_citizenship
-    op.execute(
-        sa.text("DROP INDEX sch_shared.ix_player_info_fk_citizenship")
-    )
+    op.execute(sa.text("DROP INDEX sch_shared.ix_player_info_fk_citizenship"))
 
     # 5. Drop FK constraint on fk_citizenship
     op.execute(
@@ -60,9 +58,7 @@ def upgrade() -> None:
 
     # 6. Drop fk_citizenship column
     op.execute(
-        sa.text(
-            "ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_citizenship"
-        )
+        sa.text("ALTER TABLE sch_shared.tbl_player_info DROP COLUMN fk_citizenship")
     )
 
 
@@ -93,7 +89,7 @@ def downgrade() -> None:
         )
     )
 
-    # 3 reversed — backfill data is NOT restored (citizenship rows remain in tbl_player_citizenship)
+    # 3 reversed — backfill not restored (rows remain in tbl_player_citizenship)
 
     # 2 reversed — rename index back
     op.execute(

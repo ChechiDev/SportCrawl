@@ -240,7 +240,7 @@ class TestUpsertCity:
     async def test_upsert_player_info_includes_fk_team_and_player_age(
         self,
     ) -> None:
-        """upsert_player_info must include fk_team and player_age, exclude club_name/club_url."""
+        """upsert_player_info includes fk_team/age; excludes club_name/club_url."""
         session = _make_session()
         raw = _make_raw()
         raw.fk_team = "0e08d4eb"
@@ -315,7 +315,7 @@ class TestUpsertTeamStub:
         assert params["team_url"] == "https://fbref.com/en/squads/0e08d4eb/Barcelona"
 
     async def test_upsert_team_stub_passes_none_url_as_null(self) -> None:
-        """upsert_team_stub must pass None as team_url when URL is absent (not empty string)."""
+        """upsert_team_stub passes None as team_url when absent, not empty string."""
         session = _make_session()
 
         repo = PlayerInfoRepository(session)

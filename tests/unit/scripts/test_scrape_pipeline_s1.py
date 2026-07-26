@@ -84,7 +84,7 @@ class TestPipelineS1Imports:
             "s1_total must be sourced from DB PENDING count, not len(s1_rows)"
         )
         assert "job_type='team_list' AND status='DONE'" in src, (
-            "scrape_pipeline must query DB for team_list DONE count (for display offset)"
+            "scrape_pipeline must query DB for team_list DONE count (display offset)"
         )
         assert "tbl_country_squads" in src, (
             "scrape_pipeline must query total country_squads for s1_total denominator"

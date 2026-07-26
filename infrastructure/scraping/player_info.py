@@ -134,7 +134,9 @@ def _parse_positions(
         after_label = re.sub(r"Position\s*:?\s*", "", text, flags=re.IGNORECASE)
         # Take only the part before "•", "(", or "Footed" — handles both formats:
         # "FW-MF (AM) • Footed: Left" and "FW-MF Footed: Left" (no bullet)
-        pos_part = re.split(r"[•▪(]|Footed", after_label, flags=re.IGNORECASE)[0].strip()
+        pos_part = re.split(r"[•▪(]|Footed", after_label, flags=re.IGNORECASE)[
+            0
+        ].strip()
         # Split on "-", keep only pure alpha tokens (e.g. "FW", "MF", "DF", "GK")
         parts = [
             c.strip().upper()
@@ -185,7 +187,7 @@ def _find_born_paragraph(soup: BeautifulSoup | Tag) -> Tag | None:
 
 
 def _find_birth_location_text(born_p: Tag) -> str | None:
-    """Return cleaned text of the span containing 'in City, Country' inside the Born <p>."""
+    """Return cleaned text of the span with 'in City, Country' inside the Born <p>."""
     for span in born_p.find_all("span"):
         if not isinstance(span, Tag):
             continue

@@ -39,9 +39,7 @@ async def _run_migrations(console: Console) -> None:
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        console.print(
-            f"  [red]✗[/red]  Migrations failed.\n{stderr.decode()}"
-        )
+        console.print(f"  [red]✗[/red]  Migrations failed.\n{stderr.decode()}")
         raise SystemExit(1)
     console.print("  [cyan]✓[/cyan]  Database version up to date.      ", end="\r")
 

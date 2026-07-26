@@ -40,7 +40,6 @@ async def _seed_countries(settings: Settings) -> None:
         await scraper.scrape(_COUNTRIES_URL)
 
 
-
 async def _seed_country_squads(settings: Settings) -> None:
     import logging
 
@@ -149,7 +148,6 @@ def _build_dsn(settings: Settings) -> str:
     )
 
 
-
 @players_app.command("start")
 def players_start(
     country: str | None = typer.Option(
@@ -229,17 +227,14 @@ async def _run(
             console.print(msg + " loaded successfully.")
 
         missing_players_url = await _fetchval(
-dsn,
-            (
-                "SELECT count(*) FROM sch_shared.tbl_countries "
-                "WHERE players_url IS NULL"
-            )
+            dsn,
+            ("SELECT count(*) FROM sch_shared.tbl_countries WHERE players_url IS NULL"),
         )
 
         if missing_players_url:
             players_url_count = await _seed_with_retry(
                 lambda: _seed_country_players_urls(settings),
-(
+                (
                     "SELECT count(*) FROM sch_shared.tbl_countries "
                     "WHERE players_url IS NOT NULL"
                 ),
@@ -253,8 +248,7 @@ dsn,
             console.print(msg)
         else:
             console.print(
-                "  [cyan]✓[/cyan]  All Countries with Players "
-                "loaded successfully."
+                "  [cyan]✓[/cyan]  All Countries with Players loaded successfully."
             )
 
         fatal_failures = [r for r in results if not r.passed and r.fatal]
