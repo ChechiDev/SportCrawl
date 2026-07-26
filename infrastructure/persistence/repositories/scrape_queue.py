@@ -25,8 +25,6 @@ from ports.repository import BaseRepository
 
 logger = logging.getLogger(__name__)
 
-_MAX_RETRIES = 3
-
 
 class ScrapeQueueRepository:
     """Generic async repository for scrape_queue rows, parameterized by job_type.
@@ -85,17 +83,18 @@ class ScrapeQueueRepository:
             await self._session.flush()
 
     async def mark_failed(self, job_id: int, error: str) -> None:
-        """Transition job_id to FAILED (or re-queue as PENDING) on error."""
+        """Re-queue job_id as PENDING after recording the failure.
+
+        Never leaves a job in terminal FAILED state — the "never die" policy
+        keeps all jobs in circulation. retry_count and error_message are
+        preserved for observability.
+        """
         async with repo_error_context("mark_failed", "mark_failed failed"):
             row = await self._get_job_or_raise(job_id, "mark_failed")
             row.retry_count += 1
             row.error_message = error
             row.locked_at = None
-            if row.retry_count >= _MAX_RETRIES:
-                row.status = ScrapeStatus.FAILED
-                row.completed_at = datetime.now(UTC)
-            else:
-                row.status = ScrapeStatus.PENDING
+            row.status = ScrapeStatus.PENDING
             await self._session.flush()
 
     async def recover_all_stale(self) -> int:

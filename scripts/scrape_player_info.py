@@ -122,6 +122,19 @@ async def _load_country_name_cache(
     gb_id = cache.get("Great Britain") or cache.get("GBR")
     if gb_id:
         cache.setdefault("United Kingdom", gb_id)
+
+    # FBRef country page names differ from player page names for some countries.
+    _aliases: list[tuple[str, str]] = [
+        ("IR Iran", "Iran"),
+        ("Korea Republic", "South Korea"),
+        ("Korea DPR", "North Korea"),
+        ("China PR", "China"),
+    ]
+    for db_name, fbref_name in _aliases:
+        country_id = cache.get(db_name)
+        if country_id:
+            cache.setdefault(fbref_name, country_id)
+
     return cache
 
 

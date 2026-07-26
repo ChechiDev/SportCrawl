@@ -616,7 +616,7 @@ async def main(
     # Separate fetch gates — each step hits different URLs
     s1_fetch_gate = asyncio.Semaphore(1)
     s2_fetch_gate = asyncio.Semaphore(1)
-    s3_fetch_gate = asyncio.Semaphore(1)
+    s3_fetch_gate = asyncio.Semaphore(2)
 
     s3_total_ref: list[int] = [s3_total]
 
