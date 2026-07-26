@@ -116,7 +116,6 @@ class PlayerInfo(Base):
     )
     player_wages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     player_expires: Mapped[date | None] = mapped_column(Date, nullable=True)
-    player_info_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

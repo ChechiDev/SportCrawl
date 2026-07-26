@@ -47,7 +47,6 @@ _FIXED_RAW = PlayerInfoRawData(
     player_foot="Right",
     player_wages=None,
     player_expires=None,
-    player_info_url=_PLAYER_URL,
     photo_url=None,
 )
 

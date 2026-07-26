@@ -367,9 +367,8 @@ class PlayerInfoScraper:
     Pure parsing — no database calls, no network I/O. Instantiated per player.
     """
 
-    def __init__(self, player_id: str, player_info_url: str) -> None:
+    def __init__(self, player_id: str) -> None:
         self._player_id = player_id
-        self._player_info_url = player_info_url
 
     def parse(self, html: str) -> PlayerInfoPage:
         soup = BeautifulSoup(html, "lxml")
@@ -397,7 +396,6 @@ class PlayerInfoScraper:
         raw = PlayerInfoRawData(
             player_id=self._player_id,
             full_name=full_name,
-            player_info_url=self._player_info_url,
             fk_country_birth=None,
             country_birth_name=country_birth_name,
             national_team_name=national_team_name,

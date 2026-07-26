@@ -25,7 +25,7 @@ class CountrySquads(Base):
         primary_key=True,
     )
     fk_flag: Mapped[str | None] = mapped_column(
-        String(2),
+        String(3),
         ForeignKey("sch_shared.tbl_flags.flag_id", ondelete="SET NULL"),
         nullable=True,
     )

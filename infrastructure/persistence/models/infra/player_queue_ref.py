@@ -42,7 +42,6 @@ class PlayerQueueRef(FootballBase):
 
     __table_args__ = (
         UniqueConstraint("queue_id", name="uq_player_queue_ref_queue_id"),
-        Index("ix_player_queue_ref_queue_id", "queue_id"),
         Index("ix_player_queue_ref_country_id", "country_id"),
         {"schema": "sch_infra"},
     )

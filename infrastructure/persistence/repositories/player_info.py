@@ -116,7 +116,6 @@ class PlayerInfoRepository:
                 "player_foot": raw.player_foot,
                 "player_wages": raw.player_wages,
                 "player_expires": raw.player_expires,
-                "player_info_url": raw.player_info_url,
             }
             stmt = pg_insert(PlayerInfo).values(**values)
             stmt = stmt.on_conflict_do_update(
@@ -137,7 +136,6 @@ class PlayerInfoRepository:
                     "player_foot": stmt.excluded.player_foot,
                     "player_wages": stmt.excluded.player_wages,
                     "player_expires": stmt.excluded.player_expires,
-                    "player_info_url": stmt.excluded.player_info_url,
                     "updated_at": func.now(),
                 },
             )

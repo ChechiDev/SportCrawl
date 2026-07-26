@@ -13,7 +13,7 @@ from pydantic import BaseModel
 class PlayerInfoRawData(BaseModel):
     """Raw player info data scraped from a FBRef player profile page.
 
-    All fields except player_id and player_info_url are optional (None by default).
+    All fields except player_id are optional (None by default).
     player_wages=0 is a valid value meaning wages are explicitly zero — not unknown.
     player_age is intentionally absent: age is derived at read time
         via AGE(player_born).
@@ -36,7 +36,6 @@ class PlayerInfoRawData(BaseModel):
         player_foot: Preferred foot (e.g. "Left", "Right").
         player_wages: Weekly wages in local currency; 0 is valid, None means unknown.
         player_expires: Contract expiry date.
-        player_info_url: Absolute URL to the FBRef player profile page.
         photo_url: Absolute URL to the player's photo; None when absent.
     """
 
@@ -59,7 +58,6 @@ class PlayerInfoRawData(BaseModel):
     player_foot: str | None = None
     player_wages: int | None = None
     player_expires: date | None = None
-    player_info_url: str
     photo_url: str | None = None
     citizenship_name: str | None = None
     youth_nat_team_name: str | None = None
