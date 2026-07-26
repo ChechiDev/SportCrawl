@@ -79,8 +79,6 @@ def _extract_team_id(club_url: str | None) -> str | None:
 def _calculate_age(born: date | None) -> int | None:
     """Calculate age in years from birth date.
 
-    Uses simple integer division of days — close enough for scraping purposes.
-
     Args:
         born: Date of birth, or None.
 
@@ -89,7 +87,8 @@ def _calculate_age(born: date | None) -> int | None:
     """
     if born is None:
         return None
-    return (date.today() - born).days // 365
+    today = date.today()
+    return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 
 def _clean(raw: str) -> str | None:

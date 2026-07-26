@@ -165,21 +165,39 @@ async def _run(
             dsn, "club_teams", console, compact=False, with_seed_checks=False
         )
 
-        country_count = await _seed_with_retry(
-            lambda: _seed_countries(settings),
-            "SELECT count(*) FROM sch_shared.tbl_countries",
-            "countries",
-            dsn,
-        )
-        console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
+        conn = await asyncpg.connect(dsn, timeout=5)
+        try:
+            existing_countries = await conn.fetchval("SELECT count(*) FROM sch_shared.tbl_countries")
+        finally:
+            await conn.close()
 
-        squads_count = await _seed_with_retry(
-            lambda: _seed_country_squads(settings),
-            "SELECT count(*) FROM sch_shared.tbl_country_squads",
-            "country squads",
-            dsn,
-        )
-        console.print(f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}")
+        if existing_countries:
+            console.print(f"  [cyan]✓[/cyan]  {existing_countries} countries loaded.{' ' * 40}")
+        else:
+            country_count = await _seed_with_retry(
+                lambda: _seed_countries(settings),
+                "SELECT count(*) FROM sch_shared.tbl_countries",
+                "countries",
+                dsn,
+            )
+            console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
+
+        conn = await asyncpg.connect(dsn, timeout=5)
+        try:
+            existing_squads = await conn.fetchval("SELECT count(*) FROM sch_shared.tbl_country_squads")
+        finally:
+            await conn.close()
+
+        if existing_squads:
+            console.print(f"  [cyan]✓[/cyan]  {existing_squads} country squads loaded.{' ' * 40}")
+        else:
+            squads_count = await _seed_with_retry(
+                lambda: _seed_country_squads(settings),
+                "SELECT count(*) FROM sch_shared.tbl_country_squads",
+                "country squads",
+                dsn,
+            )
+            console.print(f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}")
 
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:

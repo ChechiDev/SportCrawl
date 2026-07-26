@@ -35,7 +35,7 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "ALTER TABLE sch_shared.tbl_player_info "
-            "ADD CONSTRAINT tbl_player_info_fk_team_fkey "
+            "ADD CONSTRAINT IF NOT EXISTS tbl_player_info_fk_team_fkey "
             "FOREIGN KEY (fk_team) "
             "REFERENCES sch_shared.tbl_teams(team_id) "
             "ON DELETE SET NULL"

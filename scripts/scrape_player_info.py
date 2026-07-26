@@ -119,7 +119,9 @@ async def _load_country_name_cache(
 
     # FBRef uses "United Kingdom" in player birth fields but stores England/Scotland
     # separately — map it to GBR (Great Britain) which is the sovereign country.
-    cache.setdefault("United Kingdom", cache.get("Great Britain", "GBR"))
+    gb_id = cache.get("Great Britain") or cache.get("GBR")
+    if gb_id:
+        cache.setdefault("United Kingdom", gb_id)
     return cache
 
 

@@ -199,7 +199,10 @@ class PlayerInfoRepository:
             )
             city_id = result.scalar()
             if city_id is None:
-                raise ValueError(f"City not found after upsert: {city_name!r}")
+                raise RepositoryError(
+                    f"City not found after upsert: {city_name!r}",
+                    operation="upsert_city",
+                )
             return int(city_id)
 
     async def upsert_team_stub(self, team_id: str, team_url: str | None) -> None:

@@ -1,10 +1,10 @@
-"""Restore FK constraint on tbl_player_info.fk_team with stub-row support.
+"""Add FK constraint on tbl_player_info.fk_team → tbl_teams.team_id.
 
-Instead of dropping the FK, we re-add it and rely on upsert_team_stub
-(called before upsert_player_info) to insert a minimal placeholder row
-in tbl_teams whenever a team_id is referenced but not yet scraped.
+Relies on upsert_team_stub (called before upsert_player_info) to insert
+a minimal placeholder row in tbl_teams whenever a team_id is referenced
+but not yet scraped.
 
-upgrade(): nulls out any dangling fk_team values, then re-adds the FK.
+upgrade(): nulls out any dangling fk_team values, then adds the FK.
 downgrade(): drops the FK constraint so the column is unconstrained again.
 
 Revision ID: p20a
