@@ -24,7 +24,6 @@ class PlayerInfo(Base):
 
     Stores scraped biographical and contract info for each player.
     player_id is the natural PK (FBRef slug, VARCHAR(20)) — same as tbl_players.
-    player_age is intentionally absent: derived at read time via AGE(player_born).
     """
 
     __tablename__ = "tbl_player_info"
@@ -47,19 +46,47 @@ class PlayerInfo(Base):
         ),
         nullable=True,
     )
-    fk_national_team: Mapped[str | None] = mapped_column(
+    fk_city: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "sch_shared.tbl_cities.city_id",
+            ondelete="SET NULL",
+            name="tbl_player_info_fk_city_fkey",
+        ),
+        nullable=True,
+    )
+    fk_nat_team: Mapped[str | None] = mapped_column(
         String(10),
         ForeignKey(
             "sch_shared.tbl_countries.country_id",
             ondelete="SET NULL",
-            name="tbl_player_info_fk_national_team_fkey",
+            name="tbl_player_info_fk_nat_team_fkey",
         ),
         nullable=True,
     )
-    city_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    fk_youth_nat_team: Mapped[str | None] = mapped_column(
+        String(10),
+        ForeignKey(
+            "sch_shared.tbl_countries.country_id",
+            ondelete="SET NULL",
+            name="tbl_player_info_fk_youth_nat_team_fkey",
+        ),
+        nullable=True,
+    )
+    fk_team: Mapped[str | None] = mapped_column(
+        String(8),
+        ForeignKey(
+            "sch_shared.tbl_teams.team_id",
+            ondelete="SET NULL",
+            name="tbl_player_info_fk_team_fkey",
+        ),
+        nullable=True,
+    )
     player_born: Mapped[date | None] = mapped_column(Date, nullable=True)
+    player_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     player_height: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     player_weight: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    player_foot: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fk_ply_pos_1: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey(
@@ -87,33 +114,8 @@ class PlayerInfo(Base):
         ),
         nullable=True,
     )
-    player_foot: Mapped[str | None] = mapped_column(String(20), nullable=True)
     player_wages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     player_expires: Mapped[date | None] = mapped_column(Date, nullable=True)
-    fk_citizenship: Mapped[str | None] = mapped_column(
-        String(10),
-        ForeignKey(
-            "sch_shared.tbl_countries.country_id",
-            ondelete="SET NULL",
-            name="tbl_player_info_fk_citizenship_fkey",
-        ),
-        nullable=True,
-    )
-    fk_youth_nat_team: Mapped[str | None] = mapped_column(
-        String(10),
-        ForeignKey(
-            "sch_shared.tbl_countries.country_id",
-            ondelete="SET NULL",
-            name="tbl_player_info_fk_youth_nat_team_fkey",
-        ),
-        nullable=True,
-    )
-    club_name: Mapped[str | None] = mapped_column(
-        String(200), nullable=True
-    )  # TODO: migrate to fk_club when tbl_clubs exists
-    club_url: Mapped[str | None] = mapped_column(
-        String(500), nullable=True
-    )  # TODO: migrate to fk_club when tbl_clubs exists
     player_info_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -124,11 +126,12 @@ class PlayerInfo(Base):
 
     __table_args__ = (
         Index("ix_player_info_fk_country_birth", "fk_country_birth"),
-        Index("ix_player_info_fk_national_team", "fk_national_team"),
+        Index("ix_player_info_fk_city", "fk_city"),
+        Index("ix_player_info_fk_nat_team", "fk_nat_team"),
+        Index("ix_player_info_fk_youth_nat_team", "fk_youth_nat_team"),
+        Index("ix_player_info_fk_team", "fk_team"),
         Index("ix_player_info_fk_ply_pos_1", "fk_ply_pos_1"),
         Index("ix_player_info_fk_ply_pos_2", "fk_ply_pos_2"),
         Index("ix_player_info_fk_ply_pos_3", "fk_ply_pos_3"),
-        Index("ix_player_info_fk_citizenship", "fk_citizenship"),
-        Index("ix_player_info_fk_youth_nat_team", "fk_youth_nat_team"),
         {"schema": "sch_shared"},
     )

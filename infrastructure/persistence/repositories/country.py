@@ -7,17 +7,23 @@ never calls session.commit().
 
 from __future__ import annotations
 
+import logging
+from typing import cast
+
 import sqlalchemy as sa
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.repository import RepositoryError
-from domains.country.models import CountryRawData
+from domains.country.models import CountryPlayersRawData, CountryRawData
 from infrastructure.persistence.models.shared.confederation import Confederation
 from infrastructure.persistence.models.shared.country import Country
 from infrastructure.persistence.models.shared.flag import Flag
+
+logger = logging.getLogger(__name__)
 
 
 class CountryRepository:
@@ -84,27 +90,62 @@ class CountryRepository:
                 result_country = await self._session.execute(stmt_country)
                 country_id_value: str = result_country.scalar_one()
 
-                # 3. Upsert flag
-                stmt_flag = (
-                    pg_insert(Flag)
-                    .values(
-                        flag_id=row.flag_id,
-                        flag_url=row.flag_url,
-                        fk_country=country_id_value,
+                # 3. Upsert flag (skip rows without a flag, e.g. England)
+                if row.flag_id and row.flag_url:
+                    stmt_flag = (
+                        pg_insert(Flag)
+                        .values(
+                            flag_id=row.flag_id,
+                            flag_url=row.flag_url,
+                            fk_country=country_id_value,
+                        )
+                        .on_conflict_do_update(
+                            index_elements=["fk_country"],
+                            set_={
+                                "flag_id": row.flag_id,
+                                "flag_url": row.flag_url,
+                            },
+                        )
                     )
-                    .on_conflict_do_update(
-                        index_elements=["fk_country"],
-                        set_={
-                            "flag_id": row.flag_id,
-                            "flag_url": row.flag_url,
-                        },
-                    )
-                )
-                await self._session.execute(stmt_flag)
+                    await self._session.execute(stmt_flag)
 
         except SQLAlchemyError as exc:
             raise RepositoryError(
                 "CountryRepository.upsert failed",
                 operation="upsert",
+                cause=exc,
+            ) from exc
+
+    async def upsert_players_url(self, entries: list[CountryPlayersRawData]) -> None:
+        """Update players_url on tbl_countries rows matching by country_name.
+
+        Args:
+            entries: Parsed country-players index data from the scraper.
+
+        Raises:
+            RepositoryError: if any database operation fails.
+        """
+        try:
+            for entry in entries:
+                if entry.country_id is not None:
+                    where_clause = Country.country_id == entry.country_id
+                else:
+                    where_clause = Country.country_name == entry.country_name
+                stmt = (
+                    sa.update(Country)
+                    .where(where_clause)
+                    .values(players_url=entry.players_url, updated_at=func.now())
+                )
+                result = await self._session.execute(stmt)
+                if cast(CursorResult, result).rowcount == 0:  # type: ignore[type-arg]
+                    logger.warning(
+                        "upsert_players_url: no row matched for country_id=%r name=%r",
+                        entry.country_id,
+                        entry.country_name,
+                    )
+        except SQLAlchemyError as exc:
+            raise RepositoryError(
+                "CountryRepository.upsert_players_url failed",
+                operation="upsert_players_url",
                 cause=exc,
             ) from exc

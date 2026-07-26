@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from typing import Any
 
 import sqlalchemy as sa
@@ -25,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
-from core.application.base_worker import BaseWorker
+from core.application.base_worker import BaseWorker, CooldownRequired
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
@@ -180,6 +181,7 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
             clubs_url = job.url
             max_attempts = 3
             browser_restart = False
+            success = False
 
             for attempt in range(1, max_attempts + 1):
                 try:
@@ -203,6 +205,7 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                     self._labels[self._worker_id] = (
                         f"{_escape(country_display)}: {len(page.teams)} Teams"
                     )
+                    success = True
                     break
 
                 except _BrowserException as exc:
@@ -215,8 +218,12 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                                 job.id, str(exc)
                             )
                             await session.commit()
-                    except Exception:
-                        pass
+                    except Exception as mark_err:
+                        logger.error(
+                            "[worker-%d] mark_failed error: %s",
+                            self._worker_id,
+                            mark_err,
+                        )
                     browser_restart = True
                     break
 
@@ -226,7 +233,7 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                             f"[bold yellow]WARNING[/]"
                             f" Retrying ({attempt}/{max_attempts}) — {fk_country}"
                         )
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(random.uniform(5.0, 15.0))
                     else:
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] {fk_country}"
@@ -246,6 +253,12 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
 
             if browser_restart:
                 return -1
+
+            if not success:
+                self._labels[self._worker_id] = (
+                    f"[bold red]FAILED[/] {fk_country} — max retries reached"
+                )
+                raise CooldownRequired
 
 
 async def main(workers: int = 1, country_filter: set[str] | None = None) -> None:
@@ -274,6 +287,7 @@ async def main(workers: int = 1, country_filter: set[str] | None = None) -> None
 
     async with get_session(session_factory) as session:
         await TeamListQueueRepository(session).recover_all_stale()
+        await TeamListQueueRepository(session).recover_failed()
         await session.commit()
 
     async with get_session(session_factory) as session:

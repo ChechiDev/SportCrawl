@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 _PLAYER_HREF_RE = re.compile(r"/en/players/([a-z0-9]{8})/", re.IGNORECASE)
 _COUNTRY_CODE_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
 _EXPECTED_COUNT_RE = re.compile(r"(\d+)\s+Players", re.IGNORECASE)
-_FBREF_BASE = "https://fbref.com"
 _MIN_PARSE_RATIO = 0.90
 
 
@@ -94,7 +93,9 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
 
             # Build relative player_url (strip domain if absolute)
             if href.startswith("http"):
-                player_url = href.replace(_FBREF_BASE, "", 1)
+                from urllib.parse import urlparse
+
+                player_url = urlparse(href).path
             else:
                 player_url = href
 

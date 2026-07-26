@@ -150,3 +150,108 @@ class TestPlayerInfoScraperParse:
         player = result.players[0]
         assert player.club_name == "Valle Egués"
         assert player.club_url == "/en/squads/0e08d4eb/Valle-Egues-Stats"
+
+
+class TestExtractTeamId:
+    """Tests for _extract_team_id pure function."""
+
+    def test_valid_url_returns_8char_hex_id(self) -> None:
+        """Valid squad URL must return the 8-char hex team_id."""
+        from infrastructure.scraping.player_info import _extract_team_id
+
+        result = _extract_team_id("/en/squads/0e08d4eb/Valle-Egues-Stats")
+        assert result == "0e08d4eb"
+
+    def test_another_valid_url_returns_correct_id(self) -> None:
+        """Triangulation: different valid URL returns its own team_id."""
+        from infrastructure.scraping.player_info import _extract_team_id
+
+        result = _extract_team_id("/en/squads/abcdef12/FC-Barcelona-Stats")
+        assert result == "abcdef12"
+
+    def test_none_input_returns_none(self) -> None:
+        """None input must return None without raising."""
+        from infrastructure.scraping.player_info import _extract_team_id
+
+        assert _extract_team_id(None) is None
+
+    def test_url_without_squad_segment_returns_none(self) -> None:
+        """URL that does not match /en/squads/ pattern must return None."""
+        from infrastructure.scraping.player_info import _extract_team_id
+
+        assert _extract_team_id("/en/players/d70ce98e/Lionel-Messi") is None
+
+
+class TestCalculateAge:
+    """Tests for _calculate_age pure function."""
+
+    def test_valid_date_returns_int_age(self) -> None:
+        """A known birth date must return the correct integer age."""
+        from datetime import date
+
+        from infrastructure.scraping.player_info import _calculate_age
+
+        born = date(1987, 6, 24)
+        age = _calculate_age(born)
+        assert isinstance(age, int)
+        # Age must be reasonable: born 1987, today ~2026 → 38 or 39
+        assert 38 <= age <= 40
+
+    def test_recent_date_returns_small_age(self) -> None:
+        """Triangulation: a very young player's age should be small."""
+        from datetime import date
+
+        from infrastructure.scraping.player_info import _calculate_age
+
+        # Use a date that guarantees age calculation (today's date, minus 5 years)
+        today = date.today()
+        born = date(today.year - 5, today.month, today.day)
+        age = _calculate_age(born)
+        assert age == 5
+
+    def test_none_returns_none(self) -> None:
+        """None born date must return None."""
+        from infrastructure.scraping.player_info import _calculate_age
+
+        assert _calculate_age(None) is None
+
+
+class TestParsePopulatesFkTeamAndPlayerAge:
+    """Tests that parse() sets fk_team and player_age on PlayerInfoRawData."""
+
+    def test_parse_sets_fk_team_from_club_url(self) -> None:
+        """parse() must extract team_id from club_url and set fk_team."""
+        scraper = _make_scraper()
+        result = scraper.parse(_PROFILE_HTML)
+
+        player = result.players[0]
+        # club_url = "/en/squads/0e08d4eb/Valle-Egues-Stats"
+        assert player.fk_team == "0e08d4eb"
+
+    def test_parse_sets_player_age_from_born(self) -> None:
+        """parse() must compute player_age from player_born."""
+        scraper = _make_scraper()
+        result = scraper.parse(_PROFILE_HTML)
+
+        player = result.players[0]
+        assert player.player_age is not None
+        assert isinstance(player.player_age, int)
+        assert 38 <= player.player_age <= 40
+
+    def test_parse_sets_fk_team_none_when_no_club(self) -> None:
+        """parse() must set fk_team=None when no Club paragraph present."""
+        scraper = PlayerInfoScraper(
+            player_id="ghost00x", player_info_url="https://fbref.com/ghost"
+        )
+        result = scraper.parse(_MISSING_FIELDS_HTML)
+
+        assert result.players[0].fk_team is None
+
+    def test_parse_sets_player_age_none_when_no_born(self) -> None:
+        """parse() must set player_age=None when player_born is absent."""
+        scraper = PlayerInfoScraper(
+            player_id="ghost00x", player_info_url="https://fbref.com/ghost"
+        )
+        result = scraper.parse(_MISSING_FIELDS_HTML)
+
+        assert result.players[0].player_age is None

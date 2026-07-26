@@ -41,6 +41,8 @@ class TestPlayersStart:
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
+            patch("cli.players._fetchval", AsyncMock(return_value=100)),
+            patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
             patch("scripts.scrape_pipeline.main", AsyncMock()),
         ):
             result = runner.invoke(players_app, ["--all"])
@@ -75,6 +77,8 @@ class TestPlayersStart:
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
+            patch("cli.players._fetchval", AsyncMock(return_value=100)),
+            patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--country", "ARG"])
@@ -90,6 +94,8 @@ class TestPlayersStart:
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
+            patch("cli.players._fetchval", AsyncMock(return_value=100)),
+            patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all"])
@@ -104,6 +110,8 @@ class TestPlayersStart:
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
+            patch("cli.players._fetchval", AsyncMock(return_value=100)),
+            patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all", "--workers", "4"])
@@ -120,6 +128,8 @@ class TestPlayersStart:
                 "cli.players.run_checks",
                 AsyncMock(return_value=[_passing_result()]),
             ),
+            patch("cli.players._fetchval", AsyncMock(return_value=100)),
+            patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all"])

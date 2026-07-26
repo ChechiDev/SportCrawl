@@ -25,8 +25,6 @@ from ports.repository import BaseRepository
 
 logger = logging.getLogger(__name__)
 
-_MAX_RETRIES = 3
-
 
 class ScrapeQueueRepository:
     """Generic async repository for scrape_queue rows, parameterized by job_type.
@@ -85,17 +83,18 @@ class ScrapeQueueRepository:
             await self._session.flush()
 
     async def mark_failed(self, job_id: int, error: str) -> None:
-        """Transition job_id to FAILED (or re-queue as PENDING) on error."""
+        """Re-queue job_id as PENDING after recording the failure.
+
+        Never leaves a job in terminal FAILED state — the "never die" policy
+        keeps all jobs in circulation. retry_count and error_message are
+        preserved for observability.
+        """
         async with repo_error_context("mark_failed", "mark_failed failed"):
             row = await self._get_job_or_raise(job_id, "mark_failed")
             row.retry_count += 1
             row.error_message = error
             row.locked_at = None
-            if row.retry_count >= _MAX_RETRIES:
-                row.status = ScrapeStatus.FAILED
-                row.completed_at = datetime.now(UTC)
-            else:
-                row.status = ScrapeStatus.PENDING
+            row.status = ScrapeStatus.PENDING
             await self._session.flush()
 
     async def recover_all_stale(self) -> int:
@@ -122,6 +121,29 @@ class ScrapeQueueRepository:
             )
             result = await self._session.execute(stmt)
             return len(result.fetchall())
+
+    async def recover_failed(self) -> int:
+        """Reset all FAILED jobs of this job_type back to PENDING for retry."""
+        async with repo_error_context("recover_failed", "recover_failed failed"):
+            stmt = text(
+                """
+                UPDATE sch_infra.scrape_queue
+                   SET status        = 'PENDING',
+                       retry_count   = 0,
+                       error_message = NULL,
+                       completed_at  = NULL
+                 WHERE status   = 'FAILED'
+                   AND job_type = :job_type
+                """
+            )
+            result = await self._session.execute(stmt, {"job_type": self._job_type})
+            rowcount = cast(CursorResult, result).rowcount  # type: ignore[type-arg]
+            if rowcount is None:
+                raise RepositoryError(
+                    "recover_failed: DML result has no rowcount",
+                    operation="recover_failed",
+                )
+            return rowcount
 
     async def recover_stale(self, cutoff_minutes: int = 30) -> int:
         """Reset IN_PROGRESS rows with this job_type older than the cutoff."""
@@ -225,7 +247,11 @@ class ScrapeQueueJobRepository(BaseRepository[ScrapeQueue]):
                 stmt, {"domain": domain, "ttl": ttl_minutes}
             )
             rowcount = cast(CursorResult, result).rowcount  # type: ignore[type-arg]
-            assert rowcount is not None, "recover_stale: DML result has no rowcount"
+            if rowcount is None:
+                raise RepositoryError(
+                    "recover_stale: DML result has no rowcount",
+                    operation="recover_stale",
+                )
             return rowcount
         except SQLAlchemyError as exc:
             raise RepositoryError(

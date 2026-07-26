@@ -12,8 +12,6 @@ from rich.console import Console
 from cli.header import print_header
 from config.settings import Settings
 from core.preflight import run_checks
-from core.preflight.checks import check_stale_queue
-from core.preflight.result import CheckResult
 
 players_app = typer.Typer(name="players", help="Scrape players pipeline")
 console = Console()
@@ -60,6 +58,26 @@ async def _seed_country_squads(settings: Settings) -> None:
     ) as engine:
         scraper = CountrySquadsScraper(engine, settings.scraping, session_factory)
         await scraper.scrape(_SQUADS_URL)
+
+
+async def _seed_country_players_urls(settings: Settings) -> None:
+    import logging
+
+    logging.getLogger("pydoll").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure").setLevel(logging.WARNING)
+    logging.getLogger("ports.scraper").setLevel(logging.ERROR)
+
+    from infrastructure.browser.pydoll_engine import PydollEngine
+    from infrastructure.persistence.session import create_session_factory
+    from infrastructure.scraping.country_players import CountryPlayersScraper
+
+    _PLAYERS_INDEX_URL = "https://fbref.com/en/players/country/"
+    session_factory = create_session_factory(settings.db)
+    async with PydollEngine(
+        profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-players-urls"
+    ) as engine:
+        scraper = CountryPlayersScraper(engine, settings.scraping, session_factory)
+        await scraper.scrape(_PLAYERS_INDEX_URL)
 
 
 async def _seed_with_retry(
@@ -114,6 +132,14 @@ async def _seed_with_retry(
     return count  # type: ignore[no-any-return]
 
 
+async def _fetchval(dsn: str, sql: str) -> int:
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        return await conn.fetchval(sql)  # type: ignore[no-any-return]
+    finally:
+        await conn.close()
+
+
 def _build_dsn(settings: Settings) -> str:
     db = settings.db
     return (
@@ -156,60 +182,74 @@ async def _run(
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
     dsn = _build_dsn(settings)
-    seed_failed = None
 
     print_header(console)
 
     if not skip_preflight:
         console.print("[bold white]Checking requirements...[/bold white]")
-        results = await run_checks(dsn, "club_teams", console, compact=False)
 
-        seed_failed = next(
-            (r for r in results if r.name == "Seed data" and not r.passed), None
+        results = await run_checks(
+            dsn, "club_teams", console, compact=False, with_seed_checks=False
         )
-        if seed_failed and "countries" in seed_failed.detail:
+
+        existing_countries = await _fetchval(
+            dsn, "SELECT count(*) FROM sch_shared.tbl_countries"
+        )
+
+        if existing_countries:
+            msg = f"  [cyan]✓[/cyan]  {existing_countries} Countries"
+            console.print(msg + " loaded successfully.")
+        else:
             country_count = await _seed_with_retry(
                 lambda: _seed_countries(settings),
                 "SELECT count(*) FROM sch_shared.tbl_countries",
                 "countries",
                 dsn,
             )
-            console.print(
-                f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}"
-            )
-            # Mark only the seed check as resolved
-            results = [
-                CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
-                if r.name == "Seed data" and not r.passed
-                else r
-                for r in results
-            ]
-        squads_failed = next(
-            (r for r in results if r.name == "Country squads" and not r.passed), None
+            msg = f"  [cyan]✓[/cyan]  {country_count} Countries"
+            console.print(msg + " loaded successfully.")
+
+        existing_squads = await _fetchval(
+            dsn, "SELECT count(*) FROM sch_shared.tbl_country_squads"
         )
-        if squads_failed:
+
+        if existing_squads:
+            msg = f"  [cyan]✓[/cyan]  {existing_squads} Country Teams"
+            console.print(msg + " loaded successfully.")
+        else:
             squads_count = await _seed_with_retry(
                 lambda: _seed_country_squads(settings),
                 "SELECT count(*) FROM sch_shared.tbl_country_squads",
                 "country squads",
                 dsn,
             )
-            console.print(
-                f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}"
-            )
-            results = [
-                CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
-                if r.name == "Country squads" and not r.passed
-                else r
-                for r in results
-            ]
-        if seed_failed or squads_failed:
-            stale_result = await check_stale_queue(dsn)
-            if not stale_result.passed:
-                from core.preflight.renderer import render_check
+            msg = f"  [cyan]✓[/cyan]  {squads_count} Country Teams"
+            console.print(msg + " loaded successfully.")
 
-                render_check(stale_result, console)
-            results.append(stale_result)
+        missing_players_url = await _fetchval(
+            dsn,
+            ("SELECT count(*) FROM sch_shared.tbl_countries WHERE players_url IS NULL"),
+        )
+
+        if missing_players_url:
+            players_url_count = await _seed_with_retry(
+                lambda: _seed_country_players_urls(settings),
+                (
+                    "SELECT count(*) FROM sch_shared.tbl_countries "
+                    "WHERE players_url IS NOT NULL"
+                ),
+                "country players URLs",
+                dsn,
+            )
+            msg = (
+                f"  [cyan]✓[/cyan]  {players_url_count} Countries "
+                "with Players loaded successfully."
+            )
+            console.print(msg)
+        else:
+            console.print(
+                "  [cyan]✓[/cyan]  All Countries with Players loaded successfully."
+            )
 
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:

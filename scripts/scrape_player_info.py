@@ -115,7 +115,27 @@ async def _load_country_name_cache(
         result = await session.execute(
             sa.text("SELECT country_name, country_id FROM sch_shared.tbl_countries")
         )
-        return {row[0]: row[1] for row in result.fetchall()}
+        cache = {row[0]: row[1] for row in result.fetchall()}
+
+    # FBRef uses "United Kingdom" in player birth fields but stores England/Scotland
+    # separately — map it to GBR (Great Britain) which is the sovereign country.
+    gb_id = cache.get("Great Britain") or cache.get("GBR")
+    if gb_id:
+        cache.setdefault("United Kingdom", gb_id)
+
+    # FBRef country page names differ from player page names for some countries.
+    _aliases: list[tuple[str, str]] = [
+        ("IR Iran", "Iran"),
+        ("Korea Republic", "South Korea"),
+        ("Korea DPR", "North Korea"),
+        ("China PR", "China"),
+    ]
+    for db_name, fbref_name in _aliases:
+        country_id = cache.get(db_name)
+        if country_id:
+            cache.setdefault(fbref_name, country_id)
+
+    return cache
 
 
 # ---------------------------------------------------------------------------

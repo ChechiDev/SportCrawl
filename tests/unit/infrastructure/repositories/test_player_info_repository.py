@@ -162,3 +162,174 @@ class TestUpsertPhoto:
 
         call_tables = [c.args[0] for c in mock_pg_insert.call_args_list]
         assert PlayerPhoto in call_tables
+
+
+class TestUpsertCity:
+    async def test_upsert_city_inserts_new_city_and_returns_id(self) -> None:
+        """upsert_city must execute INSERT and return the city_id from SELECT."""
+        session = _make_session()
+
+        result_insert = MagicMock()
+        result_select = MagicMock()
+        result_select.scalar.return_value = 99
+        session.execute.side_effect = [result_insert, result_select]
+
+        repo = PlayerInfoRepository(session)
+        city_id = await repo.upsert_city("Buenos Aires")
+
+        assert city_id == 99
+        assert session.execute.call_count == 2
+        # First call: INSERT
+        first_sql = str(session.execute.call_args_list[0][0][0])
+        assert "tbl_cities" in first_sql
+        assert "ON CONFLICT" in first_sql
+        first_params = session.execute.call_args_list[0][0][1]
+        assert first_params["city_name"] == "Buenos Aires"
+
+    async def test_upsert_city_returns_existing_id_on_conflict(self) -> None:
+        """upsert_city must return the existing city_id even when INSERT is a no-op."""
+        session = _make_session()
+
+        result_insert = MagicMock()
+        result_select = MagicMock()
+        result_select.scalar.return_value = 7
+        session.execute.side_effect = [result_insert, result_select]
+
+        repo = PlayerInfoRepository(session)
+        city_id = await repo.upsert_city("Rosario")
+
+        assert city_id == 7
+
+    async def test_upsert_player_info_uses_fk_city_not_city_name(self) -> None:
+        """upsert_player_info must pass fk_city (int FK), not city_name (string)."""
+        session = _make_session()
+        raw = _make_raw()
+        raw.fk_city = 42
+        pos_ids: tuple[int | None, int | None, int | None] = (1, None, None)
+
+        with _pg_insert_mock(_REPO_MODULE) as mock_pg_insert:
+            stmt_mock = mock_pg_insert.return_value
+            repo = PlayerInfoRepository(session)
+            await repo.upsert_player_info(raw=raw, pos_ids=pos_ids)
+
+        # The values dict passed to .values() must contain fk_city, not city_name
+        values_call_kwargs = stmt_mock.values.call_args[1]
+        assert "fk_city" in values_call_kwargs
+        assert "city_name" not in values_call_kwargs
+        assert values_call_kwargs["fk_city"] == 42
+
+    async def test_upsert_player_info_uses_fk_nat_team_not_fk_national_team(
+        self,
+    ) -> None:
+        """upsert_player_info must use fk_nat_team column, not fk_national_team."""
+        session = _make_session()
+        raw = _make_raw()
+        raw.fk_nat_team = "ARG"
+        pos_ids: tuple[int | None, int | None, int | None] = (1, None, None)
+
+        with _pg_insert_mock(_REPO_MODULE) as mock_pg_insert:
+            stmt_mock = mock_pg_insert.return_value
+            repo = PlayerInfoRepository(session)
+            await repo.upsert_player_info(raw=raw, pos_ids=pos_ids)
+
+        values_call_kwargs = stmt_mock.values.call_args[1]
+        assert "fk_nat_team" in values_call_kwargs
+        assert "fk_national_team" not in values_call_kwargs
+        assert values_call_kwargs["fk_nat_team"] == "ARG"
+
+    async def test_upsert_player_info_includes_fk_team_and_player_age(
+        self,
+    ) -> None:
+        """upsert_player_info includes fk_team/age; excludes club_name/club_url."""
+        session = _make_session()
+        raw = _make_raw()
+        raw.fk_team = "0e08d4eb"
+        raw.player_age = 38
+        pos_ids: tuple[int | None, int | None, int | None] = (1, None, None)
+
+        with _pg_insert_mock(_REPO_MODULE) as mock_pg_insert:
+            stmt_mock = mock_pg_insert.return_value
+            repo = PlayerInfoRepository(session)
+            await repo.upsert_player_info(raw=raw, pos_ids=pos_ids)
+
+        values_call_kwargs = stmt_mock.values.call_args[1]
+        assert "fk_team" in values_call_kwargs
+        assert values_call_kwargs["fk_team"] == "0e08d4eb"
+        assert "player_age" in values_call_kwargs
+        assert values_call_kwargs["player_age"] == 38
+        assert "club_name" not in values_call_kwargs
+        assert "club_url" not in values_call_kwargs
+
+
+class TestUpsertCitizenship:
+    async def test_upsert_citizenship_executes_insert(self) -> None:
+        """upsert_citizenship must call session.execute with the correct SQL."""
+        session = _make_session()
+
+        repo = PlayerInfoRepository(session)
+        await repo.upsert_citizenship(player_id=_PLAYER_ID, fk_country="ARG")
+
+        session.execute.assert_called_once()
+        call_args = session.execute.call_args
+        # First positional arg is the sa.text statement
+        sql_text = str(call_args[0][0])
+        assert "tbl_player_citizenship" in sql_text
+        assert "ON CONFLICT" in sql_text
+        # Second arg is the bind params dict
+        params = call_args[0][1]
+        assert params["player_id"] == _PLAYER_ID
+        assert params["fk_country"] == "ARG"
+
+    async def test_upsert_citizenship_passes_correct_params(self) -> None:
+        """upsert_citizenship must bind player_id and fk_country correctly."""
+        session = _make_session()
+
+        repo = PlayerInfoRepository(session)
+        await repo.upsert_citizenship(player_id="xyz99999", fk_country="BRA")
+
+        params = session.execute.call_args[0][1]
+        assert params["player_id"] == "xyz99999"
+        assert params["fk_country"] == "BRA"
+
+
+class TestUpsertTeamStub:
+    async def test_upsert_team_stub_executes_insert_on_conflict_do_nothing(
+        self,
+    ) -> None:
+        """upsert_team_stub must INSERT into tbl_teams with ON CONFLICT DO NOTHING."""
+        session = _make_session()
+
+        repo = PlayerInfoRepository(session)
+        await repo.upsert_team_stub(
+            team_id="0e08d4eb",
+            team_url="https://fbref.com/en/squads/0e08d4eb/Barcelona",
+        )
+
+        session.execute.assert_called_once()
+        call_args = session.execute.call_args
+        sql_text = str(call_args[0][0])
+        assert "tbl_teams" in sql_text
+        assert "ON CONFLICT" in sql_text
+        params = call_args[0][1]
+        assert params["team_id"] == "0e08d4eb"
+        assert params["team_url"] == "https://fbref.com/en/squads/0e08d4eb/Barcelona"
+
+    async def test_upsert_team_stub_passes_none_url_as_null(self) -> None:
+        """upsert_team_stub passes None as team_url when absent, not empty string."""
+        session = _make_session()
+
+        repo = PlayerInfoRepository(session)
+        await repo.upsert_team_stub(team_id="abc12345", team_url=None)
+
+        params = session.execute.call_args[0][1]
+        assert params["team_url"] is None
+
+    async def test_upsert_team_stub_idempotent_on_second_call(self) -> None:
+        """Calling upsert_team_stub twice for the same team_id must not raise."""
+        session = _make_session()
+
+        repo = PlayerInfoRepository(session)
+        await repo.upsert_team_stub(team_id="0e08d4eb", team_url=None)
+        await repo.upsert_team_stub(team_id="0e08d4eb", team_url=None)
+
+        assert session.execute.call_count == 2

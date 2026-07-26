@@ -21,13 +21,13 @@ class Teams(Base):
     __tablename__ = "tbl_teams"
 
     team_id: Mapped[str] = mapped_column(String(8), primary_key=True)
-    team_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    fk_country: Mapped[str] = mapped_column(String(10), nullable=False)
-    fk_gender: Mapped[int] = mapped_column(Integer, nullable=False)
+    team_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    fk_country: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    fk_gender: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fk_comp: Mapped[int | None] = mapped_column(Integer, nullable=True)
     team_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
     team_to: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    team_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    team_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

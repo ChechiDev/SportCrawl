@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 
 from bs4 import BeautifulSoup, Tag
 
@@ -35,6 +35,7 @@ from domains.player_info.models import PlayerInfoPage, PlayerInfoRawData
 logger = logging.getLogger(__name__)
 
 _HEIGHT_RE = re.compile(r"(\d+)\s*cm", re.IGNORECASE)
+_TEAM_ID_RE = re.compile(r"/en/squads/([a-f0-9]{8})/")
 _WEIGHT_RE = re.compile(r"(\d+)\s*kg", re.IGNORECASE)
 _WAGES_RE = re.compile(r"£([\d,]+)")
 _EXPIRES_RE = re.compile(
@@ -58,6 +59,36 @@ _MONTHS = {
     "november": 11,
     "december": 12,
 }
+
+
+def _extract_team_id(club_url: str | None) -> str | None:
+    """Extract the 8-char hex team_id from a FBRef squad URL.
+
+    Args:
+        club_url: Relative URL like '/en/squads/0e08d4eb/Valle-Egues-Stats', or None.
+
+    Returns:
+        8-char hex string (e.g. '0e08d4eb') or None if no match.
+    """
+    if club_url is None:
+        return None
+    m = _TEAM_ID_RE.search(club_url)
+    return m.group(1) if m else None
+
+
+def _calculate_age(born: date | None) -> int | None:
+    """Calculate age in years from birth date.
+
+    Args:
+        born: Date of birth, or None.
+
+    Returns:
+        Age in whole years, or None.
+    """
+    if born is None:
+        return None
+    today = date.today()
+    return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 
 def _clean(raw: str) -> str | None:
@@ -96,12 +127,17 @@ def _parse_positions(
         strong = p.find("strong")
         if not strong or "position" not in strong.get_text(strip=True).lower():
             continue
-        text = p.get_text(separator=" ", strip=True)
-        # Strip the strong label text, take only the position code part before "("
+        # Normalize all whitespace variants (\xa0, \t, multiple spaces) to single space
+        raw = p.get_text(separator=" ")
+        text = re.sub(r"[\xa0\s]+", " ", raw).strip()
+        # Strip the "Position:" label
         after_label = re.sub(r"Position\s*:?\s*", "", text, flags=re.IGNORECASE)
-        # "FW-MF (AM, right) • Footed: Left" → take up to first "(" or "•"
-        pos_part = re.split(r"[•(]", after_label)[0].strip()
-        # Split on "-" and clean
+        # Take only the part before "•", "(", or "Footed" — handles both formats:
+        # "FW-MF (AM) • Footed: Left" and "FW-MF Footed: Left" (no bullet)
+        pos_part = re.split(r"[•▪(]|Footed", after_label, flags=re.IGNORECASE)[
+            0
+        ].strip()
+        # Split on "-", keep only pure alpha tokens (e.g. "FW", "MF", "DF", "GK")
         parts = [
             c.strip().upper()
             for c in pos_part.split("-")
@@ -138,14 +174,43 @@ def _parse_height_weight(soup: BeautifulSoup | Tag) -> tuple[int | None, int | N
     return None, None
 
 
+def _find_born_paragraph(soup: BeautifulSoup | Tag) -> Tag | None:
+    """Return the <p> that contains <strong>Born:</strong>."""
+    for strong in soup.find_all("strong"):
+        if not isinstance(strong, Tag):
+            continue
+        if strong.get_text(strip=True) in ("Born:", "Born"):
+            p = strong.find_parent("p")
+            if p and isinstance(p, Tag):
+                return p
+    return None
+
+
+def _find_birth_location_text(born_p: Tag) -> str | None:
+    """Return cleaned text of the span with 'in City, Country' inside the Born <p>."""
+    for span in born_p.find_all("span"):
+        if not isinstance(span, Tag):
+            continue
+        # Strip ASCII whitespace AND \xa0 (non-breaking space from &nbsp;)
+        text = span.get_text(strip=True).strip("\xa0").strip()
+        if text.startswith("in "):
+            return text
+    return None
+
+
 def _parse_birth(soup: BeautifulSoup | Tag) -> tuple[date | None, str | None]:
-    """Extract birth date and city from the necro-birth span."""
+    """Extract birth date and city from the Born paragraph."""
     player_born: date | None = None
     city_name: str | None = None
 
-    birth_span = soup.find("span", id="necro-birth")
-    if birth_span and isinstance(birth_span, Tag):
-        data_birth = birth_span.get("data-birth")
+    born_p = _find_born_paragraph(soup)
+    if not born_p:
+        return player_born, city_name
+
+    # Try data-birth attribute first (necro-birth span), fall back to text parse
+    necro = born_p.find("span", id="necro-birth")
+    if necro and isinstance(necro, Tag):
+        data_birth = necro.get("data-birth")
         if data_birth:
             try:
                 parts = str(data_birth).split("-")
@@ -153,36 +218,49 @@ def _parse_birth(soup: BeautifulSoup | Tag) -> tuple[date | None, str | None]:
             except (ValueError, IndexError):
                 pass
 
-        # City comes after "in" in the born paragraph: "... ) in Mataró, Spain"
-        parent = birth_span.find_parent("p")
-        if parent and isinstance(parent, Tag):
-            full_text = parent.get_text(separator=" ", strip=True)
-            # Match "in <City>" — the city ends at a comma or end of meaningful text
-            m = re.search(
-                r"\bin\s+([\w\s\-áéíóúàèìòùäëïöüñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÑÇ]+?)"
-                r"(?:\s*,|\s*$)",
-                full_text,
-            )
-            if m:
-                city_name = m.group(1).strip() or None
+    if player_born is None:
+        # Fall back: parse date from the first span whose text looks like a date
+        for span in born_p.find_all("span"):
+            if not isinstance(span, Tag):
+                continue
+            if span.get("id") == "necro-birth":
+                continue
+            text = span.get_text(strip=True).strip("\xa0").strip()
+            if not text or text.startswith("in ") or text.startswith("f-i"):
+                continue
+            try:
+                player_born = datetime.strptime(text, "%B %d, %Y").date()
+                break
+            except ValueError:
+                pass
+
+    location_text = _find_birth_location_text(born_p)
+    if location_text:
+        m = re.search(
+            r"^in\s+([\w\s\-áéíóúàèìòùäëïöüñçÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÑÇ]+?)"
+            r"(?:\s*,|$)",
+            location_text,
+        )
+        if m:
+            city_name = m.group(1).strip() or None
 
     return player_born, city_name
 
 
 def _parse_country_birth_name(soup: BeautifulSoup | Tag) -> str | None:
-    """Extract birth country name from 'in City, Country' text near necro-birth span."""
-    birth_span = soup.find("span", id="necro-birth")
-    if not birth_span or not isinstance(birth_span, Tag):
+    """Extract birth country name from the dedicated 'in City, Country' span."""
+    born_p = _find_born_paragraph(soup)
+    if not born_p:
         return None
-    parent = birth_span.find_parent("p")
-    if not parent or not isinstance(parent, Tag):
+    location_text = _find_birth_location_text(born_p)
+    if not location_text:
         return None
-    full_text = parent.get_text(separator=" ", strip=True).strip()
-    m = re.search(r"\bin\s+[^,]+,\s*([A-Za-z\s\-]+)", full_text)
+    # "in City, Country" → country is after the comma
+    m = re.search(r",\s*([A-Za-zÀ-ÖØ-öø-ÿ\s\-]+)$", location_text)
     if m:
         return _clean(m.group(1))
-    # Fallback: "in <Country>" with no city
-    m2 = re.search(r"\bin\s+([A-Za-z\s\-]+)", full_text)
+    # Fallback: "in Country" with no city
+    m2 = re.search(r"^in\s+([A-Za-zÀ-ÖØ-öø-ÿ\s\-]+)$", location_text)
     if m2:
         return _clean(m2.group(1))
     return None
@@ -313,6 +391,9 @@ class PlayerInfoScraper:
         player_wages, player_expires = _parse_wages_expires(scope)
         photo_url = _parse_photo(soup)
 
+        team_id = _extract_team_id(club_url)
+        player_age = _calculate_age(player_born)
+
         raw = PlayerInfoRawData(
             player_id=self._player_id,
             full_name=full_name,
@@ -320,13 +401,15 @@ class PlayerInfoScraper:
             fk_country_birth=None,
             country_birth_name=country_birth_name,
             national_team_name=national_team_name,
-            fk_national_team=None,
+            fk_nat_team=None,
             citizenship_name=citizenship_name,
             youth_nat_team_name=youth_nat_team_name,
             club_name=club_name,
             club_url=club_url,
+            fk_team=team_id,
             city_name=city_name,
             player_born=player_born,
+            player_age=player_age,
             player_height=player_height,
             player_weight=player_weight,
             position_1=position_1,

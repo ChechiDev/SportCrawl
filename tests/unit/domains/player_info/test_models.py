@@ -80,13 +80,14 @@ def test_player_info_raw_data_wages_zero_is_valid() -> None:
     assert raw.player_wages is not None
 
 
-def test_player_info_raw_data_no_player_age_field() -> None:
-    """PlayerInfoRawData MUST NOT have a player_age attribute."""
+def test_player_info_raw_data_has_player_age_field() -> None:
+    """PlayerInfoRawData MUST have a player_age attribute, defaulting to None."""
     raw = PlayerInfoRawData(
         player_id="abc123",
         player_info_url="https://fbref.com/en/players/abc123/Test-Player",
     )
-    assert not hasattr(raw, "player_age")
+    assert hasattr(raw, "player_age")
+    assert raw.player_age is None
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +129,6 @@ def test_player_info_page_multiple_players() -> None:
 
 
 def test_player_info_page_no_player_age_field() -> None:
-    """PlayerInfoPage MUST NOT have a player_age attribute."""
+    """PlayerInfoPage has no player_age attribute (it lives on PlayerInfoRawData)."""
     page = PlayerInfoPage(players=[])
     assert not hasattr(page, "player_age")

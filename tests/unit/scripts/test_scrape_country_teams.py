@@ -97,7 +97,7 @@ class TestSeedQueue:
         # Verify execute was called with a statement (ON CONFLICT is in the stmt object)
         session.execute.assert_called_once()
         stmt_arg = session.execute.call_args[0][0]
-         # The compiled insert should be a PostgreSQL insert with on_conflict
+        # The compiled insert should be a PostgreSQL insert with on_conflict
         assert stmt_arg is not None
 
     async def test_seed_queue_returns_zero_for_empty_input(self) -> None:

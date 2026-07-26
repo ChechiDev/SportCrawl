@@ -147,6 +147,17 @@ def _restore_input(saved: Any) -> None:
 # Unified display
 # ---------------------------------------------------------------------------
 
+_COOLDOWN_PREFIX = "__cooldown__"
+
+
+def _resolve_label(label: str) -> str:
+    """Translate internal __cooldown__ labels to human-readable text."""
+    if label.startswith(_COOLDOWN_PREFIX):
+        end = float(label[len(_COOLDOWN_PREFIX) :])
+        remaining = max(0, int(end - time.monotonic()))
+        return f"[bold orange1]COOLDOWN[/] Resuming in {remaining}s"
+    return label
+
 
 def _build_unified_display(
     s1_labels: dict[int, str],
@@ -178,7 +189,7 @@ def _build_unified_display(
     else:
         for i in range(1, s1_workers + 1):
             own = s1_counts.get(i, 0)
-            label = s1_labels.get(i, "starting crawl...")
+            label = _resolve_label(s1_labels.get(i, "starting crawl..."))
             row = f"[Crawl-{i}] [{own} | {s1_total_str}] {label}"
             s1_table.add_row("RUN", row)
     s1_table_padded = Padding(s1_table, pad=(0, 0, 0, 2))
@@ -200,7 +211,7 @@ def _build_unified_display(
     else:
         for i in range(1, s2_workers + 1):
             own = s2_counts.get(i, 0)
-            label = s2_labels.get(i, "starting crawl...")
+            label = _resolve_label(s2_labels.get(i, "starting crawl..."))
             row = f"[Crawl-{i}] [{own} | {s2_total_str}] {label}"
             s2_table.add_row("RUN", row)
 
@@ -231,7 +242,7 @@ def _build_unified_display(
         else:
             for i in range(1, s3_workers + 1):
                 own = s3_counts.get(i, 0)
-                label = s3_labels.get(i, "starting crawl...")
+                label = _resolve_label(s3_labels.get(i, "starting crawl..."))
                 row = f"[Crawl-{i}] [{own} | {s3_total_str}] {label}"
                 s3_table.add_row("RUN", row)
         s3_table_padded = Padding(s3_table, pad=(0, 0, 0, 2))
@@ -465,26 +476,48 @@ async def main(
         await _seed_country_teams_queue(session_factory, s1_rows)
         async with get_session(session_factory) as session:
             await TeamListQueueRepository(session).recover_all_stale()
+            await TeamListQueueRepository(session).recover_failed()
             await session.commit()
 
     s1_total = 0
     s1_done_initial = 0
     if with_teams:
         async with get_session(session_factory) as session:
-            result = await session.execute(
-                sa.text(
-                    "SELECT count(*) FROM sch_shared.tbl_country_squads"
-                    " WHERE clubs_url IS NOT NULL"
+            if s1_country_filter:
+                # Scope total and done to the requested countries only
+                result = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                        " WHERE clubs_url IS NOT NULL AND fk_country = ANY(:codes)"
+                    ),
+                    {"codes": list(s1_country_filter)},
                 )
-            )
-            s1_total = int(result.scalar() or 0)
-            result2 = await session.execute(
-                sa.text(
-                    "SELECT count(*) FROM sch_infra.scrape_queue"
-                    " WHERE job_type='team_list' AND status='DONE'"
+                s1_total = int(result.scalar() or 0)
+                result2 = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_infra.scrape_queue q"
+                        " JOIN sch_shared.tbl_country_squads cs ON cs.clubs_url = q.url"
+                        " WHERE q.job_type='team_list' AND q.status='DONE'"
+                        " AND cs.fk_country = ANY(:codes)"
+                    ),
+                    {"codes": list(s1_country_filter)},
                 )
-            )
-            s1_done_initial = int(result2.scalar() or 0)
+                s1_done_initial = int(result2.scalar() or 0)
+            else:
+                result = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                        " WHERE clubs_url IS NOT NULL"
+                    )
+                )
+                s1_total = int(result.scalar() or 0)
+                result2 = await session.execute(
+                    sa.text(
+                        "SELECT count(*) FROM sch_infra.scrape_queue"
+                        " WHERE job_type='team_list' AND status='DONE'"
+                    )
+                )
+                s1_done_initial = int(result2.scalar() or 0)
     pending = s1_total - s1_done_initial
     s1_worker_count = min(pending, workers) if pending else 0
 
@@ -519,10 +552,10 @@ async def main(
 
     async with get_session(session_factory) as session:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
+        await PlayerListQueueRepository(session).recover_failed()
         await session.commit()
     if stale:
         logger.info("Resumed: %d interrupted jobs restored to queue", stale)
-        _notifications.add(f"Resumed: {stale} interrupted jobs restored to queue")
 
     # Count actual pending step-2 jobs (covers the case where --all was not passed
     # but jobs already exist in the queue).
@@ -583,7 +616,7 @@ async def main(
     # Separate fetch gates — each step hits different URLs
     s1_fetch_gate = asyncio.Semaphore(1)
     s2_fetch_gate = asyncio.Semaphore(1)
-    s3_fetch_gate = asyncio.Semaphore(1)
+    s3_fetch_gate = asyncio.Semaphore(2)
 
     s3_total_ref: list[int] = [s3_total]
 
@@ -689,17 +722,22 @@ async def main(
                 for i in range(s2_worker_count)
             ]
 
+            # Fire trigger immediately if there are no step-2 workers (players
+            # already scraped or no countries queued) — avoids a deadlock where
+            # step2_done is only set after step3_ready, making the watcher fallback
+            # unreachable.
+            if not s2_tasks:
+                step3_ready.set()
+
             # --- Wait for trigger (tbl_players count >= trigger_count) ---
             await step3_ready.wait()
 
             async with get_session(session_factory) as session:
                 stale3 = await PlayerInfoQueueRepository(session).recover_all_stale()
+                await PlayerInfoQueueRepository(session).recover_failed()
                 await session.commit()
             if stale3:
                 logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
-                _notifications.add(
-                    f"Resumed: {stale3} interrupted jobs restored to queue"
-                )
 
             # Seed step-3 queue from tbl_players (idempotent)
             await _seed_player_info_queue(session_factory)

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import random
 import re
 from typing import Any
 
@@ -25,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
-from core.application.base_worker import BaseWorker
+from core.application.base_worker import BaseWorker, CooldownRequired
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
@@ -53,17 +54,7 @@ for _noisy in (
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
-_FBREF_BASE = "https://fbref.com"
-_BASE_URL = "https://fbref.com/en/country/players/{code}/{code}-Football"
 _COUNTRY_CODE_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
-
-COUNTRY_URLS: dict[str, str] = {
-    "ESP": "https://fbref.com/en/country/players/ESP/Spain-Football",
-    "ARG": "https://fbref.com/en/country/players/ARG/Argentina-Football",
-    "BRA": "https://fbref.com/en/country/players/BRA/Brazil-Football",
-    "FRA": "https://fbref.com/en/country/players/FRA/France-Football",
-    "ENG": "https://fbref.com/en/country/players/ENG/England-Football",
-}
 
 
 class PlayerListWorker(BaseWorker["ScrapeQueue"]):
@@ -105,6 +96,11 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
     def _build_engine(self) -> PydollEngine:
         return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
 
+    async def startup_delay(self) -> None:
+        delay = self._worker_id * random.uniform(1.5, 3.0)
+        self._labels[self._worker_id] = f"Waiting {delay:.1f}s before start..."
+        await asyncio.sleep(delay)
+
     async def on_browser_ready(self, engine: Any) -> None:
         self._scraper = PlayerListScraper(
             engine, self._settings.scraping, self._session_factory
@@ -142,6 +138,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 
             max_attempts = 3
             browser_restart = False
+            success = False
             for attempt in range(1, max_attempts + 1):
                 try:
                     async with self._fetch_gate:
@@ -163,6 +160,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                     self._labels[self._worker_id] = (
                         f"{_escape(country_display)}: {total_players:,} Players"
                     )
+                    success = True
                     break
 
                 except Exception as exc:
@@ -175,8 +173,12 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                 repo = PlayerListQueueRepository(session)
                                 await repo.mark_failed(job.id, str(exc))
                                 await session.commit()
-                        except Exception:
-                            pass
+                        except Exception as mark_err:
+                            logger.error(
+                                "[worker-%d] mark_failed error: %s",
+                                self._worker_id,
+                                mark_err,
+                            )
                         browser_restart = True
                         break
 
@@ -185,15 +187,19 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                             f"[bold yellow]WARNING[/]"
                             f" Retrying ({attempt}/{max_attempts}) — {country_display}"
                         )
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(random.uniform(5.0, 15.0))
                     else:
                         try:
                             async with get_session(self._session_factory) as session:
                                 repo = PlayerListQueueRepository(session)
                                 await repo.mark_failed(job.id, str(exc))
                                 await session.commit()
-                        except Exception:
-                            pass
+                        except Exception as mark_err:
+                            logger.error(
+                                "[worker-%d] mark_failed error: %s",
+                                self._worker_id,
+                                mark_err,
+                            )
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] {country_display}"
                         )
@@ -201,31 +207,24 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
             if browser_restart:
                 return -1
 
-
-def _players_url(country_url: str) -> str:
-    """Derive player-list URL from country_url stored in DB.
-
-    /en/country/AFG/Afghanistan-Football
-    → https://fbref.com/en/country/players/AFG/Afghanistan-Football
-    """
-    path = country_url.replace("/en/country/", "/en/country/players/", 1)
-    return f"{_FBREF_BASE}{path}"
+            if not success:
+                self._labels[self._worker_id] = (
+                    f"[bold red]FAILED[/] {country_display} — max retries reached"
+                )
+                raise CooldownRequired
 
 
 async def _load_all_countries(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> list[tuple[str, str, str]]:
-    """Return (country_id, player_list_url, country_name) for every country."""
+    """Return (country_id, players_url, country_name) for rows with players_url set."""
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.select(
-                Country.country_id, Country.country_url, Country.country_name
-            ).order_by(Country.country_name)
+            sa.select(Country.country_id, Country.players_url, Country.country_name)
+            .where(Country.players_url.is_not(None))
+            .order_by(Country.country_name)
         )
-        return [
-            (row.country_id, _players_url(row.country_url), row.country_name)
-            for row in result
-        ]
+        return [(row.country_id, row.players_url, row.country_name) for row in result]
 
 
 async def _seed_queue(
@@ -271,6 +270,20 @@ async def scrape_one(scraper: PlayerListScraper, url: str) -> int:
     return inserted
 
 
+async def main_by_country(country_id: str) -> int:
+    settings = Settings()  # type: ignore[call-arg]
+    session_factory = create_session_factory(settings.db)
+    async with get_session(session_factory) as session:
+        result = await session.execute(
+            sa.select(Country.players_url).where(Country.country_id == country_id)
+        )
+        players_url = result.scalar_one_or_none()
+    if not players_url:
+        print(f"No players URL found for country_id={country_id!r}. Run seed first.")
+        return 0
+    return await main_single(players_url)
+
+
 async def main_single(url: str, verbose: bool = True) -> int:
     settings = Settings()  # type: ignore[call-arg]
     session_factory = create_session_factory(settings.db)
@@ -303,6 +316,7 @@ async def main_all(workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
+        await PlayerListQueueRepository(session).recover_failed()
         await session.commit()
     if stale:
         logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
@@ -388,16 +402,14 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     session_factory_tmp = create_session_factory(settings.db)
     async with get_session(session_factory_tmp) as session:
         result = await session.execute(
-            sa.select(
-                Country.country_id, Country.country_url, Country.country_name
-            ).where(Country.country_id.in_(upper_codes))
+            sa.select(Country.country_id, Country.players_url, Country.country_name)
+            .where(Country.country_id.in_(upper_codes))
+            .where(Country.players_url.is_not(None))
         )
         countries = [
-            (row.country_id, _players_url(row.country_url), row.country_name)
-            for row in result
+            (row.country_id, row.players_url, row.country_name) for row in result
         ]
     total = len(countries)
-    workers = 1
 
     settings.db.pool_size = max(workers * 2, settings.db.pool_size)
     session_factory = create_session_factory(settings.db)
@@ -406,6 +418,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
+        await PlayerListQueueRepository(session).recover_failed()
         await session.commit()
     if stale:
         logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
@@ -483,10 +496,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape FBRef player lists.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
+        "-c",
         "--country",
         metavar="CODE",
-        default="ESP",
-        help="FBRef country code (default: ESP).",
+        help="ISO country code to scrape (e.g. ARG).",
     )
     group.add_argument(
         "--url", metavar="URL", help="Full FBRef country player-list URL."
@@ -498,6 +511,7 @@ def main() -> None:
         help="Scrape all countries from the database.",
     )
     parser.add_argument(
+        "-w",
         "--workers",
         metavar="N",
         type=int,
@@ -508,12 +522,12 @@ def main() -> None:
 
     if args.all_countries:
         asyncio.run(main_all(workers=args.workers))
+    elif args.url:
+        asyncio.run(main_single(args.url))
+    elif args.country:
+        asyncio.run(main_by_country(args.country.upper()))
     else:
-        target_url = args.url or COUNTRY_URLS.get(
-            args.country.upper(),
-            _BASE_URL.format(code=args.country.upper()),
-        )
-        asyncio.run(main_single(target_url))
+        parser.error("Specify -c <CODE>, --url <URL>, or --all")
 
 
 if __name__ == "__main__":

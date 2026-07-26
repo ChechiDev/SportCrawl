@@ -24,7 +24,8 @@ class PlayerInfoRawData(BaseModel):
         fk_country_birth: country_id FK referencing tbl_countries (e.g. "ARG").
         country_birth_name: Raw country name extracted from the born paragraph text.
         national_team_name: Raw national team country name from the National Team link.
-        fk_national_team: country_id FK resolved from national_team_name.
+        fk_nat_team: country_id FK resolved from national_team_name.
+        fk_team: team_id FK resolved from club_url (transient, used to set FK).
         city_name: Free-text birth city name; no FK.
         player_born: Date of birth.
         player_height: Height in centimetres.
@@ -44,9 +45,12 @@ class PlayerInfoRawData(BaseModel):
     fk_country_birth: str | None = None
     country_birth_name: str | None = None
     national_team_name: str | None = None
-    fk_national_team: str | None = None
+    fk_nat_team: str | None = None
+    fk_team: str | None = None
     city_name: str | None = None
+    fk_city: int | None = None
     player_born: date | None = None
+    player_age: int | None = None
     player_height: int | None = None
     player_weight: int | None = None
     position_1: str | None = None
@@ -61,8 +65,8 @@ class PlayerInfoRawData(BaseModel):
     youth_nat_team_name: str | None = None
     club_name: str | None = None
     club_url: str | None = None
-    fk_citizenship: str | None = None
     fk_youth_nat_team: str | None = None
+    fk_citizenship: str | None = None
 
 
 class PlayerInfoPage(BaseModel):

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -101,11 +102,12 @@ class PlayerInfoRepository:
             values: dict[str, object] = {
                 "player_id": raw.player_id,
                 "fk_country_birth": raw.fk_country_birth,
-                "fk_national_team": raw.fk_national_team,
-                "fk_citizenship": raw.fk_citizenship,
+                "fk_city": raw.fk_city,
+                "fk_nat_team": raw.fk_nat_team,
                 "fk_youth_nat_team": raw.fk_youth_nat_team,
-                "city_name": raw.city_name,
+                "fk_team": raw.fk_team,
                 "player_born": raw.player_born,
+                "player_age": raw.player_age,
                 "player_height": raw.player_height,
                 "player_weight": raw.player_weight,
                 "fk_ply_pos_1": fk1,
@@ -115,19 +117,18 @@ class PlayerInfoRepository:
                 "player_wages": raw.player_wages,
                 "player_expires": raw.player_expires,
                 "player_info_url": raw.player_info_url,
-                "club_name": raw.club_name,
-                "club_url": raw.club_url,
             }
             stmt = pg_insert(PlayerInfo).values(**values)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["player_id"],
                 set_={
                     "fk_country_birth": stmt.excluded.fk_country_birth,
-                    "fk_national_team": stmt.excluded.fk_national_team,
-                    "fk_citizenship": stmt.excluded.fk_citizenship,
+                    "fk_city": stmt.excluded.fk_city,
+                    "fk_nat_team": stmt.excluded.fk_nat_team,
                     "fk_youth_nat_team": stmt.excluded.fk_youth_nat_team,
-                    "city_name": stmt.excluded.city_name,
+                    "fk_team": stmt.excluded.fk_team,
                     "player_born": stmt.excluded.player_born,
+                    "player_age": stmt.excluded.player_age,
                     "player_height": stmt.excluded.player_height,
                     "player_weight": stmt.excluded.player_weight,
                     "fk_ply_pos_1": stmt.excluded.fk_ply_pos_1,
@@ -137,8 +138,6 @@ class PlayerInfoRepository:
                     "player_wages": stmt.excluded.player_wages,
                     "player_expires": stmt.excluded.player_expires,
                     "player_info_url": stmt.excluded.player_info_url,
-                    "club_name": stmt.excluded.club_name,
-                    "club_url": stmt.excluded.club_url,
                     "updated_at": func.now(),
                 },
             )
@@ -170,3 +169,84 @@ class PlayerInfoRepository:
                 set_={"player_photo_url": stmt.excluded.player_photo_url},
             )
             await self._session.execute(stmt)
+
+    async def upsert_city(self, city_name: str) -> int:
+        """Insert city if not exists, return city_id.
+
+        Args:
+            city_name: Free-text birth city name.
+
+        Returns:
+            The city_id (existing or newly created).
+
+        Raises:
+            RepositoryError: if any database operation fails.
+        """
+        async with repo_error_context("upsert_city", "upsert_city failed"):
+            await self._session.execute(
+                sa.text(
+                    "INSERT INTO sch_shared.tbl_cities (city_name)"
+                    " VALUES (:city_name)"
+                    " ON CONFLICT (city_name) DO NOTHING"
+                ),
+                {"city_name": city_name},
+            )
+            result = await self._session.execute(
+                sa.text(
+                    "SELECT city_id FROM sch_shared.tbl_cities"
+                    " WHERE city_name = :city_name"
+                ),
+                {"city_name": city_name},
+            )
+            city_id = result.scalar()
+            if city_id is None:
+                raise RepositoryError(
+                    f"City not found after upsert: {city_name!r}",
+                    operation="upsert_city",
+                )
+            return int(city_id)
+
+    async def upsert_team_stub(self, team_id: str, team_url: str | None) -> None:
+        """Insert a minimal tbl_teams stub if team_id does not exist yet.
+
+        This allows fk_team FK to be satisfied before the team is fully scraped.
+        On conflict (team already exists), does nothing — full scrape data is preserved.
+
+        Args:
+            team_id: FBRef squad ID (8-char string, natural PK).
+            team_url: Squad URL from the player profile page, or None.
+
+        Raises:
+            RepositoryError: if the insert fails.
+        """
+        async with repo_error_context("upsert_team_stub", "upsert_team_stub failed"):
+            await self._session.execute(
+                sa.text(
+                    "INSERT INTO sch_shared.tbl_teams (team_id, team_url)"
+                    " VALUES (:team_id, :team_url)"
+                    " ON CONFLICT (team_id) DO NOTHING"
+                ),
+                {"team_id": team_id, "team_url": team_url},
+            )
+
+    async def upsert_citizenship(self, player_id: str, fk_country: str) -> None:
+        """Insert a citizenship row, ignoring if the pair already exists.
+
+        Args:
+            player_id: FBRef slug (FK → tbl_players.player_id).
+            fk_country: country_id FK (FK → tbl_countries.country_id).
+
+        Raises:
+            RepositoryError: if the insert fails.
+        """
+        async with repo_error_context(
+            "upsert_citizenship", "upsert_citizenship failed"
+        ):
+            stmt = sa.text(
+                "INSERT INTO sch_shared.tbl_player_citizenship (player_id, fk_country)"
+                " VALUES (:player_id, :fk_country)"
+                " ON CONFLICT (player_id, fk_country) DO NOTHING"
+            )
+            await self._session.execute(
+                stmt, {"player_id": player_id, "fk_country": fk_country}
+            )

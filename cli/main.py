@@ -12,7 +12,6 @@ import asyncio
 import typer
 from rich.console import Console
 
-from cli.players import players_app
 from config.settings import Settings
 from infrastructure.work_server.runtime import serve
 
@@ -21,7 +20,6 @@ app = typer.Typer(
     help="Sportcrawl — sports data, scraped at scale.",
     invoke_without_command=True,
 )
-app.add_typer(players_app, name="players")
 
 
 @app.callback()
@@ -43,6 +41,36 @@ def default(
         return
     if not all_countries and not country:
         raise typer.BadParameter("Specify --country or --all.")
+    from cli.players import _run
+
+    asyncio.run(
+        _run(
+            country=country,
+            all_countries=all_countries,
+            with_player_info=with_player_info,
+            workers=workers,
+            recover_stale=recover_stale,
+            skip_preflight=skip_preflight,
+        )
+    )
+
+
+@app.command("start")
+def start(
+    country: str | None = typer.Option(
+        None, "--country", "-c", help="Comma-separated country codes, e.g. ESP,ARG"
+    ),
+    all_countries: bool = typer.Option(
+        False, "--all", "-a", help="Scrape all countries"
+    ),
+    with_player_info: bool = typer.Option(False, "--with-player-info"),
+    workers: int = typer.Option(1, "--workers", "-w"),
+    recover_stale: bool = typer.Option(False, "--recover-stale"),
+    skip_preflight: bool = typer.Option(False, "--skip-preflight"),
+) -> None:
+    """Run the full scraping pipeline (teams + players + player info)."""
+    if not all_countries and not country:
+        raise typer.BadParameter("Specify --country/-c or --all/-a.")
     from cli.players import _run
 
     asyncio.run(
@@ -164,7 +192,7 @@ def reset_db(
             "[bold red]WARNING[/bold red]\n\n"
             "This will delete ALL scraped data:\n"
             "  • sch_shared: countries, players, player_info, photos, positions,\n"
-            "    country_squads, teams, competition\n"
+            "    country_squads, teams, competition, cities, player_citizenship\n"
             "  • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
             "Schemas and migrations will NOT be touched.",
             title="[red]Reset Database[/red]",
@@ -197,11 +225,13 @@ async def _do_reset(console: Console) -> None:
         tables = [
             ("sch_shared", "tbl_player_info"),
             ("sch_shared", "tbl_player_photo"),
+            ("sch_shared", "tbl_player_citizenship"),
             ("sch_shared", "tbl_player_positions"),
             ("sch_shared", "tbl_players"),
             ("sch_shared", "tbl_teams"),
             ("sch_shared", "tbl_country_squads"),
             ("sch_shared", "tbl_competition"),
+            ("sch_shared", "tbl_cities"),
             ("sch_shared", "tbl_countries"),
             ("sch_shared", "tbl_confederations"),
             ("sch_shared", "tbl_gender"),
