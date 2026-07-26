@@ -84,23 +84,24 @@ class CountryRepository:
                 result_country = await self._session.execute(stmt_country)
                 country_id_value: str = result_country.scalar_one()
 
-                # 3. Upsert flag
-                stmt_flag = (
-                    pg_insert(Flag)
-                    .values(
-                        flag_id=row.flag_id,
-                        flag_url=row.flag_url,
-                        fk_country=country_id_value,
+                # 3. Upsert flag (skip rows without a flag, e.g. England)
+                if row.flag_id and row.flag_url:
+                    stmt_flag = (
+                        pg_insert(Flag)
+                        .values(
+                            flag_id=row.flag_id,
+                            flag_url=row.flag_url,
+                            fk_country=country_id_value,
+                        )
+                        .on_conflict_do_update(
+                            index_elements=["fk_country"],
+                            set_={
+                                "flag_id": row.flag_id,
+                                "flag_url": row.flag_url,
+                            },
+                        )
                     )
-                    .on_conflict_do_update(
-                        index_elements=["fk_country"],
-                        set_={
-                            "flag_id": row.flag_id,
-                            "flag_url": row.flag_url,
-                        },
-                    )
-                )
-                await self._session.execute(stmt_flag)
+                    await self._session.execute(stmt_flag)
 
         except SQLAlchemyError as exc:
             raise RepositoryError(

@@ -93,14 +93,10 @@ class CountryScraper(BaseScraper[CountryPage]):
             country_url = href
 
             flag_td = cells_by_stat.get("flag")
-            if not flag_td:
-                continue
-            flag_span = flag_td.find("span")
+            flag_span = flag_td.find("span") if flag_td else None
             flag_id = flag_span.get_text(strip=True) if flag_span else None
-            if not flag_id:
-                continue
-
-            flag_url = f"{_FLAG_CDN}/{flag_id}.gif"
+            flag_id = flag_id if flag_id else None
+            flag_url = f"{_FLAG_CDN}/{flag_id}.gif" if flag_id else None
 
             governing = cells_by_stat.get("governing_body")
             confederation: str | None = None

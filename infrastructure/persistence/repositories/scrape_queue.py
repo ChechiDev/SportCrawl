@@ -123,6 +123,29 @@ class ScrapeQueueRepository:
             result = await self._session.execute(stmt)
             return len(result.fetchall())
 
+    async def recover_failed(self) -> int:
+        """Reset all FAILED jobs of this job_type back to PENDING for retry."""
+        async with repo_error_context("recover_failed", "recover_failed failed"):
+            stmt = text(
+                """
+                UPDATE sch_infra.scrape_queue
+                   SET status        = 'PENDING',
+                       retry_count   = 0,
+                       error_message = NULL,
+                       completed_at  = NULL
+                 WHERE status   = 'FAILED'
+                   AND job_type = :job_type
+                """
+            )
+            result = await self._session.execute(stmt, {"job_type": self._job_type})
+            rowcount = cast(CursorResult, result).rowcount  # type: ignore[type-arg]
+            if rowcount is None:
+                raise RepositoryError(
+                    "recover_failed: DML result has no rowcount",
+                    operation="recover_failed",
+                )
+            return rowcount
+
     async def recover_stale(self, cutoff_minutes: int = 30) -> int:
         """Reset IN_PROGRESS rows with this job_type older than the cutoff."""
         async with repo_error_context("recover_stale", "recover_stale failed"):

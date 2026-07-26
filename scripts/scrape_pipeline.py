@@ -147,6 +147,17 @@ def _restore_input(saved: Any) -> None:
 # Unified display
 # ---------------------------------------------------------------------------
 
+_COOLDOWN_PREFIX = "__cooldown__"
+
+
+def _resolve_label(label: str) -> str:
+    """Translate internal __cooldown__ labels to human-readable text."""
+    if label.startswith(_COOLDOWN_PREFIX):
+        end = float(label[len(_COOLDOWN_PREFIX):])
+        remaining = max(0, int(end - time.monotonic()))
+        return f"[bold orange1]COOLDOWN[/] Resuming in {remaining}s"
+    return label
+
 
 def _build_unified_display(
     s1_labels: dict[int, str],
@@ -178,7 +189,7 @@ def _build_unified_display(
     else:
         for i in range(1, s1_workers + 1):
             own = s1_counts.get(i, 0)
-            label = s1_labels.get(i, "starting crawl...")
+            label = _resolve_label(s1_labels.get(i, "starting crawl..."))
             row = f"[Crawl-{i}] [{own} | {s1_total_str}] {label}"
             s1_table.add_row("RUN", row)
     s1_table_padded = Padding(s1_table, pad=(0, 0, 0, 2))
@@ -200,7 +211,7 @@ def _build_unified_display(
     else:
         for i in range(1, s2_workers + 1):
             own = s2_counts.get(i, 0)
-            label = s2_labels.get(i, "starting crawl...")
+            label = _resolve_label(s2_labels.get(i, "starting crawl..."))
             row = f"[Crawl-{i}] [{own} | {s2_total_str}] {label}"
             s2_table.add_row("RUN", row)
 
@@ -231,7 +242,7 @@ def _build_unified_display(
         else:
             for i in range(1, s3_workers + 1):
                 own = s3_counts.get(i, 0)
-                label = s3_labels.get(i, "starting crawl...")
+                label = _resolve_label(s3_labels.get(i, "starting crawl..."))
                 row = f"[Crawl-{i}] [{own} | {s3_total_str}] {label}"
                 s3_table.add_row("RUN", row)
         s3_table_padded = Padding(s3_table, pad=(0, 0, 0, 2))
@@ -465,6 +476,7 @@ async def main(
         await _seed_country_teams_queue(session_factory, s1_rows)
         async with get_session(session_factory) as session:
             await TeamListQueueRepository(session).recover_all_stale()
+            await TeamListQueueRepository(session).recover_failed()
             await session.commit()
 
     s1_total = 0
@@ -540,6 +552,7 @@ async def main(
 
     async with get_session(session_factory) as session:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
+        await PlayerListQueueRepository(session).recover_failed()
         await session.commit()
     if stale:
         logger.info("Resumed: %d interrupted jobs restored to queue", stale)
@@ -721,6 +734,7 @@ async def main(
 
             async with get_session(session_factory) as session:
                 stale3 = await PlayerInfoQueueRepository(session).recover_all_stale()
+                await PlayerInfoQueueRepository(session).recover_failed()
                 await session.commit()
             if stale3:
                 logger.info("Resumed: %d interrupted jobs restored to queue", stale3)

@@ -128,12 +128,15 @@ def _parse_positions(
         strong = p.find("strong")
         if not strong or "position" not in strong.get_text(strip=True).lower():
             continue
-        text = p.get_text(separator=" ", strip=True)
-        # Strip the strong label text, take only the position code part before "("
+        # Normalize all whitespace variants (\xa0, \t, multiple spaces) to single space
+        raw = p.get_text(separator=" ")
+        text = re.sub(r"[\xa0\s]+", " ", raw).strip()
+        # Strip the "Position:" label
         after_label = re.sub(r"Position\s*:?\s*", "", text, flags=re.IGNORECASE)
-        # "FW-MF (AM, right) • Footed: Left" → take up to first "(" or "•"
-        pos_part = re.split(r"[•(]", after_label)[0].strip()
-        # Split on "-" and clean
+        # Take only the part before "•", "(", or "Footed" — handles both formats:
+        # "FW-MF (AM) • Footed: Left" and "FW-MF Footed: Left" (no bullet)
+        pos_part = re.split(r"[•▪(]|Footed", after_label, flags=re.IGNORECASE)[0].strip()
+        # Split on "-", keep only pure alpha tokens (e.g. "FW", "MF", "DF", "GK")
         parts = [
             c.strip().upper()
             for c in pos_part.split("-")

@@ -274,6 +274,7 @@ async def main(workers: int = 1, country_filter: set[str] | None = None) -> None
 
     async with get_session(session_factory) as session:
         await TeamListQueueRepository(session).recover_all_stale()
+        await TeamListQueueRepository(session).recover_failed()
         await session.commit()
 
     async with get_session(session_factory) as session:

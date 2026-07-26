@@ -12,8 +12,6 @@ from rich.console import Console
 from cli.header import print_header
 from config.settings import Settings
 from core.preflight import run_checks
-from core.preflight.checks import check_stale_queue
-from core.preflight.result import CheckResult
 
 players_app = typer.Typer(name="players", help="Scrape players pipeline")
 console = Console()
@@ -40,6 +38,7 @@ async def _seed_countries(settings: Settings) -> None:
     ) as engine:
         scraper = CountryScraper(engine, settings.scraping, session_factory)
         await scraper.scrape(_COUNTRIES_URL)
+
 
 
 async def _seed_country_squads(settings: Settings) -> None:
@@ -156,60 +155,31 @@ async def _run(
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
     dsn = _build_dsn(settings)
-    seed_failed = None
 
     print_header(console)
 
     if not skip_preflight:
         console.print("[bold white]Checking requirements...[/bold white]")
-        results = await run_checks(dsn, "club_teams", console, compact=False)
 
-        seed_failed = next(
-            (r for r in results if r.name == "Seed data" and not r.passed), None
+        results = await run_checks(
+            dsn, "club_teams", console, compact=False, with_seed_checks=False
         )
-        if seed_failed and "countries" in seed_failed.detail:
-            country_count = await _seed_with_retry(
-                lambda: _seed_countries(settings),
-                "SELECT count(*) FROM sch_shared.tbl_countries",
-                "countries",
-                dsn,
-            )
-            console.print(
-                f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}"
-            )
-            # Mark only the seed check as resolved
-            results = [
-                CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
-                if r.name == "Seed data" and not r.passed
-                else r
-                for r in results
-            ]
-        squads_failed = next(
-            (r for r in results if r.name == "Country squads" and not r.passed), None
-        )
-        if squads_failed:
-            squads_count = await _seed_with_retry(
-                lambda: _seed_country_squads(settings),
-                "SELECT count(*) FROM sch_shared.tbl_country_squads",
-                "country squads",
-                dsn,
-            )
-            console.print(
-                f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}"
-            )
-            results = [
-                CheckResult(name=r.name, passed=True, detail=r.detail, fatal=r.fatal)
-                if r.name == "Country squads" and not r.passed
-                else r
-                for r in results
-            ]
-        if seed_failed or squads_failed:
-            stale_result = await check_stale_queue(dsn)
-            if not stale_result.passed:
-                from core.preflight.renderer import render_check
 
-                render_check(stale_result, console)
-            results.append(stale_result)
+        country_count = await _seed_with_retry(
+            lambda: _seed_countries(settings),
+            "SELECT count(*) FROM sch_shared.tbl_countries",
+            "countries",
+            dsn,
+        )
+        console.print(f"  [cyan]✓[/cyan]  {country_count} countries loaded.{' ' * 40}")
+
+        squads_count = await _seed_with_retry(
+            lambda: _seed_country_squads(settings),
+            "SELECT count(*) FROM sch_shared.tbl_country_squads",
+            "country squads",
+            dsn,
+        )
+        console.print(f"  [cyan]✓[/cyan]  {squads_count} country squads loaded.{' ' * 40}")
 
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:
