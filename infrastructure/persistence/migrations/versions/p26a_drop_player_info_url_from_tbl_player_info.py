@@ -22,17 +22,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.add_column(
         "tbl_player_info",
-        sa.Column(
-            "player_info_url",
-            sa.VARCHAR(500),
-            nullable=False,
-            server_default="",
-        ),
-        schema="sch_shared",
-    )
-    op.alter_column(
-        "tbl_player_info",
-        "player_info_url",
-        server_default=None,
+        sa.Column("player_info_url", sa.VARCHAR(500), nullable=True),
         schema="sch_shared",
     )
