@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-07-26
+
+### Added
+- `player_url` in `tbl_players` now stores the `/all_comps/` FBRef URL, enabling competition-level stats scraping without re-scraping
+
+### Changed
+- `tbl_teams.updated_at` — removed client-side `onupdate=func.now()`; upsert repo already sets it explicitly server-side
+
+### Fixed
+- `tbl_flags.flag_id` and `tbl_country_squads.fk_flag` ORM type corrected from `String(2)` to `String(3)` to match DB after migration `p24a`
+- Dropped redundant `ix_player_queue_ref_queue_id` index (already covered by unique constraint) — migration `p27a`
+- `p26a` downgrade now restores `player_info_url` as `nullable=True` instead of filling existing rows with empty strings
+
+### Removed
+- `player_info_url` column from `tbl_player_info` — redundant, URL already stored in `tbl_players.player_url` — migration `p26a`
+
 ## [0.22.1] — 2026-07-26
 
 ### Fixed
