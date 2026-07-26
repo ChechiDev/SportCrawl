@@ -34,8 +34,16 @@ from infrastructure.persistence.repositories.player_info import PlayerInfoReposi
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
+from infrastructure.persistence.repositories.player_shooting_stats import (
+    PlayerShootingStatsRepository,
+)
+from infrastructure.persistence.repositories.player_std_stats import (
+    PlayerStdStatsRepository,
+)
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.player_info import PlayerInfoScraper
+from infrastructure.scraping.player_shooting_stats import parse_player_shooting_stats
+from infrastructure.scraping.player_std_stats import parse_player_std_stats
 
 _console = Console()
 
@@ -251,6 +259,19 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             job,  # type: ignore[arg-type]
                             html,
                         )
+
+                        player_id = _player_id_from_url(job.url)
+
+                        std_stats = parse_player_std_stats(html, player_id)
+                        if std_stats:
+                            std_repo = PlayerStdStatsRepository(session)
+                            await std_repo.upsert_bulk(std_stats)
+
+                        shooting_stats = parse_player_shooting_stats(html, player_id)
+                        if shooting_stats:
+                            shooting_repo = PlayerShootingStatsRepository(session)
+                            await shooting_repo.upsert_bulk(shooting_stats)
+
                         await session.commit()
 
                     success = True
