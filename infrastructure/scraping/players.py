@@ -176,6 +176,12 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
                         raise PageLoadError(
                             f"Incomplete render: got {actual}/{expected} players"
                         )
+                elif len(page.players) == 0:
+                    # No count header + 0 players = CF challenge page or blank render.
+                    # A genuine 0-player country still has the "0 Players" header.
+                    raise PageLoadError(
+                        "No players found and no count header — possible CF block"
+                    )
                 break
             except (PageLoadError, RateLimitError) as exc:
                 last_error = exc

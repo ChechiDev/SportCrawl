@@ -138,8 +138,9 @@ class CountryRepository:
                 )
                 result = await self._session.execute(stmt)
                 if cast(CursorResult, result).rowcount == 0:  # type: ignore[type-arg]
-                    logger.warning(
-                        "upsert_players_url: no row matched for country_id=%r name=%r",
+                    logger.debug(
+                        "upsert_players_url: no row matched for country_id=%r name=%r"
+                        " (historical or unsupported territory — skipped)",
                         entry.country_id,
                         entry.country_name,
                     )
