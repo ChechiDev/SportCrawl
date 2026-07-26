@@ -150,6 +150,30 @@ def _build_dsn(settings: Settings) -> str:
 
 
 
+@players_app.command("start")
+def players_start(
+    country: str | None = typer.Option(
+        None, "--country", "-c", help="Comma-separated codes, e.g. ESP,ARG"
+    ),
+    all_countries: bool = typer.Option(False, "--all", "-a"),
+    with_player_info: bool = typer.Option(False, "--with-player-info"),
+    workers: int = typer.Option(1, "--workers", "-w"),
+    recover_stale: bool = typer.Option(False, "--recover-stale"),
+    skip_preflight: bool = typer.Option(False, "--skip-preflight"),
+) -> None:
+    """Scrape players (and optionally player info) for one or all countries."""
+    asyncio.run(
+        _run(
+            country=country,
+            all_countries=all_countries,
+            with_player_info=with_player_info,
+            workers=workers,
+            recover_stale=recover_stale,
+            skip_preflight=skip_preflight,
+        )
+    )
+
+
 async def _run(
     country: str | None,
     all_countries: bool,
@@ -170,10 +194,13 @@ async def _run(
             dsn, "club_teams", console, compact=False, with_seed_checks=False
         )
 
-        existing_countries = await _fetchval(dsn, "SELECT count(*) FROM sch_shared.tbl_countries")
+        existing_countries = await _fetchval(
+            dsn, "SELECT count(*) FROM sch_shared.tbl_countries"
+        )
 
         if existing_countries:
-            console.print(f"  [cyan]✓[/cyan]  {existing_countries} Countries loaded successfully.{' ' * 40}")
+            msg = f"  [cyan]✓[/cyan]  {existing_countries} Countries"
+            console.print(msg + " loaded successfully.")
         else:
             country_count = await _seed_with_retry(
                 lambda: _seed_countries(settings),
@@ -181,12 +208,16 @@ async def _run(
                 "countries",
                 dsn,
             )
-            console.print(f"  [cyan]✓[/cyan]  {country_count} Countries loaded successfully.{' ' * 40}")
+            msg = f"  [cyan]✓[/cyan]  {country_count} Countries"
+            console.print(msg + " loaded successfully.")
 
-        existing_squads = await _fetchval(dsn, "SELECT count(*) FROM sch_shared.tbl_country_squads")
+        existing_squads = await _fetchval(
+            dsn, "SELECT count(*) FROM sch_shared.tbl_country_squads"
+        )
 
         if existing_squads:
-            console.print(f"  [cyan]✓[/cyan]  {existing_squads} Country Teams loaded successfully.{' ' * 40}")
+            msg = f"  [cyan]✓[/cyan]  {existing_squads} Country Teams"
+            console.print(msg + " loaded successfully.")
         else:
             squads_count = await _seed_with_retry(
                 lambda: _seed_country_squads(settings),
@@ -194,22 +225,37 @@ async def _run(
                 "country squads",
                 dsn,
             )
-            console.print(f"  [cyan]✓[/cyan]  {squads_count} Country Teams loaded successfully.{' ' * 40}")
+            msg = f"  [cyan]✓[/cyan]  {squads_count} Country Teams"
+            console.print(msg + " loaded successfully.")
 
         missing_players_url = await _fetchval(
-            dsn, "SELECT count(*) FROM sch_shared.tbl_countries WHERE players_url IS NULL"
+dsn,
+            (
+                "SELECT count(*) FROM sch_shared.tbl_countries "
+                "WHERE players_url IS NULL"
+            )
         )
 
         if missing_players_url:
             players_url_count = await _seed_with_retry(
                 lambda: _seed_country_players_urls(settings),
-                "SELECT count(*) FROM sch_shared.tbl_countries WHERE players_url IS NOT NULL",
+(
+                    "SELECT count(*) FROM sch_shared.tbl_countries "
+                    "WHERE players_url IS NOT NULL"
+                ),
                 "country players URLs",
                 dsn,
             )
-            console.print(f"  [cyan]✓[/cyan]  {players_url_count} Countries with Players loaded successfully.{' ' * 40}")
+            msg = (
+                f"  [cyan]✓[/cyan]  {players_url_count} Countries "
+                "with Players loaded successfully."
+            )
+            console.print(msg)
         else:
-            console.print(f"  [cyan]✓[/cyan]  All Countries with Players loaded successfully.{' ' * 40}")
+            console.print(
+                "  [cyan]✓[/cyan]  All Countries with Players "
+                "loaded successfully."
+            )
 
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:

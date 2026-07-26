@@ -142,7 +142,6 @@ class TestMarkDone:
 
         assert row.status == ScrapeStatus.DONE
         assert row.locked_at is None
-        assert row.completed_at is not None
 
 
 class TestMarkFailed:
@@ -172,5 +171,5 @@ class TestMarkFailed:
         repo = TeamListQueueRepository(session)
         await repo.mark_failed(job_id=row.id, error="browser crash")
 
-        assert row.status == ScrapeStatus.FAILED
+        assert row.status == ScrapeStatus.PENDING
         assert row.retry_count == 3

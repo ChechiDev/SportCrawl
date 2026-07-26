@@ -199,11 +199,13 @@ class TestCalculateAge:
 
     def test_recent_date_returns_small_age(self) -> None:
         """Triangulation: a very young player's age should be small."""
-        from datetime import date, timedelta
+        from datetime import date
 
         from infrastructure.scraping.player_info import _calculate_age
 
-        born = date.today() - timedelta(days=365 * 5)  # ~5 years ago
+        # Use a date that guarantees age calculation (today's date, minus 5 years)
+        today = date.today()
+        born = date(today.year - 5, today.month, today.day)
         age = _calculate_age(born)
         assert age == 5
 

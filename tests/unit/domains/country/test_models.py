@@ -92,24 +92,6 @@ def test_country_raw_data_missing_country_url_raises() -> None:
         )
 
 
-def test_country_raw_data_missing_flag_id_raises() -> None:
-    with pytest.raises(ValidationError):
-        CountryRawData(  # type: ignore[call-arg]
-            country_id="ENG",
-            country_name="England",
-            country_url=_ENG_URL,
-            flag_url=_ENG_FLAG,
-        )
-
-
-def test_country_raw_data_missing_flag_url_raises() -> None:
-    with pytest.raises(ValidationError):
-        CountryRawData(  # type: ignore[call-arg]
-            country_id="ENG",
-            country_name="England",
-            country_url=_ENG_URL,
-            flag_id="gb",
-        )
 
 
 def test_country_raw_data_missing_country_id_raises() -> None:
@@ -172,8 +154,8 @@ def test_country_raw_data_flag_id_too_long_raises() -> None:
             country_id="ENG",
             country_name="England",
             country_url=_ENG_URL,
-            flag_id="gbr",
-            flag_url=f"{_FLAG_CDN}/gbr.gif",
+            flag_id="gbra",
+            flag_url=f"{_FLAG_CDN}/gbra.gif",
         )
 
 

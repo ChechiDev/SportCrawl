@@ -127,7 +127,7 @@ class TestMarkFailed:
     async def test_mark_failed_sets_status_failed_when_retry_count_reaches_3(
         self,
     ) -> None:
-        """mark_failed at retry ceiling (3) must set status=FAILED permanently."""
+        """mark_failed must always re-queue as PENDING (never die policy)."""
         session = _make_session()
         row = _make_pending_row()
         row.retry_count = 2  # will become 3 → FAILED
@@ -136,8 +136,8 @@ class TestMarkFailed:
         repo = PlayerInfoQueueRepository(session)
         await repo.mark_failed(job_id=row.id, error="parse error")
 
-        assert row.status == ScrapeStatus.FAILED
-        assert row.completed_at is not None
+        assert row.status == ScrapeStatus.PENDING
+        assert row.retry_count == 3
 
 
 class TestRecoverStale:
