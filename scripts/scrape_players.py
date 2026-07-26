@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import random
 import re
 from typing import Any
 
@@ -25,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
-from core.application.base_worker import BaseWorker
+from core.application.base_worker import BaseWorker, CooldownRequired
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
@@ -105,12 +106,17 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
     def _build_engine(self) -> PydollEngine:
         return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
 
+    async def startup_delay(self) -> None:
+        delay = self._worker_id * random.uniform(1.5, 3.0)
+        self._labels[self._worker_id] = f"Waiting {delay:.1f}s before start..."
+        await asyncio.sleep(delay)
+
     async def on_browser_ready(self, engine: Any) -> None:
         self._scraper = PlayerListScraper(
             engine, self._settings.scraping, self._session_factory
         )
 
-    async def run_claim_loop(self, engine: Any) -> int:  # noqa: ARG002
+    async def run_claim_loop(self, _engine: Any) -> int:
         """Drain player_list jobs for one browser session.
 
         Returns:
@@ -142,6 +148,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 
             max_attempts = 3
             browser_restart = False
+            success = False
             for attempt in range(1, max_attempts + 1):
                 try:
                     async with self._fetch_gate:
@@ -163,6 +170,7 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                     self._labels[self._worker_id] = (
                         f"{_escape(country_display)}: {total_players:,} Players"
                     )
+                    success = True
                     break
 
                 except Exception as exc:
@@ -175,8 +183,12 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                 repo = PlayerListQueueRepository(session)
                                 await repo.mark_failed(job.id, str(exc))
                                 await session.commit()
-                        except Exception:
-                            pass
+                        except Exception as mark_err:
+                            logger.error(
+                                "[worker-%d] mark_failed error: %s",
+                                self._worker_id,
+                                mark_err,
+                            )
                         browser_restart = True
                         break
 
@@ -185,21 +197,31 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                             f"[bold yellow]WARNING[/]"
                             f" Retrying ({attempt}/{max_attempts}) — {country_display}"
                         )
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(random.uniform(5.0, 15.0))
                     else:
                         try:
                             async with get_session(self._session_factory) as session:
                                 repo = PlayerListQueueRepository(session)
                                 await repo.mark_failed(job.id, str(exc))
                                 await session.commit()
-                        except Exception:
-                            pass
+                        except Exception as mark_err:
+                            logger.error(
+                                "[worker-%d] mark_failed error: %s",
+                                self._worker_id,
+                                mark_err,
+                            )
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] {country_display}"
                         )
 
             if browser_restart:
                 return -1
+
+            if not success:
+                self._labels[self._worker_id] = (
+                    f"[bold red]FAILED[/] {country_display} — max retries reached"
+                )
+                raise CooldownRequired
 
 
 def _players_url(country_url: str) -> str:
@@ -303,6 +325,7 @@ async def main_all(workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
+        await PlayerListQueueRepository(session).recover_failed()
         await session.commit()
     if stale:
         logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
@@ -406,6 +429,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
 
     async with get_session(session_factory) as session:
         stale = await PlayerListQueueRepository(session).recover_all_stale()
+        await PlayerListQueueRepository(session).recover_failed()
         await session.commit()
     if stale:
         logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
