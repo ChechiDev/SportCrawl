@@ -57,6 +57,36 @@ def default(
     )
 
 
+@app.command("start")
+def start(
+    country: str | None = typer.Option(
+        None, "--country", "-c", help="Comma-separated country codes, e.g. ESP,ARG"
+    ),
+    all_countries: bool = typer.Option(
+        False, "--all", "-a", help="Scrape all countries"
+    ),
+    with_player_info: bool = typer.Option(False, "--with-player-info"),
+    workers: int = typer.Option(1, "--workers", "-w"),
+    recover_stale: bool = typer.Option(False, "--recover-stale"),
+    skip_preflight: bool = typer.Option(False, "--skip-preflight"),
+) -> None:
+    """Run the full scraping pipeline (teams + players + player info)."""
+    if not all_countries and not country:
+        raise typer.BadParameter("Specify --country/-c or --all/-a.")
+    from cli.players import _run
+
+    asyncio.run(
+        _run(
+            country=country,
+            all_countries=all_countries,
+            with_player_info=with_player_info,
+            workers=workers,
+            recover_stale=recover_stale,
+            skip_preflight=skip_preflight,
+        )
+    )
+
+
 @app.command("work-server")
 def work_server() -> None:
     """Start the aiohttp work server and JobLoop in a single process."""
