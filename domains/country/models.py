@@ -8,7 +8,7 @@ class CountryRawData(BaseModel):
     country_name: str = Field(min_length=1)
     country_url: str = Field(min_length=1)
     confederation: str | None = None
-    flag_id: str | None = Field(default=None, min_length=2, max_length=2)
+    flag_id: str | None = Field(default=None, min_length=2, max_length=3)
     flag_url: str | None = None
 
     @field_validator("confederation", mode="before")

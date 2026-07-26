@@ -26,7 +26,7 @@ from ports.scraper import BaseScraper, ScraperConfig
 
 logger = logging.getLogger(__name__)
 
-_HREF_RE = re.compile(r"/en/country/([A-Za-z]{2,3})/", re.IGNORECASE)
+_HREF_RE = re.compile(r"/en/country/(?:[^/]+/)?([A-Za-z]{2,3})/", re.IGNORECASE)
 _FLAG_CDN = "https://cdn.fbref.com/req/202301010/images/flags"
 
 
