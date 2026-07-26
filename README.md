@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/ChechiDev/SportCrawl/main/assets/images/sportcrawl-logo-wip.png" alt="SportCrawl Logo" width="800" />
+<img src="https://raw.githubusercontent.com/ChechiDev/SportCrawl/main/assets/images/sportcrawl-logo-wip.png" alt="SportCrawl Logo" width="1024" />
 
 ---
 
@@ -91,11 +91,11 @@ Runs the full pipeline: Teams, Players, and Player Info in parallel with a singl
 
 ```bash
 # All countries
-uv run sportcrawl --all --workers 5
+uv run sportcrawl start -a -w 5
 
 # One or more specific countries
-uv run sportcrawl --country ESP --workers 3
-uv run sportcrawl --country ESP,ARG,BRA --workers 5
+uv run sportcrawl start -c ESP -w 3
+uv run sportcrawl start -c ESP,ARG,BRA -w 5
 ```
 
 The three scraping stages run concurrently in a single unified display:
@@ -104,14 +104,14 @@ The three scraping stages run concurrently in a single unified display:
 - **Scraping Players** — starts immediately in parallel with Teams
 - **Scraping Single Player Stats** — starts automatically once enough players are in the database
 
-| Flag | Description |
-|---|---|
-| `--country` | Comma-separated FBRef country codes (e.g. `ESP,ARG`) |
-| `--all` | Run pipeline for all countries available in the database |
-| `--workers N` | Number of parallel workers per stage (default: `1`) |
-| `--with-player-info` | Include individual player profile scraping |
-| `--skip-preflight` | Skip the preflight check |
-| `--recover-stale` | Reset jobs stuck in `IN_PROGRESS` for over 1 hour |
+| Flag | Shorthand | Description |
+|---|---|---|
+| `--all` | `-a` | Run pipeline for all countries in the database |
+| `--country` | `-c` | Comma-separated FBRef country codes (e.g. `ESP,ARG`) |
+| `--workers N` | `-w N` | Number of parallel workers per stage (default: `1`) |
+| `--with-player-info` | — | Include individual player profile scraping |
+| `--skip-preflight` | — | Skip the preflight check |
+| `--recover-stale` | — | Reset jobs stuck in `IN_PROGRESS` for over 1 hour |
 
 > For best results and to avoid rate limiting, **3–5 workers is recommended**.
 
