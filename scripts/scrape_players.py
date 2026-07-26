@@ -275,6 +275,20 @@ async def scrape_one(scraper: PlayerListScraper, url: str) -> int:
     return inserted
 
 
+async def main_by_country(country_id: str) -> int:
+    settings = Settings()  # type: ignore[call-arg]
+    session_factory = create_session_factory(settings.db)
+    async with get_session(session_factory) as session:
+        result = await session.execute(
+            sa.select(Country.players_url).where(Country.country_id == country_id)
+        )
+        players_url = result.scalar_one_or_none()
+    if not players_url:
+        print(f"No players URL found for country_id={country_id!r}. Run seed first.")
+        return 0
+    return await main_single(players_url)
+
+
 async def main_single(url: str, verbose: bool = True) -> int:
     settings = Settings()  # type: ignore[call-arg]
     session_factory = create_session_factory(settings.db)
@@ -491,6 +505,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape FBRef player lists.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
+        "-c", "--country",
+        metavar="CODE",
+        help="ISO country code to scrape (e.g. ARG).",
+    )
+    group.add_argument(
         "--url", metavar="URL", help="Full FBRef country player-list URL."
     )
     group.add_argument(
@@ -500,7 +519,7 @@ def main() -> None:
         help="Scrape all countries from the database.",
     )
     parser.add_argument(
-        "--workers",
+        "-w", "--workers",
         metavar="N",
         type=int,
         default=1,
@@ -512,8 +531,10 @@ def main() -> None:
         asyncio.run(main_all(workers=args.workers))
     elif args.url:
         asyncio.run(main_single(args.url))
+    elif args.country:
+        asyncio.run(main_by_country(args.country.upper()))
     else:
-        parser.error("Specify --url <URL> or --all")
+        parser.error("Specify -c <CODE>, --url <URL>, or --all")
 
 
 if __name__ == "__main__":
