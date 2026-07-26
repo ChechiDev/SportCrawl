@@ -7,6 +7,7 @@ Revision ID: p27a
 Revises: p26a
 """
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "p27a"
@@ -24,9 +25,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.create_index(
-        "ix_player_queue_ref_queue_id",
-        "tbl_player_queue_ref",
-        ["queue_id"],
-        schema="sch_infra",
+    # Guard: tbl_player_queue_ref may not exist when downgrading past the
+    # migration that created it (e.g. full downgrade to p11 in integration tests).
+    op.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF EXISTS ("
+            "    SELECT 1 FROM pg_tables"
+            "    WHERE schemaname = 'sch_infra'"
+            "    AND tablename = 'tbl_player_queue_ref'"
+            "  ) THEN "
+            "    CREATE INDEX IF NOT EXISTS ix_player_queue_ref_queue_id"
+            "    ON sch_infra.tbl_player_queue_ref (queue_id);"
+            "  END IF;"
+            "END $$"
+        )
     )
