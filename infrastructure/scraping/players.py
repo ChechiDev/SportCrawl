@@ -91,13 +91,17 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
             player_id = href_match.group(1).lower()
             full_name = a_tag.get_text(strip=True)
 
-            # Build relative player_url (strip domain if absolute)
+            # Build all_comps relative URL for competition-level stats scraping.
+            # Pattern: /en/players/{id}/all_comps/{slug}-Stats---All-Competitions
             if href.startswith("http"):
                 from urllib.parse import urlparse
 
-                player_url = urlparse(href).path
+                path = urlparse(href).path
             else:
-                player_url = href
+                path = href
+            slug = path.rstrip("/").rsplit("/", 1)[-1]
+            base = path.rstrip("/").rsplit("/", 1)[0]
+            player_url = f"{base}/all_comps/{slug}-Stats---All-Competitions"
 
             # Strip the player name from the full <p> text to isolate the date portion.
             # next_sibling is unreliable — FBRef often puts a bare newline there.
