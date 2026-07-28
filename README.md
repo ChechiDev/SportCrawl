@@ -29,6 +29,7 @@ FBRef is the most complete public source of football statistics, but it has no A
 **What it scrapes:**
 
 - Countries and confederations
+- Competitions (leagues, cups, international tournaments) — auto-seeded from FBRef at startup
 - Player rosters per country (career span, positions)
 - Individual player profiles (bio, nationality, physical data, career history)
 - National team associations *(in progress)*
@@ -120,92 +121,98 @@ The three scraping stages run concurrently in a single unified display:
 ## Scraping Example
 
 ```console
-❯ uv run sportcrawl --all --workers 5
+❯ uv run sportcrawl -a -w 5
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   _____ ____  ____  ____  ______   __________  ___ _       ____ 
-  / ___// __ \/ __ \/ __ \/_  __/  / ____/ __ \/   | |     / / / 
-  \__ \/ /_/ / / / / /_/ / / /    / /   / /_/ / /| | | /| / / /  
- ___/ / ____/ /_/ / _, _/ / /    / /___/ _, _/ ___ | |/ |/ / /___
-/____/_/    \____/_/ |_| /_/     \____/_/ |_/_/  |_|__/|__/_____/
-                                                                 
-  Sports data, scraped at scale.  v0.18.0
+  ____  ___  ___  ____  ____  ____  ____  ____  ____  ____  __
+  ||S|| ||P|| ||O|| ||R|| ||T||    ||C|| ||R|| ||A|| ||W|| ||L||
+  ||__|| ||__|| ||__|| ||__|| ||__|    ||__|| ||__|| ||__|| ||__|| ||__|
+
+  Sports data, scraped at scale.  v0.24.1
   Ctrl+C to stop  ·  on restart, scraping resumes from where it left off
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Checking requirements...
-  ✓  Connected successfully.                                
-  ✓  Migrations initialized successfully.                   
-  ✓  Database version up to date.                           
-  ✓  Database schemas verified.                             
-  ✓  System tables ready.                                   
-  ✓  219 countries loaded.                                        
-  ✓  96 country squads loaded.                                        
+  ✓  Connected successfully.
+  ✓  Migrations initialized successfully.
+  ✓  Database schemas verified.
+  ✓  System tables ready.
+  ✓  225 Countries loaded successfully.
+  ✓  96 Country Teams loaded successfully.
+  ✓  224 Countries with Players loaded successfully.
+  ✓  152 Competitions loaded successfully.
 
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Scraping Teams
-  RUN  [Crawl-1] [14 | 67/96] Nicaragua: 1 teams                                                                                                                   
-  RUN  [Crawl-2] [14 | 67/96] Netherlands: 62 teams                                                                                                                
-  RUN  [Crawl-3] [13 | 67/96] Malta: 15 teams                                                                                                                      
-  RUN  [Crawl-4] [13 | 67/96] Montenegro: 18 teams                                                                                                                 
-  RUN  [Crawl-5] [13 | 67/96] Martinique: 4 teams                                                                                                                  
+Scraping All Teams by Country
+  RUN  [Crawl-1] [15 | 74/96] Paraguay: 28 Teams
+  RUN  [Crawl-2] [15 | 74/96] Peru: 37 Teams
+  RUN  [Crawl-3] [15 | 74/96] Poland: 50 Teams
+  RUN  [Crawl-4] [15 | 74/96] Portugal: 50 Teams
+  RUN  [Crawl-5] [14 | 74/96] Panama: 3 Teams
 
-Scraping Players
-  RUN  [Crawl-1] [12 | 60/219] Djibouti: 118 players                                                                                                               
-  RUN  [Crawl-2] [12 | 60/219] Côte D'Ivoire: 879 players                                                                                                          
-  RUN  [Crawl-3] [12 | 60/219] Czechoslovakia: 173 players                                                                                                         
-  RUN  [Crawl-4] [12 | 60/219] Czech Republic: 1,648 players                                                                                                       
-  RUN  [Crawl-5] [12 | 60/219] Denmark: 2,360 players                                                                                                              
+Scraping All Players by Country
+  RUN  [Crawl-1] [26 | 128/224] Mali: 457 Players
+  RUN  [Crawl-2] [25 | 128/224] Malawi: 165 Players
+  RUN  [Crawl-3] [25 | 128/224] Malaysia: 325 Players
+  RUN  [Crawl-4] [27 | 128/224] Malta: 280 Players
+  RUN  [Crawl-5] [25 | 128/224] Maldives: 178 Players
 
-Scraping Single Player Stats
-  RUN  [Crawl-1] [18 | 87/48520] Player Name
-  RUN  [Crawl-2] [18 | 87/48520] Player Name
-  RUN  [Crawl-3] [17 | 87/48520] Player Name
-  RUN  [Crawl-4] [17 | 87/48520] Player Name
-  RUN  [Crawl-5] [17 | 87/48520] Player Name
+Scraping Player Profile & Stats
+  RUN  [Crawl-1] [29 | 141/137382] Malawi Football Players
+  RUN  [Crawl-2] [28 | 141/137382] Abed Noorestani
+  RUN  [Crawl-3] [28 | 141/137382] Rohullah Nazari
+  RUN  [Crawl-4] [29 | 141/137382] Ferhad Noori
+  RUN  [Crawl-5] [27 | 141/137382] Zelfy Nazary
 ```
 
 ---
 
 ## Reset Database
 
-Truncates all scraped data from the database. Useful for testing or starting fresh.
+Drops all schemas, replays every migration from scratch, then truncates all scraped data. Useful for testing or starting completely fresh.
 
 ```bash
 uv run sportcrawl reset
 ```
 
-> This only clears scraped data. It does not drop schemas or roll back migrations.
+> **Note:** `reset` drops and recreates all schemas from scratch. Migrations are re-applied automatically — no manual `alembic upgrade head` needed.
 
 ## Reset Example
 ```console
-❯ uv run sportcrawl reset
-╭────────────────────────────── Reset Database ──────────────────────────────╮
-│ WARNING                                                                     │
-│                                                                             │
-│ This will delete ALL scraped data:                                          │
-│   • sch_shared: countries, players, player_info, photos, positions,         │
-│     country_squads, teams, competition                                      │
-│   • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref       │
-│                                                                             │
-│ Schemas and migrations will NOT be touched.                                 │
-╰─────────────────────────────────────────────────────────────────────────────╯
-Continue? [y/N]: y
-  OK   sch_shared.tbl_player_info truncated
-  OK   sch_shared.tbl_player_photo truncated
-  OK   sch_shared.tbl_player_positions truncated
-  OK   sch_shared.tbl_players truncated
-  OK   sch_shared.tbl_teams truncated
-  OK   sch_shared.tbl_country_squads truncated
-  OK   sch_shared.tbl_competition truncated
-  OK   sch_shared.tbl_countries truncated
-  OK   sch_shared.tbl_confederations truncated
-  OK   sch_shared.tbl_gender truncated
-  OK   sch_infra.scrape_queue truncated
-  OK   sch_infra.player_discovery_batch truncated
-  OK   sch_infra.player_queue_ref truncated
-  OK   sch_shared.tbl_gender re-seeded
+❯ uv run sportcrawl reset -y
+╭───────────────────────────── Reset Database ─────────────────────────────╮
+│ WARNING                                                                    │
+│                                                                            │
+│ This will delete ALL scraped data:                                         │
+│   • sch_fbref_shared: countries, players, player_info, photos, positions,  │
+│     country_squads, teams, competition, comp_type, cities, player_citizenship│
+│   • sch_fbref_football: player_std_stats, player_misc_stats,               │
+│     player_playing_time_stats, player_shooting_stats                       │
+│   • sch_fbref_infra: scrape_queue, player_discovery_batch, player_queue_ref│
+│                                                                            │
+│ Schemas and migrations will NOT be touched.                                │
+╰────────────────────────────────────────────────────────────────────────────╯
+  OK   sch_fbref_football.tbl_player_misc_stats truncated
+  OK   sch_fbref_football.tbl_player_playing_time_stats truncated
+  OK   sch_fbref_football.tbl_player_shooting_stats truncated
+  OK   sch_fbref_football.tbl_player_std_stats truncated
+  OK   sch_fbref_shared.tbl_player_info truncated
+  OK   sch_fbref_shared.tbl_player_photo truncated
+  OK   sch_fbref_shared.tbl_player_citizenship truncated
+  OK   sch_fbref_shared.tbl_player_positions truncated
+  OK   sch_fbref_shared.tbl_players truncated
+  OK   sch_fbref_shared.tbl_teams truncated
+  OK   sch_fbref_shared.tbl_country_squads truncated
+  OK   sch_fbref_shared.tbl_competition truncated
+  OK   sch_fbref_shared.tbl_comp_type truncated
+  OK   sch_fbref_shared.tbl_cities truncated
+  OK   sch_fbref_shared.tbl_countries truncated
+  OK   sch_fbref_shared.tbl_confederations truncated
+  OK   sch_fbref_shared.tbl_gender truncated
+  OK   sch_fbref_infra.scrape_queue truncated
+  OK   sch_fbref_infra.player_discovery_batch truncated
+  OK   sch_fbref_infra.player_queue_ref truncated
+  OK   sch_fbref_shared.tbl_gender re-seeded
 
 Reset complete. Ready to scrape from scratch.
 ```
-</details>
