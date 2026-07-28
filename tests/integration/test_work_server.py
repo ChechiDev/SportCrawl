@@ -10,7 +10,7 @@ Covers (REQ-9.3, REQ-9.4, REQ-9.6):
 - End-to-end: POST /jobs → JobLoop.run() → GET /jobs/{id} returns DONE (task 5.2)
 
 Isolation: each test uses a unique URL suffix (UUID4) and the adapter_engine
-fixture truncates sch_infra.scrape_queue rows after each test.
+fixture truncates sch_fbref_infra.scrape_queue rows after each test.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ async def adapter(_ws_engine) -> AsyncGenerator[ScrapeQueueWorkAdapter, None]:
     yield ScrapeQueueWorkAdapter(factory)
 
     async with _ws_engine.connect() as conn:
-        await conn.execute(text("DELETE FROM sch_infra.scrape_queue"))
+        await conn.execute(text("DELETE FROM sch_fbref_infra.scrape_queue"))
         await conn.commit()
 
 

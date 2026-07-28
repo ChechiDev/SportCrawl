@@ -14,28 +14,28 @@ from infrastructure.persistence.migrations._filters import include_name
 class TestIncludeNameManagedSchemas:
     """REQ-8.7: include_name returns True for whitelisted schemas."""
 
-    def test_whitelisted_schema_sch_infra_returns_true(self) -> None:
-        """sch_infra is a managed schema and must be included."""
+    def test_whitelisted_schema_sch_fbref_infra_returns_true(self) -> None:
+        """sch_fbref_infra is a managed schema and must be included."""
         result = include_name(
-            name="sch_infra",
+            name="sch_fbref_infra",
             type_="schema",
             parent_names={},
         )
         assert result is True
 
-    def test_whitelisted_schema_sch_shared_returns_true(self) -> None:
-        """sch_shared is a managed schema and must be included."""
+    def test_whitelisted_schema_sch_fbref_shared_returns_true(self) -> None:
+        """sch_fbref_shared is a managed schema and must be included."""
         result = include_name(
-            name="sch_shared",
+            name="sch_fbref_shared",
             type_="schema",
             parent_names={},
         )
         assert result is True
 
-    def test_whitelisted_schema_sch_football_returns_true(self) -> None:
-        """sch_football is a managed schema and must be included."""
+    def test_whitelisted_schema_sch_fbref_football_returns_true(self) -> None:
+        """sch_fbref_football is a managed schema and must be included."""
         result = include_name(
-            name="sch_football",
+            name="sch_fbref_football",
             type_="schema",
             parent_names={},
         )
@@ -68,7 +68,7 @@ class TestIncludeNameObjectTypes:
         result = include_name(
             name="scrape_queue",
             type_="table",
-            parent_names={"schema_name": "sch_infra"},
+            parent_names={"schema_name": "sch_fbref_infra"},
         )
         assert result is True
 
@@ -77,6 +77,6 @@ class TestIncludeNameObjectTypes:
         result = include_name(
             name="id",
             type_="column",
-            parent_names={"schema_name": "sch_infra"},
+            parent_names={"schema_name": "sch_fbref_infra"},
         )
         assert result is True

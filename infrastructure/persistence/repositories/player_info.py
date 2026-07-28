@@ -183,7 +183,7 @@ class PlayerInfoRepository:
         async with repo_error_context("upsert_city", "upsert_city failed"):
             await self._session.execute(
                 sa.text(
-                    "INSERT INTO sch_shared.tbl_cities (city_name)"
+                    "INSERT INTO sch_fbref_shared.tbl_cities (city_name)"
                     " VALUES (:city_name)"
                     " ON CONFLICT (city_name) DO NOTHING"
                 ),
@@ -191,7 +191,7 @@ class PlayerInfoRepository:
             )
             result = await self._session.execute(
                 sa.text(
-                    "SELECT city_id FROM sch_shared.tbl_cities"
+                    "SELECT city_id FROM sch_fbref_shared.tbl_cities"
                     " WHERE city_name = :city_name"
                 ),
                 {"city_name": city_name},
@@ -220,7 +220,7 @@ class PlayerInfoRepository:
         async with repo_error_context("upsert_team_stub", "upsert_team_stub failed"):
             await self._session.execute(
                 sa.text(
-                    "INSERT INTO sch_shared.tbl_teams (team_id, team_url)"
+                    "INSERT INTO sch_fbref_shared.tbl_teams (team_id, team_url)"
                     " VALUES (:team_id, :team_url)"
                     " ON CONFLICT (team_id) DO NOTHING"
                 ),
@@ -241,7 +241,7 @@ class PlayerInfoRepository:
             "upsert_citizenship", "upsert_citizenship failed"
         ):
             stmt = sa.text(
-                "INSERT INTO sch_shared.tbl_player_citizenship (player_id, fk_country)"
+                "INSERT INTO sch_fbref_shared.tbl_player_citizenship (player_id, fk_country)"
                 " VALUES (:player_id, :fk_country)"
                 " ON CONFLICT (player_id, fk_country) DO NOTHING"
             )

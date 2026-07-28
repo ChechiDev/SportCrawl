@@ -28,5 +28,5 @@ class TestFootballBase:
         assert FootballBase.metadata is Base.metadata
 
     def test_football_base_schema_attribute(self) -> None:
-        """FootballBase.__schema__ is 'sch_football' for schema targeting."""
-        assert FootballBase.__schema__ == "sch_football"
+        """FootballBase.__schema__ is 'sch_fbref_football' for schema targeting."""
+        assert FootballBase.__schema__ == "sch_fbref_football"

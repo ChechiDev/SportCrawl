@@ -110,7 +110,7 @@ class TestCheckSchemasExist:
 class TestCheckTablesExist:
     async def test_pass_countries_all_present(self):
         # fetchval returns non-None for all to_regclass calls → all tables exist
-        conn = _mock_conn(fetchval="sch_shared.tbl_countries")
+        conn = _mock_conn(fetchval="sch_fbref_shared.tbl_countries")
         with patch("asyncpg.connect", AsyncMock(return_value=conn)):
             result = await check_tables_exist(DSN, "countries")
         assert result.passed is True

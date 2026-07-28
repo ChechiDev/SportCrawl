@@ -1,4 +1,4 @@
-"""ORM model for tbl_player_photo in sch_shared schema."""
+"""ORM model for tbl_player_photo in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class PlayerPhoto(Base):
-    """ORM model for sch_shared.tbl_player_photo.
+    """ORM model for sch_fbref_shared.tbl_player_photo.
 
     One row per player; a row is only inserted when a photo URL was found.
     player_id is the natural PK (FBRef slug), FK → tbl_players.player_id.
@@ -23,7 +23,7 @@ class PlayerPhoto(Base):
     player_id: Mapped[str] = mapped_column(
         String(20),
         ForeignKey(
-            "sch_shared.tbl_players.player_id",
+            "sch_fbref_shared.tbl_players.player_id",
             ondelete="CASCADE",
             name="tbl_player_photo_player_id_fkey",
         ),
@@ -37,4 +37,4 @@ class PlayerPhoto(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = ({"schema": "sch_shared"},)
+    __table_args__ = ({"schema": "sch_fbref_shared"},)

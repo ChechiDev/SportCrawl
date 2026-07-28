@@ -10,6 +10,7 @@ from rich.console import Console
 
 from core.preflight.checks import (
     check_alembic_initialized,
+    check_competitions_data,
     check_country_squads_data,
     check_db_reachable,
     check_schemas_exist,
@@ -96,6 +97,13 @@ async def run_checks(
 
         result = await _run(
             lambda: check_country_squads_data(dsn), "Checking country squads..."
+        )
+        if result.passed:
+            _render(result)
+        results.append(result)
+
+        result = await _run(
+            lambda: check_competitions_data(dsn), "Checking competitions..."
         )
         if result.passed:
             _render(result)

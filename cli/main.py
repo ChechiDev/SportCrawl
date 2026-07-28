@@ -8,6 +8,9 @@ Commands:
 from __future__ import annotations
 
 import asyncio
+import warnings
+
+warnings.filterwarnings("ignore")
 
 import typer
 from rich.console import Console
@@ -191,9 +194,11 @@ def reset_db(
         Panel(
             "[bold red]WARNING[/bold red]\n\n"
             "This will delete ALL scraped data:\n"
-            "  • sch_shared: countries, players, player_info, photos, positions,\n"
-            "    country_squads, teams, competition, cities, player_citizenship\n"
-            "  • sch_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
+            "  • sch_fbref_shared: countries, players, player_info, photos, positions,\n"
+            "    country_squads, teams, competition, comp_type, cities, player_citizenship\n"
+            "  • sch_fbref_football: player_std_stats, player_misc_stats,\n"
+            "    player_playing_time_stats, player_shooting_stats\n"
+            "  • sch_fbref_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
             "Schemas and migrations will NOT be touched.",
             title="[red]Reset Database[/red]",
             border_style="red",
@@ -210,6 +215,8 @@ def reset_db(
 
 async def _do_reset(console: Console) -> None:
     import asyncpg  # type: ignore[import-untyped]
+    from alembic import command
+    from alembic.config import Config
 
     from config.settings import Settings
 
@@ -220,33 +227,68 @@ async def _do_reset(console: Console) -> None:
         f"@{db.host}:{db.port}/{db.name}"
     )
 
+    import asyncio
+    from functools import partial
+
+    import logging as _logging
+
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        for schema in (
+            "sch_fbref_infra",
+            "sch_fbref_shared",
+            "sch_fbref_football",
+            "sch_infra",
+            "sch_shared",
+            "sch_football",
+        ):
+            await conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        # Restore public schema so the initial migration (134f2e68682a) can create
+        # scrape_queue there. p10c_drop_public_schema drops public, so we recreate it.
+        await conn.execute("CREATE SCHEMA IF NOT EXISTS public")
+        await conn.execute("GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC")
+    finally:
+        await conn.close()
+
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.attributes["configure_logger"] = False
+    _logging.getLogger("alembic").setLevel(_logging.ERROR)
+    _logging.getLogger("alembic.runtime.migration").setLevel(_logging.ERROR)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, partial(command.upgrade, alembic_cfg, "head"))
+
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         tables = [
-            ("sch_shared", "tbl_player_info"),
-            ("sch_shared", "tbl_player_photo"),
-            ("sch_shared", "tbl_player_citizenship"),
-            ("sch_shared", "tbl_player_positions"),
-            ("sch_shared", "tbl_players"),
-            ("sch_shared", "tbl_teams"),
-            ("sch_shared", "tbl_country_squads"),
-            ("sch_shared", "tbl_competition"),
-            ("sch_shared", "tbl_cities"),
-            ("sch_shared", "tbl_countries"),
-            ("sch_shared", "tbl_confederations"),
-            ("sch_shared", "tbl_gender"),
-            ("sch_infra", "scrape_queue"),
-            ("sch_infra", "player_discovery_batch"),
-            ("sch_infra", "player_queue_ref"),
+            ("sch_fbref_football", "tbl_player_misc_stats"),
+            ("sch_fbref_football", "tbl_player_playing_time_stats"),
+            ("sch_fbref_football", "tbl_player_shooting_stats"),
+            ("sch_fbref_football", "tbl_player_std_stats"),
+            ("sch_fbref_shared", "tbl_player_info"),
+            ("sch_fbref_shared", "tbl_player_photo"),
+            ("sch_fbref_shared", "tbl_player_citizenship"),
+            ("sch_fbref_shared", "tbl_player_positions"),
+            ("sch_fbref_shared", "tbl_players"),
+            ("sch_fbref_shared", "tbl_teams"),
+            ("sch_fbref_shared", "tbl_country_squads"),
+            ("sch_fbref_shared", "tbl_competition"),
+            ("sch_fbref_shared", "tbl_comp_type"),
+            ("sch_fbref_shared", "tbl_cities"),
+            ("sch_fbref_shared", "tbl_countries"),
+            ("sch_fbref_shared", "tbl_confederations"),
+            ("sch_fbref_shared", "tbl_gender"),
+            ("sch_fbref_infra", "scrape_queue"),
+            ("sch_fbref_infra", "player_discovery_batch"),
+            ("sch_fbref_infra", "player_queue_ref"),
         ]
         for schema, table in tables:
             await conn.execute(f"TRUNCATE {schema}.{table} RESTART IDENTITY CASCADE")
             msg = f"  [bold green]OK  [/bold green] {schema}.{table} truncated"
             console.print(msg)
         await conn.execute(
-            "INSERT INTO sch_shared.tbl_gender (gender) VALUES ('M'), ('F')"
+            "INSERT INTO sch_fbref_shared.tbl_gender (gender) VALUES ('M'), ('F')"
         )
-        console.print("  [bold green]OK  [/bold green] sch_shared.tbl_gender re-seeded")
+        console.print("  [bold green]OK  [/bold green] sch_fbref_shared.tbl_gender re-seeded")
     finally:
         await conn.close()
 

@@ -84,7 +84,7 @@ class TestProvenanceCreate:
         with pytest.raises(DBAPIError):
             await async_session.execute(
                 text(
-                    "INSERT INTO sch_infra.provenance (url, outcome) "
+                    "INSERT INTO sch_fbref_infra.provenance (url, outcome) "
                     "VALUES ('https://fbref.com/invalid/', 'INVALID_VALUE')"
                 )
             )

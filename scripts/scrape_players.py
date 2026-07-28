@@ -184,8 +184,8 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
 
                     if attempt < max_attempts:
                         self._labels[self._worker_id] = (
-                            f"[bold yellow]WARNING[/]"
-                            f" Retrying ({attempt}/{max_attempts}) — {country_display}"
+                            f"[bold yellow]WARNING[/bold yellow]"
+                            f" - Retrying ({attempt}/{max_attempts}) - {country_display}"
                         )
                         await asyncio.sleep(random.uniform(5.0, 15.0))
                     else:
@@ -324,7 +324,7 @@ async def main_all(workers: int = 1) -> None:
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.text(
-                "SELECT count(*) FROM sch_infra.scrape_queue"
+                "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                 " WHERE job_type='player_list' AND status='DONE'"
             )
         )
@@ -426,7 +426,7 @@ async def main_countries(codes: list[str], workers: int = 1) -> None:
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.text(
-                "SELECT count(*) FROM sch_infra.scrape_queue"
+                "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                 " WHERE job_type='player_list' AND status='DONE'"
             )
         )

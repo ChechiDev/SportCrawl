@@ -54,7 +54,7 @@ async def _seed_country(async_session: AsyncSession) -> None:
     """Insert the ESP country row so tbl_players FK is satisfied."""
     await async_session.execute(
         text(
-            "INSERT INTO sch_shared.tbl_countries"
+            "INSERT INTO sch_fbref_shared.tbl_countries"
             " (country_id, country_name, country_url)"
             " VALUES (:cid, 'Spain', 'https://fbref.com/en/country/ESP/')"
             " ON CONFLICT DO NOTHING"
@@ -127,7 +127,7 @@ class TestBulkEnqueuePersistsPlayers:
 
         result = await async_session.execute(
             text(
-                "SELECT pending FROM sch_football.v_player_scrape_progress"
+                "SELECT pending FROM sch_fbref_football.v_player_scrape_progress"
                 " WHERE country_id = :cid"
             ),
             {"cid": _COUNTRY_ID},
@@ -191,7 +191,7 @@ class TestBulkEnqueueIdempotent:
 
         result = await async_session.execute(
             text(
-                "SELECT pending FROM sch_football.v_player_scrape_progress"
+                "SELECT pending FROM sch_fbref_football.v_player_scrape_progress"
                 " WHERE country_id = :cid"
             ),
             {"cid": _COUNTRY_ID},

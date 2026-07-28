@@ -1,4 +1,4 @@
-"""ORM model for tbl_confederations in sch_shared schema."""
+"""ORM model for tbl_confederations in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class Confederation(Base):
-    """ORM model for sch_shared.tbl_confederations."""
+    """ORM model for sch_fbref_shared.tbl_confederations."""
 
     __tablename__ = "tbl_confederations"
 
@@ -23,5 +23,5 @@ class Confederation(Base):
 
     __table_args__ = (
         UniqueConstraint("conf_name", name="uq_confederations_conf_name"),
-        {"schema": "sch_shared"},
+        {"schema": "sch_fbref_shared"},
     )

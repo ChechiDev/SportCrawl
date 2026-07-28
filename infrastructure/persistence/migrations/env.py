@@ -114,7 +114,7 @@ def run_migrations_offline() -> None:
         include_schemas=True,
         include_name=include_name,
         version_table="alembic_version",
-        version_table_schema="sch_infra",
+        version_table_schema="sch_fbref_infra",
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -133,7 +133,7 @@ def do_run_migrations(connection: Connection) -> None:
         include_schemas=True,
         include_name=include_name,
         version_table="alembic_version",
-        version_table_schema="sch_infra",
+        version_table_schema="sch_fbref_infra",
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -155,13 +155,13 @@ async def run_async_migrations() -> None:
     from sqlalchemy import text
 
     connectable = _build_engine()
-    # Bootstrap sch_infra before Alembic connects — version_table_schema="sch_infra"
+    # Bootstrap sch_fbref_infra before Alembic connects — version_table_schema="sch_fbref_infra"
     # requires the schema to exist before Alembic tries to read/write the version table.
     # Must be committed in its own transaction; executing inside do_run_migrations
     # starts an implicit transaction — Alembic detects in_transaction()=True and uses
     # SAVEPOINTs, so the outer connection auto-rolls back everything on close.
     async with connectable.begin() as conn:
-        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sch_infra"))
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sch_fbref_infra"))
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

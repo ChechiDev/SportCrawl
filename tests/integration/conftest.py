@@ -67,7 +67,7 @@ def migrate_db(_integration_db_url: URL) -> None:
 
     Using ``alembic upgrade head`` (instead of ``Base.metadata.create_all``)
     ensures the full migration chain runs, including:
-    - ``CREATE SCHEMA IF NOT EXISTS sch_infra`` (migration a3f8c1d29e5b)
+    - ``CREATE SCHEMA IF NOT EXISTS sch_fbref_infra`` (migration a3f8c1d29e5b)
     - The ``trg_scrape_queue_updated_at`` trigger (migration 134f2e68682a)
     """
     ini_path = os.path.join(os.path.dirname(__file__), "..", "..", "alembic.ini")

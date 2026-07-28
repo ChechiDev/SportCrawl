@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class CountryRepository:
-    """Persists country-related data across three sch_shared tables.
+    """Persists country-related data across three sch_fbref_shared tables.
 
     Upsert order per row:
         1. tbl_confederations  (if confederation is present)

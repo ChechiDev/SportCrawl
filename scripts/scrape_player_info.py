@@ -34,8 +34,26 @@ from infrastructure.persistence.repositories.player_info import PlayerInfoReposi
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
+from infrastructure.persistence.repositories.player_misc_stats import (
+    PlayerMiscStatsRepository,
+)
+from infrastructure.persistence.repositories.player_playing_time_stats import (
+    PlayerPlayingTimeStatsRepository,
+)
+from infrastructure.persistence.repositories.player_shooting_stats import (
+    PlayerShootingStatsRepository,
+)
+from infrastructure.persistence.repositories.player_std_stats import (
+    PlayerStdStatsRepository,
+)
 from infrastructure.persistence.session import create_session_factory, get_session
 from infrastructure.scraping.player_info import PlayerInfoScraper
+from infrastructure.scraping.player_misc_stats import parse_player_misc_stats
+from infrastructure.scraping.player_playing_time_stats import (
+    parse_player_playing_time_stats,
+)
+from infrastructure.scraping.player_shooting_stats import parse_player_shooting_stats
+from infrastructure.scraping.player_std_stats import parse_player_std_stats
 
 _console = Console()
 
@@ -99,7 +117,7 @@ async def _load_country_ids(
     """Load all valid country_id values from tbl_countries into a frozenset."""
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT country_id FROM sch_shared.tbl_countries")
+            sa.text("SELECT country_id FROM sch_fbref_shared.tbl_countries")
         )
         return frozenset(row[0] for row in result.fetchall())
 
@@ -113,7 +131,7 @@ async def _load_country_name_cache(
     """
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT country_name, country_id FROM sch_shared.tbl_countries")
+            sa.text("SELECT country_name, country_id FROM sch_fbref_shared.tbl_countries")
         )
         cache = {row[0]: row[1] for row in result.fetchall()}
 
@@ -251,6 +269,33 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             job,  # type: ignore[arg-type]
                             html,
                         )
+
+                        player_id = _player_id_from_url(job.url)
+
+                        std_stats = parse_player_std_stats(html, player_id)
+                        if std_stats:
+                            std_repo = PlayerStdStatsRepository(session)
+                            await std_repo.upsert_bulk(std_stats)
+
+                        shooting_stats = parse_player_shooting_stats(html, player_id)
+                        if shooting_stats:
+                            shooting_repo = PlayerShootingStatsRepository(session)
+                            await shooting_repo.upsert_bulk(shooting_stats)
+
+                        playing_time_stats = parse_player_playing_time_stats(
+                            html, player_id
+                        )
+                        if playing_time_stats:
+                            playing_time_repo = PlayerPlayingTimeStatsRepository(
+                                session
+                            )
+                            await playing_time_repo.upsert_bulk(playing_time_stats)
+
+                        misc_stats = parse_player_misc_stats(html, player_id)
+                        if misc_stats:
+                            misc_repo = PlayerMiscStatsRepository(session)
+                            await misc_repo.upsert_bulk(misc_stats)
+
                         await session.commit()
 
                     success = True
@@ -297,7 +342,8 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             )
                     else:
                         self._labels[self._worker_id] = (
-                            f"[bold yellow]WARNING[/] Retrying ({attempt}/3)"
+                            f"[bold yellow]WARNING[/bold yellow]"
+                            f" - Retrying ({attempt}/3) - {_player_name_from_url(job.url)}"
                         )
                         await asyncio.sleep(random.uniform(5.0, 15.0))
 
@@ -309,6 +355,19 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     f"[bold red]FAILED[/] Job {job.id} — max retries reached"
                 )
                 raise CooldownRequired
+
+
+def _player_name_from_url(url: str) -> str:
+    parts = url.rstrip("/").split("/")
+    try:
+        idx = parts.index("players")
+        slug = parts[idx + 2] if len(parts) > idx + 2 else ""
+        if slug == "all_comps":
+            slug = parts[idx + 3] if len(parts) > idx + 3 else ""
+        slug = slug.split("-Stats-")[0]
+        return slug.replace("-", " ").title() if slug else "unknown"
+    except (ValueError, IndexError):
+        return "unknown"
 
 
 def _player_id_from_url(url: str) -> str:
@@ -439,13 +498,13 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.text(
-                "SELECT count(*) FROM sch_infra.scrape_queue"
+                "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                 " WHERE job_type='player_info' AND status='PENDING'"
             )
         )
         pending_total = result.scalar() or 0
         result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_shared.tbl_player_info")
+            sa.text("SELECT count(*) FROM sch_fbref_shared.tbl_player_info")
         )
         already_done = int(result.scalar() or 0)
 

@@ -56,19 +56,10 @@ class TeamsRepository:
             return
 
         try:
-            # Step 1: upsert unique competitions
+            # Step 1: resolve comp_ids from the pre-populated tbl_competition (read-only)
             comp_map: dict[str, int] = {}
             comp_names = {r.comp_name for r in rows if r.comp_name}
             if comp_names:
-                stmt_comp = pg_insert(Competition).values(
-                    [{"comp_name": name} for name in comp_names]
-                )
-                stmt_comp = stmt_comp.on_conflict_do_nothing(
-                    constraint="uq_tbl_competition_comp_name"
-                )
-                await self._session.execute(stmt_comp)
-
-                # Fetch all comp IDs for the names we just ensured exist
                 fetch_result = await self._session.execute(
                     sa.select(Competition.comp_id, Competition.comp_name).where(
                         Competition.comp_name.in_(comp_names)

@@ -20,8 +20,8 @@ _REVISION_ORDER = [
     "a3f8c1d29e5b",
     "5ab3b4f7d8a7",
     "p8a_lockdown_public",
-    "p8b_create_sch_shared",
-    "p8c_create_sch_football",
+    "p8b_create_sch_fbref_shared",
+    "p8c_create_sch_fbref_football",
     "p10a_create_country_tables",
     "p10b_refactor_country_pk",
     "p10c_drop_public_schema",
@@ -54,6 +54,20 @@ _REVISION_ORDER = [
     "p21a",
     "p22a",
     "p23a",
+    "p24a",
+    "p25a",
+    "p26a",
+    "p27a",
+    "p28a",
+    "p29a",
+    "p30a",
+    "p31a",
+    "p32a",
+    "p33a",
+    "p34a",
+    "p35a",
+    "p36a",
+    "p37a",
 ]
 
 
@@ -72,28 +86,28 @@ def _revision_gte(current: str, minimum: str) -> bool:
 
 
 _COUNTRIES_TABLES = [
-    "sch_infra.scrape_queue",
-    "sch_shared.tbl_confederations",
-    "sch_shared.tbl_gender",
-    "sch_shared.tbl_countries",
+    "sch_fbref_infra.scrape_queue",
+    "sch_fbref_shared.tbl_confederations",
+    "sch_fbref_shared.tbl_gender",
+    "sch_fbref_shared.tbl_countries",
 ]
 
 _PLAYERS_TABLES = _COUNTRIES_TABLES + [
-    "sch_shared.tbl_players",
-    "sch_shared.tbl_player_positions",
-    "sch_infra.player_discovery_batch",
-    "sch_infra.player_queue_ref",
-    "sch_shared.tbl_country_squads",
+    "sch_fbref_shared.tbl_players",
+    "sch_fbref_shared.tbl_player_positions",
+    "sch_fbref_infra.player_discovery_batch",
+    "sch_fbref_infra.player_queue_ref",
+    "sch_fbref_shared.tbl_country_squads",
 ]
 
 _PLAYER_INFO_TABLES = _PLAYERS_TABLES + [
-    "sch_shared.tbl_player_info",
-    "sch_shared.tbl_player_photo",
+    "sch_fbref_shared.tbl_player_info",
+    "sch_fbref_shared.tbl_player_photo",
 ]
 
 _CLUB_TEAMS_TABLES = _PLAYERS_TABLES + [
-    "sch_shared.tbl_competition",
-    "sch_shared.tbl_teams",
+    "sch_fbref_shared.tbl_competition",
+    "sch_fbref_shared.tbl_teams",
 ]
 
 _PHASE_TABLES: dict[str, list[str]] = {
@@ -127,7 +141,7 @@ async def check_alembic_initialized(dsn: str) -> CheckResult:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         exists = await conn.fetchval(
-            "SELECT to_regclass('sch_infra.alembic_version') IS NOT NULL AS exists"
+            "SELECT to_regclass('sch_fbref_infra.alembic_version') IS NOT NULL AS exists"
         )
         if exists:
             return CheckResult(
@@ -150,7 +164,7 @@ async def check_alembic_revision(dsn: str, required_head: str) -> CheckResult:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         current = await conn.fetchval(
-            "SELECT version_num FROM sch_infra.alembic_version"
+            "SELECT version_num FROM sch_fbref_infra.alembic_version"
         )
         if _revision_gte(current, required_head):
             return CheckResult(
@@ -177,7 +191,7 @@ async def check_schemas_exist(dsn: str) -> CheckResult:
     try:
         rows = await conn.fetch(
             "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name IN ('sch_infra', 'sch_shared')"
+            "WHERE schema_name IN ('sch_fbref_infra', 'sch_fbref_shared')"
         )
         if len(rows) >= 2:
             return CheckResult(
@@ -230,10 +244,10 @@ async def check_seed_data(
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         if phase in ("players", "club_teams"):
-            count = await conn.fetchval("SELECT COUNT(*) FROM sch_shared.tbl_countries")
+            count = await conn.fetchval("SELECT COUNT(*) FROM sch_fbref_shared.tbl_countries")
             label = "countries"
         else:
-            count = await conn.fetchval("SELECT COUNT(*) FROM sch_shared.tbl_players")
+            count = await conn.fetchval("SELECT COUNT(*) FROM sch_fbref_shared.tbl_players")
             label = "players"
 
         if count and count > 0:
@@ -257,7 +271,7 @@ async def check_country_squads_data(dsn: str) -> CheckResult:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         count = await conn.fetchval(
-            "SELECT COUNT(*) FROM sch_shared.tbl_country_squads"
+            "SELECT COUNT(*) FROM sch_fbref_shared.tbl_country_squads"
         )
         if count and count > 0:
             return CheckResult(
@@ -288,7 +302,7 @@ async def check_clubs_data(dsn: str) -> CheckResult:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         exists = await conn.fetchval(
-            "SELECT to_regclass('sch_shared.tbl_clubs') IS NOT NULL"
+            "SELECT to_regclass('sch_fbref_shared.tbl_clubs') IS NOT NULL"
         )
         if not exists:
             return CheckResult(
@@ -297,7 +311,7 @@ async def check_clubs_data(dsn: str) -> CheckResult:
                 detail="Clubs not available yet — domain and scraping pending.",
                 fatal=False,
             )
-        count = await conn.fetchval("SELECT COUNT(*) FROM sch_shared.tbl_clubs")
+        count = await conn.fetchval("SELECT COUNT(*) FROM sch_fbref_shared.tbl_clubs")
         if count and count > 0:
             return CheckResult(
                 name="Clubs data",
@@ -319,7 +333,7 @@ async def check_stale_queue(dsn: str) -> CheckResult:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         count = await conn.fetchval(
-            "SELECT COUNT(*) FROM sch_infra.scrape_queue "
+            "SELECT COUNT(*) FROM sch_fbref_infra.scrape_queue "
             "WHERE status = 'IN_PROGRESS' AND locked_at < NOW() - INTERVAL '1 hour'"
         )
         if not count:
@@ -335,6 +349,29 @@ async def check_stale_queue(dsn: str) -> CheckResult:
             name="Stale queue",
             passed=False,
             detail=f"{count} stale jobs found. Run with --recover-stale to reset them.",
+            fatal=False,
+        )
+    finally:
+        await conn.close()
+
+
+async def check_competitions_data(dsn: str) -> CheckResult:
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM sch_fbref_shared.tbl_competition"
+        )
+        if count and count > 0:
+            return CheckResult(
+                name="Competitions data",
+                passed=True,
+                detail=f"{count} competitions loaded successfully.",
+                fatal=False,
+            )
+        return CheckResult(
+            name="Competitions data",
+            passed=False,
+            detail="No competitions found. Will scrape from FBRef.",
             fatal=False,
         )
     finally:

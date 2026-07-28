@@ -230,8 +230,8 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                 except Exception as exc:
                     if attempt < max_attempts:
                         self._labels[self._worker_id] = (
-                            f"[bold yellow]WARNING[/]"
-                            f" Retrying ({attempt}/{max_attempts}) — {fk_country}"
+                            f"[bold yellow]WARNING[/bold yellow]"
+                            f" - Retrying ({attempt}/{max_attempts}) - {fk_country}"
                         )
                         await asyncio.sleep(random.uniform(5.0, 15.0))
                     else:
@@ -293,7 +293,7 @@ async def main(workers: int = 1, country_filter: set[str] | None = None) -> None
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.text(
-                "SELECT count(*) FROM sch_infra.scrape_queue"
+                "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                 " WHERE job_type='team_list' AND status='PENDING'"
             )
         )
@@ -308,7 +308,7 @@ async def main(workers: int = 1, country_filter: set[str] | None = None) -> None
             sa.select(
                 sa.text("country_id"),
                 sa.text("country_name"),
-            ).select_from(sa.text("sch_shared.tbl_countries"))
+            ).select_from(sa.text("sch_fbref_shared.tbl_countries"))
         )
         country_names = {r[0]: r[1] for r in names_result}
 

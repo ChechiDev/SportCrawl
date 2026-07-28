@@ -1,4 +1,4 @@
-"""ORM model for tbl_player_positions in sch_shared schema."""
+"""ORM model for tbl_player_positions in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class PlayerPosition(Base):
-    """ORM model for sch_shared.tbl_player_positions.
+    """ORM model for sch_fbref_shared.tbl_player_positions.
 
     Lookup table of known position codes (e.g. "FW", "MF", "DF", "GK").
     Populated by Phase 14 (player-info scraping). No FK relationships to tbl_players
@@ -23,4 +23,4 @@ class PlayerPosition(Base):
     )
     position_code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
 
-    __table_args__ = ({"schema": "sch_shared"},)
+    __table_args__ = ({"schema": "sch_fbref_shared"},)

@@ -1,3 +1,4 @@
+from infrastructure.persistence.models.shared.comp_type import CompType
 from infrastructure.persistence.models.shared.competition import Competition
 from infrastructure.persistence.models.shared.confederation import Confederation
 from infrastructure.persistence.models.shared.country import Country
@@ -9,6 +10,7 @@ from infrastructure.persistence.models.shared.player_position import PlayerPosit
 from infrastructure.persistence.models.shared.teams import Teams
 
 __all__ = [
+    "CompType",
     "Competition",
     "Confederation",
     "Country",
