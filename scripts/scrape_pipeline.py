@@ -101,7 +101,7 @@ _buf_handler = _BufferHandler(_notifications)
 _buf_handler.setFormatter(logging.Formatter("%(levelname)s  %(message)s"))
 
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.CRITICAL,
     handlers=[_buf_handler],
     force=True,
 )
@@ -180,7 +180,7 @@ def _build_unified_display(
     # --- Step 1: Teams ---
     s1_done = s1_done_initial + sum(s1_counts.values())
     s1_total_str = f"{s1_done}/{s1_total}" if s1_total else str(s1_done)
-    s1_header = Text.assemble(("Scraping Teams", "bold"))
+    s1_header = Text.assemble(("Scraping All Teams by Country", "bold"))
     s1_table = Table.grid(padding=(0, 2))
     s1_table.add_column(style="bold green")
     s1_table.add_column()
@@ -199,7 +199,7 @@ def _build_unified_display(
     s2_total_str = f"{s2_done}/{s2_total}" if s2_total else str(s2_done)
 
     s2_header = Text.assemble(
-        ("Scraping Players", "bold"),
+        ("Scraping All Players by Country", "bold"),
     )
     s2_table = Table.grid(padding=(0, 2))
     s2_table.add_column(style="bold green")
@@ -221,7 +221,7 @@ def _build_unified_display(
 
     s3_suffix = "" if s3_ready else "  [waiting for trigger...]"
     s3_header = Text.assemble(
-        (f"Scraping Single Player Stats{s3_suffix}", "bold"),
+        (f"Scraping Player Profile & Stats{s3_suffix}", "bold"),
     )
     # --- Notifications (TTL 5 s) ---
     notes = _notifications.active()
@@ -304,7 +304,7 @@ async def _s3_total_poller(
         async with get_session(session_factory) as session:
             result = await session.execute(
                 sa.text(
-                    "SELECT count(*) FROM sch_infra.scrape_queue"
+                    "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                     " WHERE job_type='player_info'"
                 )
             )
@@ -415,7 +415,7 @@ async def _trigger_watcher(
 
         async with get_session(session_factory) as session:
             result = await session.execute(
-                sa.text("SELECT count(*) FROM sch_shared.tbl_players")
+                sa.text("SELECT count(*) FROM sch_fbref_shared.tbl_players")
             )
             players = int(result.scalar() or 0)
 
@@ -487,7 +487,7 @@ async def main(
                 # Scope total and done to the requested countries only
                 result = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                        "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads"
                         " WHERE clubs_url IS NOT NULL AND fk_country = ANY(:codes)"
                     ),
                     {"codes": list(s1_country_filter)},
@@ -495,8 +495,9 @@ async def main(
                 s1_total = int(result.scalar() or 0)
                 result2 = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_infra.scrape_queue q"
-                        " JOIN sch_shared.tbl_country_squads cs ON cs.clubs_url = q.url"
+                        "SELECT count(*) FROM sch_fbref_infra.scrape_queue q"
+                        " JOIN sch_fbref_shared.tbl_country_squads cs"
+                        " ON cs.clubs_url = q.url"
                         " WHERE q.job_type='team_list' AND q.status='DONE'"
                         " AND cs.fk_country = ANY(:codes)"
                     ),
@@ -506,14 +507,14 @@ async def main(
             else:
                 result = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_shared.tbl_country_squads"
+                        "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads"
                         " WHERE clubs_url IS NOT NULL"
                     )
                 )
                 s1_total = int(result.scalar() or 0)
                 result2 = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_infra.scrape_queue"
+                        "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                         " WHERE job_type='team_list' AND status='DONE'"
                     )
                 )
@@ -563,7 +564,7 @@ async def main(
         async with get_session(session_factory) as session:
             result = await session.execute(
                 sa.text(
-                    "SELECT count(*) FROM sch_infra.scrape_queue"
+                    "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                     " WHERE job_type='player_list' AND status='PENDING'"
                 )
             )
@@ -573,13 +574,13 @@ async def main(
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.text(
-                "SELECT count(*) FROM sch_infra.scrape_queue"
+                "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                 " WHERE job_type='player_info' AND status IN ('PENDING','IN_PROGRESS')"
             )
         )
         s3_queue_count = int(result.scalar() or 0)
         result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_shared.tbl_player_info")
+            sa.text("SELECT count(*) FROM sch_fbref_shared.tbl_player_info")
         )
         s3_already_done = int(result.scalar() or 0)
     s3_total = s3_already_done + s3_queue_count
@@ -588,7 +589,7 @@ async def main(
     async with get_session(session_factory) as session:
         result = await session.execute(
             sa.text(
-                "SELECT count(*) FROM sch_infra.scrape_queue"
+                "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                 " WHERE job_type='player_list' AND status='DONE'"
             )
         )
@@ -615,7 +616,7 @@ async def main(
 
     # Separate fetch gates — each step hits different URLs
     s1_fetch_gate = asyncio.Semaphore(1)
-    s2_fetch_gate = asyncio.Semaphore(1)
+    s2_fetch_gate = asyncio.Semaphore(2)
     s3_fetch_gate = asyncio.Semaphore(4)
 
     s3_total_ref: list[int] = [s3_total]
@@ -746,7 +747,7 @@ async def main(
             async with get_session(session_factory) as session:
                 result = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_infra.scrape_queue"
+                        "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
                         " WHERE job_type='player_info'"
                     )
                 )

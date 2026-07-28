@@ -24,9 +24,9 @@ NameFilterType = Literal[
 
 _MANAGED_SCHEMAS: frozenset[str] = frozenset(
     {
-        "sch_infra",
-        "sch_shared",
-        "sch_football",
+        "sch_fbref_infra",
+        "sch_fbref_shared",
+        "sch_fbref_football",
     }
 )
 
@@ -51,7 +51,7 @@ def include_name(
         type_: Alembic NameFilterType literal — "schema", "table", "column",
                "index", "unique_constraint", or "foreign_key_constraint".
         parent_names: Mapping of ancestor name keys provided by Alembic,
-                      e.g. {"schema_name": "sch_infra"}.
+                      e.g. {"schema_name": "sch_fbref_infra"}.
 
     Returns:
         True if the object should be included in autogenerate; False otherwise.

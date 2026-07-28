@@ -1,4 +1,4 @@
-"""ORM model for tbl_players in sch_shared schema."""
+"""ORM model for tbl_players in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class Player(Base):
-    """ORM model for sch_shared.tbl_players.
+    """ORM model for sch_fbref_shared.tbl_players.
 
     player_id is the natural primary key — an 8-char FBRef slug (e.g. 'd70ce98e');
     VARCHAR(20) for forward compatibility. No surrogate id is used; FKs from
@@ -28,7 +28,7 @@ class Player(Base):
     fk_country: Mapped[str | None] = mapped_column(
         String(10),
         ForeignKey(
-            "sch_shared.tbl_countries.country_id",
+            "sch_fbref_shared.tbl_countries.country_id",
             ondelete="SET NULL",
             name="tbl_players_fk_country_fkey",
         ),
@@ -46,5 +46,5 @@ class Player(Base):
 
     __table_args__ = (
         Index("ix_players_fk_country", "fk_country"),
-        {"schema": "sch_shared"},
+        {"schema": "sch_fbref_shared"},
     )

@@ -1,4 +1,4 @@
-"""ORM model for tbl_player_info in sch_shared schema."""
+"""ORM model for tbl_player_info in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class PlayerInfo(Base):
-    """ORM model for sch_shared.tbl_player_info.
+    """ORM model for sch_fbref_shared.tbl_player_info.
 
     Stores scraped biographical and contract info for each player.
     player_id is the natural PK (FBRef slug, VARCHAR(20)) — same as tbl_players.
@@ -31,7 +31,7 @@ class PlayerInfo(Base):
     player_id: Mapped[str] = mapped_column(
         String(20),
         ForeignKey(
-            "sch_shared.tbl_players.player_id",
+            "sch_fbref_shared.tbl_players.player_id",
             ondelete="CASCADE",
             name="tbl_player_info_player_id_fkey",
         ),
@@ -40,7 +40,7 @@ class PlayerInfo(Base):
     fk_country_birth: Mapped[str | None] = mapped_column(
         String(10),
         ForeignKey(
-            "sch_shared.tbl_countries.country_id",
+            "sch_fbref_shared.tbl_countries.country_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_country_birth_fkey",
         ),
@@ -49,7 +49,7 @@ class PlayerInfo(Base):
     fk_city: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey(
-            "sch_shared.tbl_cities.city_id",
+            "sch_fbref_shared.tbl_cities.city_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_city_fkey",
         ),
@@ -58,7 +58,7 @@ class PlayerInfo(Base):
     fk_nat_team: Mapped[str | None] = mapped_column(
         String(10),
         ForeignKey(
-            "sch_shared.tbl_countries.country_id",
+            "sch_fbref_shared.tbl_countries.country_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_nat_team_fkey",
         ),
@@ -67,7 +67,7 @@ class PlayerInfo(Base):
     fk_youth_nat_team: Mapped[str | None] = mapped_column(
         String(10),
         ForeignKey(
-            "sch_shared.tbl_countries.country_id",
+            "sch_fbref_shared.tbl_countries.country_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_youth_nat_team_fkey",
         ),
@@ -76,7 +76,7 @@ class PlayerInfo(Base):
     fk_team: Mapped[str | None] = mapped_column(
         String(8),
         ForeignKey(
-            "sch_shared.tbl_teams.team_id",
+            "sch_fbref_shared.tbl_teams.team_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_team_fkey",
         ),
@@ -90,7 +90,7 @@ class PlayerInfo(Base):
     fk_ply_pos_1: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey(
-            "sch_shared.tbl_player_positions.position_id",
+            "sch_fbref_shared.tbl_player_positions.position_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_ply_pos_1_fkey",
         ),
@@ -99,7 +99,7 @@ class PlayerInfo(Base):
     fk_ply_pos_2: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey(
-            "sch_shared.tbl_player_positions.position_id",
+            "sch_fbref_shared.tbl_player_positions.position_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_ply_pos_2_fkey",
         ),
@@ -108,7 +108,7 @@ class PlayerInfo(Base):
     fk_ply_pos_3: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey(
-            "sch_shared.tbl_player_positions.position_id",
+            "sch_fbref_shared.tbl_player_positions.position_id",
             ondelete="SET NULL",
             name="tbl_player_info_fk_ply_pos_3_fkey",
         ),
@@ -132,5 +132,5 @@ class PlayerInfo(Base):
         Index("ix_player_info_fk_ply_pos_1", "fk_ply_pos_1"),
         Index("ix_player_info_fk_ply_pos_2", "fk_ply_pos_2"),
         Index("ix_player_info_fk_ply_pos_3", "fk_ply_pos_3"),
-        {"schema": "sch_shared"},
+        {"schema": "sch_fbref_shared"},
     )

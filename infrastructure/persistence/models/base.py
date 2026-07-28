@@ -12,12 +12,12 @@ class FootballBase(Base):
 
     Subclasses must add::
 
-        __table_args__ = {"schema": "sch_football"}
+        __table_args__ = {"schema": "sch_fbref_football"}
 
-    to place their table in the sch_football schema. This class does NOT set
+    to place their table in the sch_fbref_football schema. This class does NOT set
     __table_args__ itself because SQLAlchemy does not inherit table_args from
     abstract bases — each concrete model must declare it explicitly.
     """
 
     __abstract__ = True
-    __schema__ = "sch_football"
+    __schema__ = "sch_fbref_football"

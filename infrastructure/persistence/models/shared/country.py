@@ -1,4 +1,4 @@
-"""ORM model for tbl_countries in sch_shared schema."""
+"""ORM model for tbl_countries in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class Country(Base):
-    """ORM model for sch_shared.tbl_countries."""
+    """ORM model for sch_fbref_shared.tbl_countries."""
 
     __tablename__ = "tbl_countries"
 
@@ -19,7 +19,7 @@ class Country(Base):
     country_name: Mapped[str] = mapped_column(String(100), nullable=False)
     fk_conf: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("sch_shared.tbl_confederations.conf_id", ondelete="SET NULL"),
+        ForeignKey("sch_fbref_shared.tbl_confederations.conf_id", ondelete="SET NULL"),
         nullable=True,
     )
     country_url: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -34,5 +34,5 @@ class Country(Base):
     __table_args__ = (
         Index("ix_countries_fk_conf", "fk_conf"),
         Index("ix_countries_country_name", "country_name"),
-        {"schema": "sch_shared"},
+        {"schema": "sch_fbref_shared"},
     )

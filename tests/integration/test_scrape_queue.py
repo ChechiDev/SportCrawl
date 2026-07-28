@@ -430,11 +430,11 @@ class TestUpdatedAtTrigger:
             text(
                 "SELECT COUNT(*) FROM information_schema.triggers "
                 "WHERE trigger_name = 'trg_scrape_queue_updated_at' "
-                "AND event_object_schema = 'sch_infra'"
+                "AND event_object_schema = 'sch_fbref_infra'"
             )
         )
         count = result.scalar_one()
         assert count == 1, (
-            "Trigger trg_scrape_queue_updated_at not found in sch_infra. "
+            "Trigger trg_scrape_queue_updated_at not found in sch_fbref_infra. "
             "The migrate_db fixture must run alembic upgrade head to install triggers."
         )

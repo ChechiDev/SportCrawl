@@ -14,7 +14,7 @@ from ports.repository import BaseRepository
 
 
 class ProvenanceRepository(BaseRepository[Provenance]):
-    """Async repository for the sch_infra.provenance append-only log.
+    """Async repository for the sch_fbref_infra.provenance append-only log.
 
     Inherits generic CRUD from BaseRepository[Provenance]:
         get(id) / create(entity) / update(entity) / delete(id) / list(**filters)

@@ -129,7 +129,7 @@ class TestCountrySquadsE2E:
         # Albania row.
         alb = page.squads[0]
         assert alb.fk_country == "ALB"
-        assert alb.fk_flag == "al"
+        assert alb.fk_flag == "AL"
         assert alb.confederation == "UEFA"
         assert alb.fbref_men_squad_id == "abcd1234"
         assert alb.fbref_women_squad_id == "efgh5678"

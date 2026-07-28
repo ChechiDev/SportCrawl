@@ -133,12 +133,12 @@ class TestCountryScraperParse:
 
     async def test_parse_extracts_flag_id(self) -> None:
         page = await self._parse(_ONE_ROW_HTML)
-        assert page.countries[0].flag_id == "gb"
+        assert page.countries[0].flag_id == "GB"
 
     async def test_parse_builds_correct_flag_url(self) -> None:
         page = await self._parse(_ONE_ROW_HTML)
         assert page.countries[0].flag_url == (
-            "https://cdn.fbref.com/req/202301010/images/flags/gb.gif"
+            "https://cdn.fbref.com/req/202301010/images/flags/GB.gif"
         )
 
     # --- return type ---

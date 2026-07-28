@@ -60,7 +60,12 @@ class ScrapeQueue(Base):
     domain: Mapped[str] = mapped_column(Text())
     # DB stores enum label names (PENDING, not "pending"); .value is Python-side only.
     status: Mapped[ScrapeStatus] = mapped_column(
-        SAEnum(ScrapeStatus, native_enum=True, name="scrapestatus", schema="sch_infra"),
+        SAEnum(
+            ScrapeStatus,
+            native_enum=True,
+            name="scrapestatus",
+            schema="sch_fbref_infra",
+        ),
         server_default=text("'PENDING'"),
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -94,7 +99,7 @@ class ScrapeQueue(Base):
             "id",
             postgresql_where=text("status = 'PENDING'"),
         ),
-        {"schema": "sch_infra"},
+        {"schema": "sch_fbref_infra"},
     )
 
     @classmethod

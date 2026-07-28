@@ -80,6 +80,27 @@ async def _seed_country_players_urls(settings: Settings) -> None:
         await scraper.scrape(_PLAYERS_INDEX_URL)
 
 
+async def _seed_competitions(settings: Settings) -> int:
+    import logging
+
+    logging.getLogger("pydoll").setLevel(logging.WARNING)
+    logging.getLogger("infrastructure").setLevel(logging.WARNING)
+    logging.getLogger("ports.scraper").setLevel(logging.ERROR)
+
+    from infrastructure.browser.pydoll_engine import PydollEngine
+    from infrastructure.persistence.session import create_session_factory
+    from infrastructure.scraping.competitions import CompetitionsScraper
+
+    _COMPS_URL = "https://fbref.com/en/comps/"
+    session_factory = create_session_factory(settings.db)
+    async with PydollEngine(
+        profile_dir=f"{settings.scraping.chrome_profile_dir}-seed-competitions"
+    ) as engine:
+        scraper = CompetitionsScraper(engine, settings.scraping, session_factory)
+        page = await scraper.scrape(_COMPS_URL)
+        return len(page.competitions)
+
+
 async def _seed_with_retry(
     seed_fn: Callable[[], Awaitable[None]],
     count_sql: str,
@@ -104,7 +125,7 @@ async def _seed_with_retry(
 
     for _attempt in range(1, _MAX_SEED_RETRIES + 1):
         console.print(
-            f"  [dim]→[/dim]  [dim]Seeding {label}...[/dim]{' ' * 20}",
+            f"  [bold cyan]→[/bold cyan]  [dim]Seeding {label}...[/dim]{' ' * 20}",
             end="\r",
         )
         try:
@@ -117,12 +138,13 @@ async def _seed_with_retry(
                     f" after {_MAX_SEED_RETRIES} retries.{' ' * 20}"
                 )
                 raise typer.Exit(code=1)
-            console.print(
-                f"  [yellow]⚠[/yellow]  Rate limited — retrying in {_SEED_RETRY_WAIT}s"
-                f" ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}",
-                end="\r",
-            )
-            await asyncio.sleep(_SEED_RETRY_WAIT)
+            for remaining in range(_SEED_RETRY_WAIT, 0, -1):
+                console.print(
+                    f"  [bold cyan]![/bold cyan]  Rate limited — Retrying in"
+                    f" {remaining}s ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}",
+                    end="\r",
+                )
+                await asyncio.sleep(1)
 
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
@@ -193,7 +215,7 @@ async def _run(
         )
 
         existing_countries = await _fetchval(
-            dsn, "SELECT count(*) FROM sch_shared.tbl_countries"
+            dsn, "SELECT count(*) FROM sch_fbref_shared.tbl_countries"
         )
 
         if existing_countries:
@@ -202,7 +224,7 @@ async def _run(
         else:
             country_count = await _seed_with_retry(
                 lambda: _seed_countries(settings),
-                "SELECT count(*) FROM sch_shared.tbl_countries",
+                "SELECT count(*) FROM sch_fbref_shared.tbl_countries",
                 "countries",
                 dsn,
             )
@@ -210,7 +232,7 @@ async def _run(
             console.print(msg + " loaded successfully.")
 
         existing_squads = await _fetchval(
-            dsn, "SELECT count(*) FROM sch_shared.tbl_country_squads"
+            dsn, "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads"
         )
 
         if existing_squads:
@@ -219,7 +241,7 @@ async def _run(
         else:
             squads_count = await _seed_with_retry(
                 lambda: _seed_country_squads(settings),
-                "SELECT count(*) FROM sch_shared.tbl_country_squads",
+                "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads",
                 "country squads",
                 dsn,
             )
@@ -228,14 +250,17 @@ async def _run(
 
         missing_players_url = await _fetchval(
             dsn,
-            ("SELECT count(*) FROM sch_shared.tbl_countries WHERE players_url IS NULL"),
+            (
+                "SELECT count(*) FROM sch_fbref_shared.tbl_countries"
+                " WHERE players_url IS NULL"
+            ),
         )
 
         if missing_players_url:
             players_url_count = await _seed_with_retry(
                 lambda: _seed_country_players_urls(settings),
                 (
-                    "SELECT count(*) FROM sch_shared.tbl_countries "
+                    "SELECT count(*) FROM sch_fbref_shared.tbl_countries "
                     "WHERE players_url IS NOT NULL"
                 ),
                 "country players URLs",
@@ -251,6 +276,19 @@ async def _run(
                 "  [cyan]✓[/cyan]  All Countries with Players loaded successfully."
             )
 
+        async def _scrape_competitions() -> None:
+            await _seed_competitions(settings)
+
+        comp_count = await _seed_with_retry(
+            _scrape_competitions,
+            "SELECT count(*) FROM sch_fbref_shared.tbl_competition",
+            "competitions",
+            dsn,
+        )
+        console.print(
+            f"  [cyan]✓[/cyan]  {comp_count} Competitions loaded successfully."
+        )
+
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:
             raise typer.Exit(code=1)
@@ -259,7 +297,7 @@ async def _run(
         conn = await asyncpg.connect(dsn, timeout=5)
         try:
             _sql = (
-                "UPDATE sch_infra.scrape_queue"
+                "UPDATE sch_fbref_infra.scrape_queue"
                 " SET status = 'PENDING', locked_at = NULL"
                 " WHERE status = 'IN_PROGRESS'"
                 " AND locked_at < NOW() - INTERVAL '1 hour'"

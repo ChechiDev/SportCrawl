@@ -32,7 +32,7 @@ class ProvenanceOutcome(enum.Enum):
 
 
 class Provenance(Base):
-    """ORM model for the sch_infra.provenance table.
+    """ORM model for the sch_fbref_infra.provenance table.
 
     Columns (8):
         id            — integer primary key (auto-increment / SERIAL)
@@ -61,7 +61,7 @@ class Provenance(Base):
             ProvenanceOutcome,
             native_enum=True,
             name="provenanceoutcome",
-            schema="sch_infra",
+            schema="sch_fbref_infra",
         ),
         nullable=False,
     )
@@ -73,5 +73,5 @@ class Provenance(Base):
     __table_args__ = (
         Index("ix_provenance_url_scraped_at", "url", "scraped_at"),
         Index("ix_provenance_run_id", "run_id"),
-        {"schema": "sch_infra"},
+        {"schema": "sch_fbref_infra"},
     )

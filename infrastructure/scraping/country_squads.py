@@ -119,7 +119,7 @@ class CountrySquadsScraper(BaseScraper[CountrySquadsPage]):
                     )
                     for cls in classes:
                         if cls.startswith("f-") and cls != "f-i":
-                            fk_flag = cls[2:]  # strip leading "f-"
+                            fk_flag = cls[2:].upper()  # strip leading "f-"
                             break
 
             # Confederation: governing_body cell text.

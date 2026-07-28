@@ -5,7 +5,7 @@ The adapter is exercised through its WorkQueuePort interface.
 
 Isolation strategy: each test uses a unique URL suffix (UUID4-keyed) so rows do
 not interfere with other integration tests. The adapter_session fixture truncates
-the sch_infra.scrape_queue table after each test so count-based assertions in
+the sch_fbref_infra.scrape_queue table after each test so count-based assertions in
 other test modules are not affected.
 
 Covers (tasks 2.3–2.4):
@@ -54,7 +54,7 @@ async def adapter(_adapter_engine) -> ScrapeQueueWorkAdapter:
 
     # Cleanup: delete all rows inserted during this test
     async with _adapter_engine.connect() as conn:
-        await conn.execute(text("DELETE FROM sch_infra.scrape_queue"))
+        await conn.execute(text("DELETE FROM sch_fbref_infra.scrape_queue"))
         await conn.commit()
 
 

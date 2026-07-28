@@ -1,4 +1,4 @@
-"""ORM model for tbl_gender in sch_shared schema."""
+"""ORM model for tbl_gender in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class Gender(Base):
-    """ORM model for sch_shared.tbl_gender."""
+    """ORM model for sch_fbref_shared.tbl_gender."""
 
     __tablename__ = "tbl_gender"
 
@@ -18,5 +18,5 @@ class Gender(Base):
 
     __table_args__ = (
         UniqueConstraint("gender", name="uq_gender_gender"),
-        {"schema": "sch_shared"},
+        {"schema": "sch_fbref_shared"},
     )

@@ -127,7 +127,7 @@ class ScrapeQueueRepository:
         async with repo_error_context("recover_failed", "recover_failed failed"):
             stmt = text(
                 """
-                UPDATE sch_infra.scrape_queue
+                UPDATE sch_fbref_infra.scrape_queue
                    SET status        = 'PENDING',
                        retry_count   = 0,
                        error_message = NULL,
@@ -150,7 +150,7 @@ class ScrapeQueueRepository:
         async with repo_error_context("recover_stale", "recover_stale failed"):
             stmt = text(
                 """
-                UPDATE sch_infra.scrape_queue
+                UPDATE sch_fbref_infra.scrape_queue
                    SET status    = 'PENDING',
                        locked_at = NULL
                  WHERE status    = 'IN_PROGRESS'
@@ -171,7 +171,7 @@ class ScrapeQueueRepository:
 
 
 class ScrapeQueueJobRepository(BaseRepository[ScrapeQueue]):
-    """Async repository for the sch_infra.scrape_queue table.
+    """Async repository for the sch_fbref_infra.scrape_queue table.
 
     Inherits generic CRUD from BaseRepository[ScrapeQueue].
 
@@ -235,7 +235,7 @@ class ScrapeQueueJobRepository(BaseRepository[ScrapeQueue]):
         try:
             stmt = text(
                 """
-                UPDATE sch_infra.scrape_queue
+                UPDATE sch_fbref_infra.scrape_queue
                    SET status    = 'PENDING',
                        locked_at = NULL
                  WHERE status    = 'IN_PROGRESS'

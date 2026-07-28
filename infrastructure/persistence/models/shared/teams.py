@@ -1,4 +1,4 @@
-"""ORM model for tbl_teams in sch_shared schema."""
+"""ORM model for tbl_teams in sch_fbref_shared schema."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from infrastructure.persistence.models.base import Base
 
 
 class Teams(Base):
-    """ORM model for sch_shared.tbl_teams.
+    """ORM model for sch_fbref_shared.tbl_teams.
 
     Each row represents one team/club with its primary competition, active
     seasons range, and gender. Upsert target keyed on team_id (natural PK
@@ -40,24 +40,24 @@ class Teams(Base):
     __table_args__ = (
         ForeignKeyConstraint(
             ["fk_country"],
-            ["sch_shared.tbl_countries.country_id"],
+            ["sch_fbref_shared.tbl_countries.country_id"],
             name="fk_tbl_teams_country",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ["fk_gender"],
-            ["sch_shared.tbl_gender.id"],
+            ["sch_fbref_shared.tbl_gender.id"],
             name="fk_tbl_teams_gender",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
             ["fk_comp"],
-            ["sch_shared.tbl_competition.comp_id"],
+            ["sch_fbref_shared.tbl_competition.comp_id"],
             name="fk_tbl_teams_comp",
             ondelete="SET NULL",
         ),
         Index("ix_tbl_teams_fk_country", "fk_country"),
         Index("ix_tbl_teams_fk_gender", "fk_gender"),
         Index("ix_tbl_teams_fk_comp", "fk_comp"),
-        {"schema": "sch_shared"},
+        {"schema": "sch_fbref_shared"},
     )

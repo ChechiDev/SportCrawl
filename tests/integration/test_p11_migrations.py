@@ -127,18 +127,22 @@ class TestP11Migrations:
         try:
             async with engine.connect() as conn:
                 async with AsyncSession(bind=conn) as session:
-                    assert await _table_exists(session, "tbl_players", "sch_shared")
                     assert await _table_exists(
-                        session, "tbl_player_positions", "sch_shared"
+                        session, "tbl_players", "sch_fbref_shared"
                     )
                     assert await _table_exists(
-                        session, "player_discovery_batch", "sch_infra"
+                        session, "tbl_player_positions", "sch_fbref_shared"
                     )
-                    assert await _table_exists(session, "player_queue_ref", "sch_infra")
+                    assert await _table_exists(
+                        session, "player_discovery_batch", "sch_fbref_infra"
+                    )
+                    assert await _table_exists(
+                        session, "player_queue_ref", "sch_fbref_infra"
+                    )
                     assert await _view_exists(
                         session,
                         "v_player_scrape_progress",
-                        "sch_football",
+                        "sch_fbref_football",
                     )
         finally:
             await engine.dispose()
@@ -157,7 +161,7 @@ class TestP11Migrations:
             async with engine.connect() as conn:
                 async with AsyncSession(bind=conn) as session:
                     assert await _column_exists(
-                        session, "scrape_queue", "locked_at", "sch_infra"
+                        session, "scrape_queue", "locked_at", "sch_fbref_infra"
                     )
         finally:
             await engine.dispose()
