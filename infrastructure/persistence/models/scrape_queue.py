@@ -56,8 +56,8 @@ class ScrapeQueue(Base):
     __tablename__ = "scrape_queue"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    url: Mapped[str] = mapped_column(Text())
-    domain: Mapped[str] = mapped_column(Text())
+    url: Mapped[str] = mapped_column(String(2048))
+    domain: Mapped[str] = mapped_column(String(255))
     # DB stores enum label names (PENDING, not "pending"); .value is Python-side only.
     status: Mapped[ScrapeStatus] = mapped_column(
         SAEnum(
@@ -88,7 +88,7 @@ class ScrapeQueue(Base):
         DateTime(timezone=True), nullable=True
     )
     # Discriminates queue entries by scraping job (e.g. 'player_discovery').
-    job_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    job_type: Mapped[str] = mapped_column(String(50), nullable=False, default="default")
 
     __table_args__ = (
         UniqueConstraint("url", "job_type", name="uq_scrape_queue_url_job_type"),
