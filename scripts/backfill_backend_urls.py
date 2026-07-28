@@ -159,14 +159,17 @@ async def _run_tasks(
 
 
 async def sync_preflight() -> None:
-    """Sync only tables available at preflight time (no scraping needed)."""
+    """Sync only tables available at preflight time (no scraping needed). Silent."""
     settings = Settings()  # type: ignore[call-arg]
     session_factory = create_session_factory(settings.db)
-    await _run_tasks(session_factory, [
-        ("tbl_competition_urls", SQL_COMPETITION_URLS),
-        ("tbl_country_urls", SQL_COUNTRY_URLS),
-        ("tbl_country_squad_urls", SQL_COUNTRY_SQUAD_URLS),
-    ])
+    async with get_session(session_factory) as session:
+        for _, stmt in [
+            ("tbl_competition_urls", SQL_COMPETITION_URLS),
+            ("tbl_country_urls", SQL_COUNTRY_URLS),
+            ("tbl_country_squad_urls", SQL_COUNTRY_SQUAD_URLS),
+        ]:
+            await session.execute(stmt)
+            await session.commit()
 
 
 async def main() -> None:
