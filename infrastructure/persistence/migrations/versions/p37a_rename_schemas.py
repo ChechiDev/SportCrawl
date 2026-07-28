@@ -35,15 +35,19 @@ def upgrade() -> None:
                 t.relname  AS tbl_name,
                 a.attname  AS col_name
             FROM pg_class sc
-            JOIN pg_namespace sn ON sn.oid = sc.relnamespace AND sn.nspname = 'sch_infra'
+            JOIN pg_namespace sn
+                ON sn.oid = sc.relnamespace AND sn.nspname = 'sch_infra'
             JOIN pg_depend d ON d.objid = sc.oid AND d.deptype = 'a'
             JOIN pg_class t ON t.oid = d.refobjid
-            JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+            JOIN pg_attribute a
+                ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
             WHERE sc.relkind = 'S';
 
             -- Disown sequences so they can be moved independently.
             FOR r IN SELECT seq_name FROM _seq_own LOOP
-                EXECUTE format('ALTER SEQUENCE sch_infra.%I OWNED BY NONE', r.seq_name);
+                EXECUTE format(
+                    'ALTER SEQUENCE sch_infra.%I OWNED BY NONE', r.seq_name
+                );
             END LOOP;
 
             -- Move enum types.
@@ -52,7 +56,10 @@ def upgrade() -> None:
                 JOIN pg_namespace n ON n.oid = t.typnamespace
                 WHERE n.nspname = 'sch_infra' AND t.typtype = 'e'
             LOOP
-                EXECUTE format('ALTER TYPE sch_infra.%I SET SCHEMA sch_fbref_infra', r.typname);
+                EXECUTE format(
+                    'ALTER TYPE sch_infra.%I SET SCHEMA sch_fbref_infra',
+                    r.typname
+                );
             END LOOP;
 
             -- Move sequences.
@@ -60,14 +67,19 @@ def upgrade() -> None:
                 SELECT sequence_name FROM information_schema.sequences
                 WHERE sequence_schema = 'sch_infra'
             LOOP
-                EXECUTE format('ALTER SEQUENCE sch_infra.%I SET SCHEMA sch_fbref_infra', r.sequence_name);
+                EXECUTE format(
+                    'ALTER SEQUENCE sch_infra.%I SET SCHEMA sch_fbref_infra',
+                    r.sequence_name
+                );
             END LOOP;
 
             -- Move functions (e.g. update_updated_at_column used by triggers).
             FOR r IN
                 SELECT proname, pg_get_function_identity_arguments(oid) AS args
                 FROM pg_proc
-                WHERE pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'sch_infra')
+                WHERE pronamespace = (
+                    SELECT oid FROM pg_namespace WHERE nspname = 'sch_infra'
+                )
             LOOP
                 EXECUTE format(
                     'ALTER FUNCTION sch_infra.%I(%s) SET SCHEMA sch_fbref_infra',
@@ -80,10 +92,14 @@ def upgrade() -> None:
                 SELECT table_name FROM information_schema.tables
                 WHERE table_schema = 'sch_infra' AND table_name != 'alembic_version'
             LOOP
-                EXECUTE format('ALTER TABLE sch_infra.%I SET SCHEMA sch_fbref_infra', r.table_name);
+                EXECUTE format(
+                    'ALTER TABLE sch_infra.%I SET SCHEMA sch_fbref_infra',
+                    r.table_name
+                );
             END LOOP;
 
-            -- Re-establish sequence ownership now that both seq and table are in sch_fbref_infra.
+            -- Re-establish sequence ownership; both seq and table
+            -- are now in sch_fbref_infra.
             FOR r IN SELECT * FROM _seq_own LOOP
                 EXECUTE format(
                     'ALTER SEQUENCE sch_fbref_infra.%I OWNED BY sch_fbref_infra.%I.%I',
@@ -112,14 +128,19 @@ def downgrade() -> None:
                 t.relname  AS tbl_name,
                 a.attname  AS col_name
             FROM pg_class sc
-            JOIN pg_namespace sn ON sn.oid = sc.relnamespace AND sn.nspname = 'sch_fbref_infra'
+            JOIN pg_namespace sn
+                ON sn.oid = sc.relnamespace AND sn.nspname = 'sch_fbref_infra'
             JOIN pg_depend d ON d.objid = sc.oid AND d.deptype = 'a'
             JOIN pg_class t ON t.oid = d.refobjid
-            JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+            JOIN pg_attribute a
+                ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
             WHERE sc.relkind = 'S';
 
             FOR r IN SELECT seq_name FROM _seq_own LOOP
-                EXECUTE format('ALTER SEQUENCE sch_fbref_infra.%I OWNED BY NONE', r.seq_name);
+                EXECUTE format(
+                    'ALTER SEQUENCE sch_fbref_infra.%I OWNED BY NONE',
+                    r.seq_name
+                );
             END LOOP;
 
             FOR r IN
@@ -127,13 +148,18 @@ def downgrade() -> None:
                 JOIN pg_namespace n ON n.oid = t.typnamespace
                 WHERE n.nspname = 'sch_fbref_infra' AND t.typtype = 'e'
             LOOP
-                EXECUTE format('ALTER TYPE sch_fbref_infra.%I SET SCHEMA sch_infra', r.typname);
+                EXECUTE format(
+                    'ALTER TYPE sch_fbref_infra.%I SET SCHEMA sch_infra',
+                    r.typname
+                );
             END LOOP;
 
             FOR r IN
                 SELECT proname, pg_get_function_identity_arguments(oid) AS args
                 FROM pg_proc
-                WHERE pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'sch_fbref_infra')
+                WHERE pronamespace = (
+                    SELECT oid FROM pg_namespace WHERE nspname = 'sch_fbref_infra'
+                )
             LOOP
                 EXECUTE format(
                     'ALTER FUNCTION sch_fbref_infra.%I(%s) SET SCHEMA sch_infra',
@@ -145,14 +171,21 @@ def downgrade() -> None:
                 SELECT sequence_name FROM information_schema.sequences
                 WHERE sequence_schema = 'sch_fbref_infra'
             LOOP
-                EXECUTE format('ALTER SEQUENCE sch_fbref_infra.%I SET SCHEMA sch_infra', r.sequence_name);
+                EXECUTE format(
+                    'ALTER SEQUENCE sch_fbref_infra.%I SET SCHEMA sch_infra',
+                    r.sequence_name
+                );
             END LOOP;
 
             FOR r IN
                 SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'sch_fbref_infra' AND table_name != 'alembic_version'
+                WHERE table_schema = 'sch_fbref_infra'
+                  AND table_name != 'alembic_version'
             LOOP
-                EXECUTE format('ALTER TABLE sch_fbref_infra.%I SET SCHEMA sch_infra', r.table_name);
+                EXECUTE format(
+                    'ALTER TABLE sch_fbref_infra.%I SET SCHEMA sch_infra',
+                    r.table_name
+                );
             END LOOP;
 
             FOR r IN SELECT * FROM _seq_own LOOP
@@ -165,5 +198,6 @@ def downgrade() -> None:
             DROP TABLE _seq_own;
         END $$;
     """)
-    # alembic_version remains in sch_fbref_infra (Alembic manages it); drop with CASCADE.
-    op.execute("DROP SCHEMA IF EXISTS sch_fbref_infra CASCADE")
+    # alembic_version remains in sch_fbref_infra — Alembic manages it and needs
+    # the schema alive to write the version record after this downgrade completes.
+    # Do NOT drop sch_fbref_infra here.

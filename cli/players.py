@@ -140,8 +140,8 @@ async def _seed_with_retry(
                 raise typer.Exit(code=1)
             for remaining in range(_SEED_RETRY_WAIT, 0, -1):
                 console.print(
-                    f"  [bold cyan]![/bold cyan]  Rate limited — Retrying in {remaining}s"
-                    f" ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}",
+                    f"  [bold cyan]![/bold cyan]  Rate limited — Retrying in"
+                    f" {remaining}s ({_attempt}/{_MAX_SEED_RETRIES}){' ' * 20}",
                     end="\r",
                 )
                 await asyncio.sleep(1)
@@ -250,7 +250,10 @@ async def _run(
 
         missing_players_url = await _fetchval(
             dsn,
-            ("SELECT count(*) FROM sch_fbref_shared.tbl_countries WHERE players_url IS NULL"),
+            (
+                "SELECT count(*) FROM sch_fbref_shared.tbl_countries"
+                " WHERE players_url IS NULL"
+            ),
         )
 
         if missing_players_url:

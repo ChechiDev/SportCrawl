@@ -120,7 +120,7 @@ def parse_player_misc_stats(
             if not isinstance(row, Tag):
                 continue
 
-            row_classes = row.get("class") or []
+            row_classes: list[str] = list(row.get("class") or [])
             if "thead" in row_classes or "spacer" in row_classes:
                 continue
 

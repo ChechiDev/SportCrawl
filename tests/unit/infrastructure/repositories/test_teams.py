@@ -85,10 +85,6 @@ async def test_upsert_empty_list_is_noop() -> None:
 async def test_upsert_executes_statements() -> None:
     session = _make_session()
 
-    # Mock execute to return gender rows on the second call (gender lookup)
-    comp_result = MagicMock()
-    comp_result.__iter__ = MagicMock(return_value=iter([]))
-
     gender_row = MagicMock()
     gender_row.gender = "M"
     gender_row.id = 1
@@ -101,9 +97,8 @@ async def test_upsert_executes_statements() -> None:
     comp_fetch_result = MagicMock()
     comp_fetch_result.__iter__ = MagicMock(return_value=iter([comp_fetch_row]))
 
-    # Call sequence: (1) comp insert, (2) comp fetch, (3) gender fetch, (4) teams insert
+    # Call sequence: (1) comp fetch, (2) gender fetch, (3) teams insert
     session.execute.side_effect = [
-        comp_result,  # comp insert (on_conflict_do_nothing)
         comp_fetch_result,  # comp select
         gender_result,  # gender select
         MagicMock(),  # teams insert
@@ -113,7 +108,7 @@ async def test_upsert_executes_statements() -> None:
     with _pg_insert_mock():
         await repo.upsert([_make_team()])
 
-    assert session.execute.call_count == 4
+    assert session.execute.call_count == 3
 
 
 async def test_upsert_no_comp_skips_comp_insert() -> None:

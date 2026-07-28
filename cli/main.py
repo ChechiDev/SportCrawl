@@ -12,11 +12,11 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-import typer
-from rich.console import Console
+import typer  # noqa: E402
+from rich.console import Console  # noqa: E402
 
-from config.settings import Settings
-from infrastructure.work_server.runtime import serve
+from config.settings import Settings  # noqa: E402
+from infrastructure.work_server.runtime import serve  # noqa: E402
 
 app = typer.Typer(
     name="sportcrawl",
@@ -194,11 +194,13 @@ def reset_db(
         Panel(
             "[bold red]WARNING[/bold red]\n\n"
             "This will delete ALL scraped data:\n"
-            "  • sch_fbref_shared: countries, players, player_info, photos, positions,\n"
-            "    country_squads, teams, competition, comp_type, cities, player_citizenship\n"
+            "  • sch_fbref_shared: countries, players, player_info, photos,\n"
+            "    positions, country_squads, teams, competition, comp_type,\n"
+            "    cities, player_citizenship\n"
             "  • sch_fbref_football: player_std_stats, player_misc_stats,\n"
             "    player_playing_time_stats, player_shooting_stats\n"
-            "  • sch_fbref_infra: scrape_queue, player_discovery_batch, player_queue_ref\n\n"
+            "  • sch_fbref_infra: scrape_queue, player_discovery_batch,\n"
+            "    player_queue_ref\n\n"
             "Schemas and migrations will NOT be touched.",
             title="[red]Reset Database[/red]",
             border_style="red",
@@ -228,9 +230,8 @@ async def _do_reset(console: Console) -> None:
     )
 
     import asyncio
-    from functools import partial
-
     import logging as _logging
+    from functools import partial
 
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
@@ -288,7 +289,9 @@ async def _do_reset(console: Console) -> None:
         await conn.execute(
             "INSERT INTO sch_fbref_shared.tbl_gender (gender) VALUES ('M'), ('F')"
         )
-        console.print("  [bold green]OK  [/bold green] sch_fbref_shared.tbl_gender re-seeded")
+        console.print(
+            "  [bold green]OK  [/bold green] sch_fbref_shared.tbl_gender re-seeded"
+        )
     finally:
         await conn.close()
 

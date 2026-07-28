@@ -110,7 +110,8 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
                 inner = BeautifulSoup(comment, "lxml")
                 tables = [
                     t for t in inner.find_all("table")
-                    if isinstance(t, Tag) and str(t.get("id", "")).startswith("stats_standard")
+                    if isinstance(t, Tag)
+                    and str(t.get("id", "")).startswith("stats_standard")
                 ]
                 if tables:
                     break
@@ -129,7 +130,7 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
             if not isinstance(row, Tag):
                 continue
 
-            row_classes = row.get("class") or []
+            row_classes: list[str] = list(row.get("class") or [])
             if "thead" in row_classes or "spacer" in row_classes:
                 continue
 
@@ -142,7 +143,10 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
                 parts = season_text.split("-")
                 season = int(parts[-1]) if len(parts[-1]) == 4 else int(parts[0])
             except ValueError:
-                logger.debug("player_std_stats: skipping row — unparseable season %r", season_text)
+                logger.debug(
+                    "player_std_stats: skipping row — unparseable season %r",
+                    season_text,
+                )
                 continue
 
             team_cell = _find_cell(row, "team", "squad")
@@ -154,7 +158,8 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
             team_url = _href_path(team_cell)
             if team_url is None:
                 logger.debug(
-                    "player_std_stats: skipping row — no team URL for player %s season %s",
+                    "player_std_stats: skipping row — no team URL"
+                    " for player %s season %s",
                     player_id,
                     season_text,
                 )
@@ -162,7 +167,10 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
 
             m = _TEAM_ID_RE.search(team_url)
             if not m:
-                logger.debug("player_std_stats: skipping row — cannot extract team_id from %r", team_url)
+                logger.debug(
+                    "player_std_stats: skipping row — cannot extract team_id from %r",
+                    team_url,
+                )
                 continue
             fk_team = m.group(1)
 
@@ -217,9 +225,13 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
                     goals_p90=_decimal(_find_cell(row, "goals_per90")),
                     assists_p90=_decimal(_find_cell(row, "assists_per90")),
                     goals_assists_p90=_decimal(_find_cell(row, "goals_assists_per90")),
-                    goals_pk_p90=_decimal(_find_cell(row, "goals_pens_per90", "goals_pk_per90")),
+                    goals_pk_p90=_decimal(
+                        _find_cell(row, "goals_pens_per90", "goals_pk_per90")
+                    ),
                     goals_assists_pk_p90=_decimal(
-                        _find_cell(row, "goals_assists_pens_per90", "goals_assists_pk_per90")
+                        _find_cell(
+                            row, "goals_assists_pens_per90", "goals_assists_pk_per90"
+                        )
                     ),
                     team_url=team_url,
                     comp_url=comp_url,

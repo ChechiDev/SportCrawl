@@ -141,7 +141,8 @@ async def check_alembic_initialized(dsn: str) -> CheckResult:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         exists = await conn.fetchval(
-            "SELECT to_regclass('sch_fbref_infra.alembic_version') IS NOT NULL AS exists"
+            "SELECT to_regclass('sch_fbref_infra.alembic_version')"
+            " IS NOT NULL AS exists"
         )
         if exists:
             return CheckResult(
@@ -244,10 +245,14 @@ async def check_seed_data(
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         if phase in ("players", "club_teams"):
-            count = await conn.fetchval("SELECT COUNT(*) FROM sch_fbref_shared.tbl_countries")
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM sch_fbref_shared.tbl_countries"
+            )
             label = "countries"
         else:
-            count = await conn.fetchval("SELECT COUNT(*) FROM sch_fbref_shared.tbl_players")
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM sch_fbref_shared.tbl_players"
+            )
             label = "players"
 
         if count and count > 0:

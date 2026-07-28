@@ -496,7 +496,8 @@ async def main(
                 result2 = await session.execute(
                     sa.text(
                         "SELECT count(*) FROM sch_fbref_infra.scrape_queue q"
-                        " JOIN sch_fbref_shared.tbl_country_squads cs ON cs.clubs_url = q.url"
+                        " JOIN sch_fbref_shared.tbl_country_squads cs"
+                        " ON cs.clubs_url = q.url"
                         " WHERE q.job_type='team_list' AND q.status='DONE'"
                         " AND cs.fk_country = ANY(:codes)"
                     ),

@@ -222,7 +222,7 @@ class TestCountrySquadsScraperParse:
     async def test_parse_extracts_flag_2letter_code(self) -> None:
         scraper = _make_scraper()
         page = await scraper.parse(_FULL_ROW_HTML)
-        assert page.squads[0].fk_flag == "al"
+        assert page.squads[0].fk_flag == "AL"
 
     # --- confederation ---
 
@@ -307,6 +307,6 @@ class TestCountrySquadsScraperParse:
         page = await scraper.parse(_MULTI_ROW_HTML)
         second = page.squads[1]
         assert second.fk_country == "AND"
-        assert second.fk_flag == "ad"
+        assert second.fk_flag == "AD"
         assert second.fbref_men_squad_id == "aaaa1111"
         assert second.fbref_women_squad_id is None

@@ -185,7 +185,8 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                     if attempt < max_attempts:
                         self._labels[self._worker_id] = (
                             f"[bold yellow]WARNING[/bold yellow]"
-                            f" - Retrying ({attempt}/{max_attempts}) - {country_display}"
+                            f" - Retrying ({attempt}/{max_attempts})"
+                            f" - {country_display}"
                         )
                         await asyncio.sleep(random.uniform(5.0, 15.0))
                     else:

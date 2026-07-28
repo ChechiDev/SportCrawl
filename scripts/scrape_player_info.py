@@ -131,7 +131,9 @@ async def _load_country_name_cache(
     """
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("SELECT country_name, country_id FROM sch_fbref_shared.tbl_countries")
+            sa.text(
+                "SELECT country_name, country_id FROM sch_fbref_shared.tbl_countries"
+            )
         )
         cache = {row[0]: row[1] for row in result.fetchall()}
 
@@ -343,7 +345,8 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     else:
                         self._labels[self._worker_id] = (
                             f"[bold yellow]WARNING[/bold yellow]"
-                            f" - Retrying ({attempt}/3) - {_player_name_from_url(job.url)}"
+                            f" - Retrying ({attempt}/3)"
+                            f" - {_player_name_from_url(job.url)}"
                         )
                         await asyncio.sleep(random.uniform(5.0, 15.0))
 

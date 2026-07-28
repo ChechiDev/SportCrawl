@@ -9,7 +9,9 @@ from infrastructure.persistence.models.base import Base
 class CompType(Base):
     __tablename__ = "tbl_comp_type"
 
-    comp_type_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    comp_type_id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
     comp_type_name: Mapped[str] = mapped_column(String(100), nullable=False)
 
     __table_args__ = (

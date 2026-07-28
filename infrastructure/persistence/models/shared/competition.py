@@ -12,7 +12,9 @@ from infrastructure.persistence.models.base import Base
 class Competition(Base):
     __tablename__ = "tbl_competition"
 
-    comp_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=None)
+    comp_id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=False, default=None
+    )
     comp_name: Mapped[str] = mapped_column(String(200), nullable=False)
     fk_comp_type: Mapped[int] = mapped_column(
         Integer,

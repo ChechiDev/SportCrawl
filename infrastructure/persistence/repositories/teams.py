@@ -56,7 +56,7 @@ class TeamsRepository:
             return
 
         try:
-            # Step 1: resolve comp_ids from the pre-populated tbl_competition (read-only)
+            # Step 1: resolve comp_ids from the pre-populated tbl_competition
             comp_map: dict[str, int] = {}
             comp_names = {r.comp_name for r in rows if r.comp_name}
             if comp_names:

@@ -241,7 +241,8 @@ class PlayerInfoRepository:
             "upsert_citizenship", "upsert_citizenship failed"
         ):
             stmt = sa.text(
-                "INSERT INTO sch_fbref_shared.tbl_player_citizenship (player_id, fk_country)"
+                "INSERT INTO sch_fbref_shared.tbl_player_citizenship"
+                " (player_id, fk_country)"
                 " VALUES (:player_id, :fk_country)"
                 " ON CONFLICT (player_id, fk_country) DO NOTHING"
             )

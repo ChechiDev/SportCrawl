@@ -103,7 +103,10 @@ async def session_factory_with_player(
                 {"url": _PLAYER_URL},
             )
             await session.execute(
-                text("DELETE FROM sch_fbref_shared.tbl_player_info WHERE player_id = :pid"),
+                text(
+                    "DELETE FROM sch_fbref_shared.tbl_player_info"
+                    " WHERE player_id = :pid"
+                ),
                 {"pid": _PLAYER_ID},
             )
             await session.execute(

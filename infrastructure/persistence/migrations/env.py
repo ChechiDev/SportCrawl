@@ -155,8 +155,9 @@ async def run_async_migrations() -> None:
     from sqlalchemy import text
 
     connectable = _build_engine()
-    # Bootstrap sch_fbref_infra before Alembic connects — version_table_schema="sch_fbref_infra"
-    # requires the schema to exist before Alembic tries to read/write the version table.
+    # Bootstrap sch_fbref_infra before Alembic connects —
+    # version_table_schema="sch_fbref_infra" requires the schema to exist
+    # before Alembic tries to read/write the version table.
     # Must be committed in its own transaction; executing inside do_run_migrations
     # starts an implicit transaction — Alembic detects in_transaction()=True and uses
     # SAVEPOINTs, so the outer connection auto-rolls back everything on close.

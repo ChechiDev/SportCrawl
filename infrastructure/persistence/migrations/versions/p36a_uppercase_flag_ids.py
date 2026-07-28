@@ -1,4 +1,5 @@
-"""Uppercase all flag_id values across tbl_flags, tbl_country_squads, and tbl_competition.
+"""Uppercase all flag_id values across tbl_flags, tbl_country_squads,
+and tbl_competition.
 
 Scrapers now emit UPPER-case flag codes. This migration normalises all existing
 rows so FK references remain consistent after the scraper change.
@@ -30,10 +31,12 @@ def upgrade() -> None:
     )
 
     op.execute(
-        "UPDATE sch_shared.tbl_country_squads SET fk_flag = UPPER(fk_flag) WHERE fk_flag IS NOT NULL"
+        "UPDATE sch_shared.tbl_country_squads"
+        " SET fk_flag = UPPER(fk_flag) WHERE fk_flag IS NOT NULL"
     )
     op.execute(
-        "UPDATE sch_shared.tbl_competition SET fk_flag = UPPER(fk_flag) WHERE fk_flag IS NOT NULL"
+        "UPDATE sch_shared.tbl_competition"
+        " SET fk_flag = UPPER(fk_flag) WHERE fk_flag IS NOT NULL"
     )
     op.execute("UPDATE sch_shared.tbl_flags SET flag_id = UPPER(flag_id)")
 
@@ -74,10 +77,12 @@ def downgrade() -> None:
     )
 
     op.execute(
-        "UPDATE sch_shared.tbl_country_squads SET fk_flag = LOWER(fk_flag) WHERE fk_flag IS NOT NULL"
+        "UPDATE sch_shared.tbl_country_squads"
+        " SET fk_flag = LOWER(fk_flag) WHERE fk_flag IS NOT NULL"
     )
     op.execute(
-        "UPDATE sch_shared.tbl_competition SET fk_flag = LOWER(fk_flag) WHERE fk_flag IS NOT NULL"
+        "UPDATE sch_shared.tbl_competition"
+        " SET fk_flag = LOWER(fk_flag) WHERE fk_flag IS NOT NULL"
     )
     op.execute("UPDATE sch_shared.tbl_flags SET flag_id = LOWER(flag_id)")
 

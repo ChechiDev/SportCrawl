@@ -1,4 +1,5 @@
-"""Widen min_pct and ppm in tbl_player_playing_time_stats from NUMERIC(5,2) to NUMERIC(6,2).
+"""Widen min_pct and ppm in tbl_player_playing_time_stats
+from NUMERIC(5,2) to NUMERIC(6,2).
 
 Revision ID: p32a
 Revises: p31a
