@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] — 2026-07-28
+
+### Added
+- Competitions scraper: scrape FBRef /en/comps/ during preflight to populate tbl_competition (152 competitions)
+- tbl_comp_type reference table with dynamic upsert (no hardcoded seed)
+- Migration p37a: rename PostgreSQL schemas to include fbref namespace prefix
+
+### Changed
+- Schema names: sch_shared→sch_fbref_shared, sch_football→sch_fbref_football, sch_infra→sch_fbref_infra across all application code
+- fk_gender in tbl_competition now references tbl_gender.id (integer FK) instead of varchar
+- flag_id values stored in UPPERCASE across tbl_flags, tbl_country_squads, tbl_competition
+- reset command now drops all schemas before rebuilding from scratch
+- Pipeline display labels updated: "Scraping All Teams by Country", "Scraping All Players by Country", "Scraping Player Profile & Stats"
+- Worker retry display: WARNING (yellow) — Retrying (N/M) — entity name
+
+### Fixed
+- TeamsRepository: SELECT-only on tbl_competition (no longer writes to it)
+- fk_flag resolved via tbl_flags.fk_country lookup when not present in HTML
+
 ## [0.23.0] — 2026-07-26
 
 ### Added
@@ -26,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.22.1] — 2026-07-26
 
 ### Fixed
-- `PlayerListScraper` now raises `PageLoadError` when 0 players are parsed and no \"N Players\" count header is present — CF challenge pages no longer get marked as DONE; jobs requeue automatically via the never-die policy
+- `PlayerListScraper` now raises `PageLoadError` when 0 players are parsed and no "N Players" count header is present — CF challenge pages no longer get marked as DONE; jobs requeue automatically via the never-die policy
 - `CountryPlayersScraper` maps FBRef country code `EIR` (Ireland) to `IRL` (Republic of Ireland) via `_COUNTRY_ID_ALIASES`
 - `upsert_players_url` no-match log downgraded from WARNING to DEBUG for historical/micro-nation countries not present in the DB
 
@@ -121,7 +140,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.24.1...HEAD
+[0.24.1]: https://github.com/ChechiDev/sportcrawl/compare/v0.23.0...v0.24.1
+[0.23.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.20.0...v0.23.0
 [0.20.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/ChechiDev/sportcrawl/compare/v0.18.0...v0.18.1
