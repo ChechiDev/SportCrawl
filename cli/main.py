@@ -236,6 +236,7 @@ async def _do_reset(console: Console) -> None:
     conn = await asyncpg.connect(dsn, timeout=5)
     try:
         for schema in (
+            "sch_fbref_backend",
             "sch_fbref_infra",
             "sch_fbref_shared",
             "sch_fbref_football",

@@ -14,7 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(sa.text("CREATE SCHEMA sch_fbref_backend"))
+    op.execute(sa.text("CREATE SCHEMA IF NOT EXISTS sch_fbref_backend"))
 
 
 def downgrade() -> None:
