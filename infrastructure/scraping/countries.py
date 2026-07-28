@@ -91,7 +91,6 @@ class CountryScraper(BaseScraper[CountryPage]):
 
             country_id = match.group(1).upper()
             country_name = country_cell.get_text(strip=True)
-            country_url = href if href.startswith("https://") else f"{_FBREF_BASE}{href}"
 
             flag_td = cells_by_stat.get("flag")
             flag_span = flag_td.find("span") if flag_td else None
@@ -108,7 +107,6 @@ class CountryScraper(BaseScraper[CountryPage]):
                 country_data = CountryRawData(
                     country_id=country_id,
                     country_name=country_name,
-                    country_url=country_url,
                     confederation=confederation,
                     flag_id=flag_id,
                     flag_url=flag_url,

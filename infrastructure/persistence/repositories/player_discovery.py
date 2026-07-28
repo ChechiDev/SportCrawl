@@ -76,6 +76,8 @@ class PlayerDiscoveryRepository:
 
         try:
             # 1. Player rows — chunked to stay under asyncpg 32 767-param limit
+            # Build a map of player_id → player_url for backend co-insert use.
+            player_url_map: dict[str, str] = {r.player_id: r.player_url for r in rows}
             player_values = [
                 {
                     "player_id": r.player_id,
@@ -83,7 +85,6 @@ class PlayerDiscoveryRepository:
                     "career_start": r.career_start,
                     "career_end": r.career_end,
                     "fk_country": country_id,
-                    "player_url": r.player_url,
                 }
                 for r in rows
             ]
@@ -97,31 +98,44 @@ class PlayerDiscoveryRepository:
                 raw = await self._session.execute(stmt_player)
                 inserted_count += raw.rowcount  # type: ignore[attr-defined]
 
-                # Co-insert backend scheduling rows — same transaction, best-effort
+                # Co-insert backend scheduling rows — same transaction, best-effort.
+                # player_url is no longer in tbl_players; use the Python-side value.
                 try:
-                    player_ids = [c["player_id"] for c in chunk]
-                    await self._session.execute(
-                        sa.text(
-                            """
-                            INSERT INTO sch_fbref_backend.tbl_player_urls
-                                (fk_player, url_type, url, cadence_hours, priority,
-                                 status, next_scrape_at, created_at, updated_at, retry_count)
-                            SELECT
-                                p.player_id,
-                                'profile',
-                                :base_url || p.player_url,
-                                168,
-                                5,
-                                'PENDING',
-                                now(), now(), now(), 0
-                            FROM sch_fbref_shared.tbl_players p
-                            WHERE p.player_id = ANY(:player_ids)
-                              AND p.player_url IS NOT NULL
-                            ON CONFLICT (fk_player, url_type) DO NOTHING
-                            """
-                        ),
-                        {"player_ids": player_ids, "base_url": _FBREF_BASE_URL},
-                    )
+                    backend_values = [
+                        {
+                            "fk_player": c["player_id"],
+                            "url": f"{_FBREF_BASE_URL}{player_url_map[c['player_id']]}",
+                        }
+                        for c in chunk
+                        if c["player_id"] in player_url_map
+                    ]
+                    if backend_values:
+                        await self._session.execute(
+                            sa.text(
+                                """
+                                INSERT INTO sch_fbref_backend.tbl_player_urls
+                                    (fk_player, url_type, url, cadence_hours, priority,
+                                     status, next_scrape_at, created_at, updated_at, retry_count)
+                                SELECT
+                                    v.fk_player,
+                                    'profile',
+                                    v.url,
+                                    168,
+                                    5,
+                                    'PENDING',
+                                    now(), now(), now(), 0
+                                FROM unnest(
+                                    :player_ids ::text[],
+                                    :urls ::text[]
+                                ) AS v(fk_player, url)
+                                ON CONFLICT (fk_player, url_type) DO NOTHING
+                                """
+                            ),
+                            {
+                                "player_ids": [v["fk_player"] for v in backend_values],
+                                "urls": [v["url"] for v in backend_values],
+                            },
+                        )
                 except Exception:
                     logger.warning(
                         "Backend co-insert failed for player chunk (country=%s); skipping",

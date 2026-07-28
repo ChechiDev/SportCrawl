@@ -1,7 +1,6 @@
 """PlayerStdStatsRepository — upserts player standard stats into tbl_player_std_stats.
 
 Tables managed:
-    sch_fbref_shared.tbl_competition  — comp_name upsert (get or create comp_id)
     sch_fbref_football.tbl_player_std_stats — main stats table
 
 The caller owns the transaction; this repository never commits.
@@ -10,7 +9,6 @@ The caller owns the transaction; this repository never commits.
 from __future__ import annotations
 
 import logging
-import re
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -33,17 +31,11 @@ class PlayerStdStatsRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    def _resolve_comp_id(self, comp_url: str) -> int | None:
-        m = re.search(r"/en/comps/(\d+)/", comp_url or "")
-        if not m:
-            return None
-        return int(m.group(1))
-
     async def upsert_bulk(self, rows: list[PlayerStdStatsRawData]) -> int:
         """Upsert a list of standard stats rows.
 
         For each row:
-        1. Resolves fk_comp via comp_name upsert into tbl_competition.
+        1. Uses comp_id extracted by the scraper layer directly (no URL resolution).
         2. Upserts into tbl_player_std_stats on PK conflict.
 
         Args:
@@ -66,10 +58,9 @@ class PlayerStdStatsRepository:
                     ),
                     {"team_id": row.fk_team, "team_url": row.team_url},
                 )
-                comp_id = self._resolve_comp_id(row.comp_url or "")
-                if comp_id is None:
+                if row.comp_id is None:
                     continue
-                row.fk_comp = comp_id
+                row.fk_comp = row.comp_id
 
                 values: dict[str, object] = {
                     "player_id": row.player_id,
@@ -96,7 +87,7 @@ class PlayerStdStatsRepository:
                     "goals_pk_p90": row.goals_pk_p90,
                     "goals_assists_pk_p90": row.goals_assists_pk_p90,
                     "team_url": row.team_url,
-                    "comp_url": row.comp_url,
+                    "comp_url": None,
                     "match_url": row.match_url,
                 }
 

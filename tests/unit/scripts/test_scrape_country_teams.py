@@ -151,18 +151,20 @@ class TestCountryTeamsWorkerConstructor:
             worker_labels={},
             worker_counts={},
             settings=MagicMock(),
-            url_to_country={"https://fbref.com/en/country/clubs/ARG/": "ARG"},
             country_filter=None,
             country_names={"ARG": "Argentina"},
         )
         defaults.update(kwargs)
         return CountryTeamsWorker(**defaults)  # type: ignore[arg-type]
 
-    def test_worker_accepts_url_to_country_param(self) -> None:
-        """Worker must accept url_to_country constructor param."""
-        url_map = {_ARG_CLUBS_URL: "ARG", _BRA_CLUBS_URL: "BRA"}
-        worker = self._make_worker(url_to_country=url_map)
-        assert worker._url_to_country == url_map  # type: ignore[attr-defined]
+    def test_worker_does_not_accept_url_to_country_param(self) -> None:
+        """Worker must NOT accept url_to_country (removed in Fase 4 — fk_country on queue)."""
+        import inspect
+
+        from scripts.scrape_country_teams import CountryTeamsWorker
+
+        sig = inspect.signature(CountryTeamsWorker.__init__)
+        assert "url_to_country" not in sig.parameters
 
     def test_worker_accepts_country_filter_param(self) -> None:
         """Worker must accept country_filter constructor param."""

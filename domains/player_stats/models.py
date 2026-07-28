@@ -35,7 +35,7 @@ class PlayerStdStatsRawData(BaseModel):
     goals_pk_p90: Decimal = Decimal("0.00")
     goals_assists_pk_p90: Decimal = Decimal("0.00")
     team_url: str | None = None
-    comp_url: str | None = None
+    comp_id: int | None = None
     match_url: str | None = None
     comp_name: str = ""
 
@@ -64,7 +64,7 @@ class PlayerShootingStatsRawData(BaseModel):
     pk_scored: int = 0
     pk_att: int = 0
     team_url: str | None = None
-    comp_url: str | None = None
+    comp_id: int | None = None
     match_url: str | None = None
     comp_name: str = ""
 
@@ -99,7 +99,7 @@ class PlayerPlayingTimeStatsRawData(BaseModel):
     plus_minus_per90: Decimal = Decimal("0.00")
     on_off: Decimal = Decimal("0.00")
     team_url: str | None = None
-    comp_url: str | None = None
+    comp_id: int | None = None
     match_url: str | None = None
     comp_name: str = ""
 
@@ -130,6 +130,6 @@ class PlayerMiscStatsRawData(BaseModel):
     pk_conceded: int = 0
     own_goals: int = 0
     team_url: str | None = None
-    comp_url: str | None = None
+    comp_id: int | None = None
     match_url: str | None = None
     comp_name: str = ""

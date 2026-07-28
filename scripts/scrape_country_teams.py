@@ -30,7 +30,6 @@ from core.application.base_worker import BaseWorker, CooldownRequired
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
-from infrastructure.persistence.models.shared.country_squads import CountrySquads
 from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.team_list_queue import (
     TeamListQueueRepository,
@@ -63,6 +62,9 @@ async def _seed_queue(
 ) -> int:
     """Bulk-insert one scrape_queue row per (fk_country, clubs_url) tuple.
 
+    Sets fk_country on each row so workers can resolve the country code without
+    a JOIN back to tbl_country_squads.
+
     ON CONFLICT DO NOTHING keeps the operation idempotent across restarts.
     Filter-agnostic: seeds exactly the rows it receives (caller applies any
     country filter before passing rows here).
@@ -84,12 +86,13 @@ async def _seed_queue(
             "domain": "fbref.com",
             "status": ScrapeStatus.PENDING,
             "job_type": "team_list",
+            "fk_country": fk_country,
         }
-        for _fk_country, clubs_url in rows
+        for fk_country, clubs_url in rows
     ]
 
     _PG_MAX_PARAMS = 65_535
-    _SEED_CHUNK_SIZE = _PG_MAX_PARAMS // 8  # ~8191; 8 bind params per ScrapeQueue row
+    _SEED_CHUNK_SIZE = _PG_MAX_PARAMS // 9  # 9 bind params per ScrapeQueue row now
     inserted = 0
     for i in range(0, len(insert_rows), _SEED_CHUNK_SIZE):
         chunk = insert_rows[i : i + _SEED_CHUNK_SIZE]
@@ -115,7 +118,6 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
         worker_labels: dict[int, str],
         worker_counts: dict[int, int],
         settings: Settings,
-        url_to_country: dict[str, str] | None = None,
         country_filter: set[str] | None = None,
         country_names: dict[str, str] | None = None,
     ) -> None:
@@ -128,7 +130,6 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
             worker_counts=worker_counts,
         )
         self._settings = settings
-        self._url_to_country: dict[str, str] = url_to_country or {}
         self._country_filter = country_filter
         self._country_names = country_names or {}
 
@@ -168,11 +169,10 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
             if job is None:
                 return self._processed
 
-            # Resolve fk_country from pre-loaded map. Fresh session guard: the
-            # claim session is already committed and closed at this point.
-            fk_country = self._url_to_country.get(job.url)
+            # fk_country is stored directly on the queue row (set at seed time).
+            fk_country = job.fk_country
             if fk_country is None:
-                _no_country_msg = f"fk_country not found for url: {job.url}"
+                _no_country_msg = f"fk_country not set on queue row id={job.id} url={job.url}"
                 async with get_session(self._session_factory) as session:
                     await TeamListQueueRepository(session).mark_failed(
                         job.id, _no_country_msg
@@ -334,20 +334,18 @@ async def main(workers: int = 1, country_filter: set[str] | None = None) -> None
 
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.select(CountrySquads.fk_country, CountrySquads.clubs_url)
-            .where(CountrySquads.clubs_url.isnot(None))
-            .order_by(CountrySquads.fk_country)
+            sa.text(
+                "SELECT fk_country, url FROM sch_fbref_backend.tbl_country_squad_urls"
+                " WHERE url_type = 'clubs'"
+                " ORDER BY fk_country"
+            )
         )
-        all_rows: list[tuple[str, str]] = [
-            (row.fk_country, row.clubs_url) for row in result
-        ]
+        all_rows: list[tuple[str, str]] = [(row.fk_country, row.url) for row in result]
 
     if country_filter is not None:
         rows = [(fk, url) for fk, url in all_rows if fk in country_filter]
     else:
         rows = all_rows
-
-    url_to_country = {clubs_url: fk_country for fk_country, clubs_url in rows}
 
     await _seed_queue(session_factory, rows)
 
@@ -411,7 +409,6 @@ async def main(workers: int = 1, country_filter: set[str] | None = None) -> None
                     worker_labels=worker_labels,
                     worker_counts=worker_counts,
                     settings=settings,
-                    url_to_country=url_to_country,
                     country_filter=country_filter,
                     country_names=country_names,
                 ).run()

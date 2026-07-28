@@ -188,7 +188,12 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
             comp_cell = _find_cell(row, "comp_level", "comp")
             comp_raw = _text(comp_cell)
             comp_name = _COMP_PREFIX_RE.sub("", comp_raw).strip()
-            comp_url = _href_path(comp_cell)
+            comp_id: int | None = None
+            _comp_href = _href_path(comp_cell)
+            if _comp_href:
+                _m_comp = re.search(r"/en/comps/(\d+)/", _comp_href)
+                if _m_comp:
+                    comp_id = int(_m_comp.group(1))
 
             age_cell = _find_cell(row, "age")
             age_text = _text(age_cell)
@@ -234,7 +239,7 @@ def parse_player_std_stats(html: str, player_id: str) -> list[PlayerStdStatsRawD
                         )
                     ),
                     team_url=team_url,
-                    comp_url=comp_url,
+                    comp_id=comp_id,
                     match_url=match_url,
                     comp_name=comp_name,
                 )

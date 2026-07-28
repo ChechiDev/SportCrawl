@@ -73,14 +73,12 @@ class CountryRepository:
                     .values(
                         country_id=row.country_id,
                         country_name=row.country_name,
-                        country_url=row.country_url,
                         fk_conf=conf_id,
                     )
                     .on_conflict_do_update(
                         index_elements=["country_id"],
                         set_={
                             "country_name": row.country_name,
-                            "country_url": row.country_url,
                             "fk_conf": conf_id,
                             "updated_at": func.now(),
                         },

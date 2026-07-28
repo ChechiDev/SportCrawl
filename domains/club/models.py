@@ -13,7 +13,7 @@ class CountrySquad(BaseModel):
     """
 
     fk_country: str = Field(min_length=2, max_length=10)
-    """3-letter country code extracted from clubs_url (e.g. 'ARG')."""
+    """3-letter country code for this squad entry."""
 
     fk_flag: str | None = Field(default=None, max_length=2)
     """2-letter ISO flag code from the flag span class (e.g. 'ar')."""
@@ -21,8 +21,10 @@ class CountrySquad(BaseModel):
     confederation: str | None = None
     """Governing body name (e.g. 'UEFA', 'CONMEBOL') — uppercased on set."""
 
-    clubs_url: str = Field(min_length=1)
-    """Full URL to the country's clubs listing on FBRef."""
+    clubs_url: str | None = Field(default=None, min_length=1)
+    """Full URL to the country's clubs listing on FBRef.
+    Python-only field — not persisted to tbl_country_squads (dropped in p49a).
+    Used only to co-insert into sch_fbref_backend.tbl_country_squad_urls."""
 
     nat_team_men_url: str | None = None
     """Full URL to the men's national team history page, or None."""

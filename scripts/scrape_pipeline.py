@@ -31,7 +31,6 @@ from rich.text import Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
-from infrastructure.persistence.models.shared.country_squads import CountrySquads
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
@@ -451,11 +450,14 @@ async def main(
     if with_teams:
         async with get_session(session_factory) as session:
             result = await session.execute(
-                sa.select(CountrySquads.fk_country, CountrySquads.clubs_url)
-                .where(CountrySquads.clubs_url.isnot(None))
-                .order_by(CountrySquads.fk_country)
+                sa.text(
+                    "SELECT fk_country, url"
+                    " FROM sch_fbref_backend.tbl_country_squad_urls"
+                    " WHERE url_type = 'clubs'"
+                    " ORDER BY fk_country"
+                )
             )
-            s1_rows = [(r[0], r[1]) for r in result.fetchall()]
+            s1_rows = [(r.fk_country, r.url) for r in result.fetchall()]
             if country:
                 country_upper = {c.upper() for c in country}
                 s1_rows = [row for row in s1_rows if row[0] in country_upper]
@@ -463,10 +465,6 @@ async def main(
                 sa.select(Country.country_id, Country.country_name)
             )
             s1_country_names = {r[0]: r[1] for r in names_result.fetchall()}
-    # Build lookup map for workers: clubs_url → fk_country
-    s1_url_to_country: dict[str, str] = {
-        clubs_url: fk_country for fk_country, clubs_url in s1_rows
-    }
     # Determine country_filter for s1 workers from --country arg
     s1_country_filter: set[str] | None = (
         {c.upper() for c in country} if country else None
@@ -487,19 +485,17 @@ async def main(
                 # Scope total and done to the requested countries only
                 result = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads"
-                        " WHERE clubs_url IS NOT NULL AND fk_country = ANY(:codes)"
+                        "SELECT count(*) FROM sch_fbref_backend.tbl_country_squad_urls"
+                        " WHERE url_type = 'clubs' AND fk_country = ANY(:codes)"
                     ),
                     {"codes": list(s1_country_filter)},
                 )
                 s1_total = int(result.scalar() or 0)
                 result2 = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_fbref_infra.scrape_queue q"
-                        " JOIN sch_fbref_shared.tbl_country_squads cs"
-                        " ON cs.clubs_url = q.url"
-                        " WHERE q.job_type='team_list' AND q.status='DONE'"
-                        " AND cs.fk_country = ANY(:codes)"
+                        "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
+                        " WHERE job_type='team_list' AND status='DONE'"
+                        " AND fk_country = ANY(:codes)"
                     ),
                     {"codes": list(s1_country_filter)},
                 )
@@ -507,8 +503,8 @@ async def main(
             else:
                 result = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads"
-                        " WHERE clubs_url IS NOT NULL"
+                        "SELECT count(*) FROM sch_fbref_backend.tbl_country_squad_urls"
+                        " WHERE url_type = 'clubs'"
                     )
                 )
                 s1_total = int(result.scalar() or 0)
@@ -697,7 +693,6 @@ async def main(
                             worker_labels=s1_labels,
                             worker_counts=s1_counts,
                             settings=settings,
-                            url_to_country=s1_url_to_country,
                             country_filter=s1_country_filter,
                             country_names=s1_country_names,
                         ).run()

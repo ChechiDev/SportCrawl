@@ -93,6 +93,8 @@ class ScrapeQueue(Base):
     fk_url_registry_id: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
     # Discriminates queue entries by scraping job (e.g. 'player_discovery').
     job_type: Mapped[str] = mapped_column(String(50), nullable=False, default="default")
+    # Country code for team_list jobs — avoids joining tbl_country_squads at claim time.
+    fk_country: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("url", "job_type", name="uq_scrape_queue_url_job_type"),

@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.repository import repo_error_context
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
-from infrastructure.persistence.models.shared.country_squads import CountrySquads
 from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepository
 
 
@@ -26,10 +25,9 @@ class TeamListQueueRepository(ScrapeQueueRepository):
     Inherits the full state-machine (claim_next, mark_done, mark_failed,
     recover_all_stale) from ScrapeQueueRepository with job_type='team_list'.
 
-    When a country_filter is provided to claim_next, only rows whose url
-    matches a clubs_url belonging to one of the given fk_country values are
-    eligible for claiming (--country mode). When None, any PENDING team_list
-    row may be claimed (--all mode).
+    When a country_filter is provided to claim_next, only rows whose fk_country
+    matches one of the given values are eligible for claiming (--country mode).
+    When None, any PENDING team_list row may be claimed (--all mode).
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -53,8 +51,8 @@ class TeamListQueueRepository(ScrapeQueueRepository):
         """Claim the next PENDING team_list job with optional country filter.
 
         When country_filter is set (--country mode), restrict claims to rows
-        whose url matches a clubs_url belonging to one of the given fk_country
-        values. When None, claim any PENDING team_list row (--all mode).
+        whose fk_country matches one of the given values. When None, claim
+        any PENDING team_list row (--all mode).
 
         Args:
             country_filter: Set of fk_country codes to restrict claiming to,
@@ -79,11 +77,7 @@ class TeamListQueueRepository(ScrapeQueueRepository):
             )
             if country_filter is not None:
                 stmt = stmt.where(
-                    ScrapeQueue.url.in_(
-                        select(CountrySquads.clubs_url).where(
-                            CountrySquads.fk_country.in_(country_filter)
-                        )
-                    )
+                    ScrapeQueue.fk_country.in_(country_filter)
                 )
             result = await self._session.execute(stmt)
             row = result.scalars().first()
