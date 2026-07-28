@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from config.settings import ScrapingSettings
 
-from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, DateTime, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,6 +87,10 @@ class ScrapeQueue(Base):
     locked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Soft (polymorphic) reference to the URL-registry row that dispatched this job.
+    # No FK constraint: the column may point to any of the five tbl_*_urls tables
+    # in sch_fbref_backend.  Referential integrity is enforced at application level.
+    fk_url_registry_id: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
     # Discriminates queue entries by scraping job (e.g. 'player_discovery').
     job_type: Mapped[str] = mapped_column(String(50), nullable=False, default="default")
 
