@@ -21,3 +21,10 @@ class FootballBase(Base):
 
     __abstract__ = True
     __schema__ = "sch_fbref_football"
+
+
+class BackendBase(Base):
+    """Abstract base for all backend-domain ORM models (sch_fbref_backend schema)."""
+
+    __abstract__ = True
+    __table_args__ = {"schema": "sch_fbref_backend"}
