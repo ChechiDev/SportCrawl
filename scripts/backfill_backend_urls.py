@@ -12,6 +12,7 @@ import asyncio
 
 import sqlalchemy as sa
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
 from infrastructure.persistence.session import create_session_factory, get_session
@@ -146,23 +147,39 @@ SQL_COUNTRY_SQUAD_URLS = sa.text("""
 # Entry point
 # ---------------------------------------------------------------------------
 
-async def main() -> None:
-    settings = Settings()  # type: ignore[call-arg]
-    session_factory = create_session_factory(settings.db)
-
-    tasks: list[tuple[str, sa.TextClause]] = [
-        ("tbl_player_urls", SQL_PLAYER_URLS),
-        ("tbl_team_urls", SQL_TEAM_URLS),
-        ("tbl_competition_urls", SQL_COMPETITION_URLS),
-        ("tbl_country_urls", SQL_COUNTRY_URLS),
-        ("tbl_country_squad_urls", SQL_COUNTRY_SQUAD_URLS),
-    ]
-
+async def _run_tasks(
+    session_factory: async_sessionmaker[AsyncSession],
+    tasks: list[tuple[str, sa.TextClause]],
+) -> None:
     async with get_session(session_factory) as session:
         for table_name, stmt in tasks:
             cursor: CursorResult[sa.Any] = await session.execute(stmt)  # type: ignore[assignment]
             await session.commit()
             print(f"✓ {table_name}: {cursor.rowcount} rows inserted")
+
+
+async def sync_preflight() -> None:
+    """Sync only tables available at preflight time (no scraping needed)."""
+    settings = Settings()  # type: ignore[call-arg]
+    session_factory = create_session_factory(settings.db)
+    await _run_tasks(session_factory, [
+        ("tbl_competition_urls", SQL_COMPETITION_URLS),
+        ("tbl_country_urls", SQL_COUNTRY_URLS),
+        ("tbl_country_squad_urls", SQL_COUNTRY_SQUAD_URLS),
+    ])
+
+
+async def main() -> None:
+    """Full backfill — run manually after a complete scrape."""
+    settings = Settings()  # type: ignore[call-arg]
+    session_factory = create_session_factory(settings.db)
+    await _run_tasks(session_factory, [
+        ("tbl_player_urls", SQL_PLAYER_URLS),
+        ("tbl_team_urls", SQL_TEAM_URLS),
+        ("tbl_competition_urls", SQL_COMPETITION_URLS),
+        ("tbl_country_urls", SQL_COUNTRY_URLS),
+        ("tbl_country_squad_urls", SQL_COUNTRY_SQUAD_URLS),
+    ])
 
 
 if __name__ == "__main__":

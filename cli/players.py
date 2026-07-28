@@ -81,9 +81,9 @@ async def _seed_country_players_urls(settings: Settings) -> None:
 
 
 async def _sync_backend_urls() -> None:
-    from scripts.backfill_backend_urls import main as _backfill
+    from scripts.backfill_backend_urls import sync_preflight
 
-    await _backfill()
+    await sync_preflight()
 
 
 async def _seed_competitions(settings: Settings) -> int:
