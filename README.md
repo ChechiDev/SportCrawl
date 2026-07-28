@@ -121,48 +121,42 @@ The three scraping stages run concurrently in a single unified display:
 ## Scraping Example
 
 ```console
-❯ uv run sportcrawl -a -w 5
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ____  ___  ___  ____  ____  ____  ____  ____  ____  ____  __
-  ||S|| ||P|| ||O|| ||R|| ||T||    ||C|| ||R|| ||A|| ||W|| ||L||
-  ||__|| ||__|| ||__|| ||__|| ||__|    ||__|| ||__|| ||__|| ||__|| ||__|
-
+❯ uv run sportcrawl -a -w 5 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   _____ ____  ____  ____  ______   __________  ___ _       ____ 
+  / ___// __ \/ __ \/ __ \/_  __/  / ____/ __ \/   | |     / / / 
+  \__ \/ /_/ / / / / /_/ / / /    / /   / /_/ / /| | | /| / / /  
+ ___/ / ____/ /_/ / _, _/ / /    / /___/ _, _/ ___ | |/ |/ / /___
+/____/_/    \____/_/ |_| /_/     \____/_/ |_/_/  |_|__/|__/_____/
+                                                                 
   Sports data, scraped at scale.  v0.24.1
   Ctrl+C to stop  ·  on restart, scraping resumes from where it left off
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Checking requirements...
-  ✓  Connected successfully.
-  ✓  Migrations initialized successfully.
-  ✓  Database schemas verified.
-  ✓  System tables ready.
-  ✓  225 Countries loaded successfully.
-  ✓  96 Country Teams loaded successfully.
-  ✓  224 Countries with Players loaded successfully.
-  ✓  152 Competitions loaded successfully.
+  ✓  Connected successfully.                                
+  ✓  Migrations initialized successfully.                   
+  ✓  Database schemas verified.                             
+  ✓  System tables ready.                                   
+  ✓  225 Countries loaded successfully.      
+  ✓  96 Country Teams loaded successfully.        
+  ✓  224 Countries with Players loaded successfully.    
+  ✓  152 Competitions loaded successfully.      
 
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Scraping All Teams by Country
-  RUN  [Crawl-1] [15 | 74/96] Paraguay: 28 Teams
-  RUN  [Crawl-2] [15 | 74/96] Peru: 37 Teams
-  RUN  [Crawl-3] [15 | 74/96] Poland: 50 Teams
-  RUN  [Crawl-4] [15 | 74/96] Portugal: 50 Teams
-  RUN  [Crawl-5] [14 | 74/96] Panama: 3 Teams
+  ✓  All teams in 96 countries scraped                                                                                              
 
 Scraping All Players by Country
-  RUN  [Crawl-1] [26 | 128/224] Mali: 457 Players
-  RUN  [Crawl-2] [25 | 128/224] Malawi: 165 Players
-  RUN  [Crawl-3] [25 | 128/224] Malaysia: 325 Players
-  RUN  [Crawl-4] [27 | 128/224] Malta: 280 Players
-  RUN  [Crawl-5] [25 | 128/224] Maldives: 178 Players
+  ✓  All players in 224 countries already scraped                                                                                   
 
 Scraping Player Profile & Stats
-  RUN  [Crawl-1] [29 | 141/137382] Malawi Football Players
-  RUN  [Crawl-2] [28 | 141/137382] Abed Noorestani
-  RUN  [Crawl-3] [28 | 141/137382] Rohullah Nazari
-  RUN  [Crawl-4] [29 | 141/137382] Ferhad Noori
-  RUN  [Crawl-5] [27 | 141/137382] Zelfy Nazary
+  RUN  [Crawl-1] [102 | 535/229300] Dean Lico                                                                                       
+  RUN  [Crawl-2] [106 | 535/229300] Ermir Lenjani                                                                                   
+  RUN  [Crawl-3] [112 | 535/229300] Suad Liçi                                                                                       
+  RUN  [Crawl-4] [110 | 535/229300] Venssa Levendi                                                                                  
+  RUN  [Crawl-5] [105 | 535/229300] Vanesa Levenaj
 ```
 
 ---
