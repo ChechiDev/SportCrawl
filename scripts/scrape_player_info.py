@@ -19,7 +19,6 @@ from pydoll.exceptions import BrowserException
 from rich.console import Console
 from rich.live import Live
 from rich.markup import escape
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
@@ -28,7 +27,7 @@ from core.application.scrape_job_processor import ScrapeJobProcessor
 from core.exceptions.scraper import PageLoadError, RateLimitError
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
-from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
+from infrastructure.persistence.models.scrape_queue import ScrapeQueue
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
@@ -437,62 +436,32 @@ def _player_id_from_url(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Queue seeder (--seed flag)
+# Queue trigger (replaces legacy seed)
 # ---------------------------------------------------------------------------
 
 
-async def _seed_queue(
+async def _notify_all_due(
     session_factory: async_sessionmaker[AsyncSession],
-) -> int:
-    """Seed scrape_queue with one player_info row per player in tbl_players.
+) -> None:
+    """Emit pg_notify for all backend URL rows that are currently due.
 
-    Uses ON CONFLICT(url) DO NOTHING so repeated --seed calls are idempotent.
-
-    Args:
-        session_factory: Async SQLAlchemy session factory.
-
-    Returns:
-        Number of newly inserted rows (0 when all players already queued).
+    Delegates to fn_notify_all_due() so the daemon picks them up without a
+    direct INSERT into scrape_queue from the pipeline.
     """
     async with get_session(session_factory) as session:
         result = await session.execute(
-            sa.text("""
-                SELECT p.player_id, bu.url
-                FROM sch_fbref_shared.tbl_players p
-                JOIN sch_fbref_backend.tbl_player_urls bu ON bu.fk_player = p.player_id
-                WHERE bu.url_type = 'profile'
-            """)
+            sa.text("SELECT count(*) FROM sch_fbref_backend.tbl_player_urls")
         )
-        players = result.fetchall()
-
-    if not players:
-        logger.info("seed: tbl_players is empty — nothing to seed")
-        return 0
-
-    rows = [
-        {
-            "url": row.url,
-            "domain": "fbref.com",
-            "status": ScrapeStatus.PENDING,
-            "job_type": "player_info",
-        }
-        for row in players
-    ]
-
-    # asyncpg limit: 32767 params per query; 4 columns per row → max 8191 rows/chunk
-    chunk_size = 8191
-    inserted = 0
-    for i in range(0, len(rows), chunk_size):
-        chunk = rows[i : i + chunk_size]
-        stmt = pg_insert(ScrapeQueue).values(chunk)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["url", "job_type"])
-        async with get_session(session_factory) as session:
-            result = await session.execute(stmt)
-            inserted += getattr(result, "rowcount", None) or 0
-            await session.commit()
-
-    logger.info("seed: inserted %d new player_info jobs into scrape_queue", inserted)
-    return inserted
+        if not int(result.scalar() or 0):
+            logger.error(
+                "tbl_player_urls is empty — nothing to notify; "
+                "run the player scraper first"
+            )
+            return
+        await session.execute(
+            sa.text("SELECT sch_fbref_backend.fn_notify_all_due()")
+        )
+        await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -500,8 +469,8 @@ async def _seed_queue(
 # ---------------------------------------------------------------------------
 
 
-async def main(workers: int | None = None, seed: bool | None = None) -> None:
-    if workers is None or seed is None:
+async def main(workers: int | None = None) -> None:
+    if workers is None:
         parser = argparse.ArgumentParser(description="Scrape FBRef player info pages.")
         parser.add_argument(
             "--workers",
@@ -511,19 +480,8 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
             choices=range(1, 26),
             help="Number of parallel worker coroutines (1–25, default: 1).",
         )
-        parser.add_argument(
-            "--seed",
-            action="store_true",
-            help=(
-                "Seed scrape_queue with player_info rows from tbl_players "
-                "before launching workers."
-            ),
-        )
         args = parser.parse_args()
-        if workers is None:
-            workers = args.workers
-        if seed is None:
-            seed = args.seed
+        workers = args.workers
 
     settings = Settings()  # type: ignore[call-arg]
 
@@ -548,9 +506,7 @@ async def main(workers: int | None = None, seed: bool | None = None) -> None:
     if failed:
         logger.info("Recovered %d failed jobs back to PENDING", failed)
 
-    if seed:
-        seeded = await _seed_queue(session_factory)
-        logger.info("Seeded %d player_info jobs", seeded)
+    await _notify_all_due(session_factory)
 
     async with get_session(session_factory) as session:
         result = await session.execute(

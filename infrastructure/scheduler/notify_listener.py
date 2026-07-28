@@ -28,6 +28,14 @@ _POLL_LIMIT = 500
 _BACKOFF_STEPS = [2, 4, 8, 16, 32, 60]
 _NOTIFY_CONCURRENCY = 5  # max concurrent NOTIFY handler tasks
 
+# Maps url_type (from sch_fbref_backend) to the job_type workers consume.
+# url_types without a mapping are skipped — no worker exists yet for them.
+_URL_TYPE_TO_JOB_TYPE: dict[str, str] = {
+    "profile": "player_info",
+    "squad": "team_list",
+    "clubs": "team_list",
+}
+
 _BACKEND_TABLES = [
     "tbl_player_urls",
     "tbl_team_urls",
@@ -162,6 +170,7 @@ class PgNotifyListener:
                     url=data.get("url", ""),
                     url_type=data.get("url_type", "default"),
                     registry_id=data.get("id"),
+                    fk_country=data.get("fk_country"),
                 )
                 await session.commit()
 
@@ -187,6 +196,7 @@ class PgNotifyListener:
                         url=row.url,
                         url_type=row.url_type,
                         registry_id=row.id,
+                        fk_country=getattr(row, "fk_country", None),
                     )
             await session.commit()
 
@@ -197,8 +207,13 @@ class PgNotifyListener:
         url: str,
         url_type: str,
         registry_id: int | None,
+        fk_country: str | None = None,
     ) -> None:
-        """Validate *url* and insert into scrape_queue with ON CONFLICT DO NOTHING."""
+        """Validate *url* and upsert into scrape_queue.
+
+        ON CONFLICT DO UPDATE ensures daemon-inserted fk_url_registry_id wins over
+        pipeline-seeded rows that arrive with fk_url_registry_id=NULL.
+        """
         try:
             queue_row = ScrapeQueue.from_url(url)
         except SSRFError as exc:
@@ -210,20 +225,32 @@ class PgNotifyListener:
             )
             return
 
-        queue_row.job_type = url_type
+        job_type = _URL_TYPE_TO_JOB_TYPE.get(url_type)
+        if job_type is None:
+            logger.debug("PgNotifyListener: no worker for url_type=%r — skipping", url_type)
+            return
+
+        queue_row.job_type = job_type
         queue_row.fk_url_registry_id = registry_id
 
+        insert = pg_insert(ScrapeQueue)
         stmt = (
-            pg_insert(ScrapeQueue)
+            insert
             .values(
                 url=queue_row.url,
                 domain=queue_row.domain,
                 status=queue_row.status,
                 job_type=queue_row.job_type,
                 fk_url_registry_id=queue_row.fk_url_registry_id,
+                fk_country=fk_country,
             )
-            .on_conflict_do_nothing(
+            .on_conflict_do_update(
                 index_elements=["url", "job_type"],
+                set_={
+                    "fk_url_registry_id": insert.excluded.fk_url_registry_id,
+                    "fk_country": insert.excluded.fk_country,
+                },
+                where=ScrapeQueue.fk_url_registry_id.is_(None),
             )
         )
         await session.execute(stmt)

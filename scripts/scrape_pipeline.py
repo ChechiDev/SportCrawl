@@ -42,13 +42,13 @@ from infrastructure.persistence.repositories.team_list_queue import (
 )
 from infrastructure.persistence.session import create_session_factory, get_session
 from scripts.scrape_country_teams import CountryTeamsWorker
-from scripts.scrape_country_teams import _seed_queue as _seed_country_teams_queue
+from scripts.scrape_country_teams import _notify_all_due as _notify_country_teams_due
 from scripts.scrape_player_info import (
     PlayerInfoWorker,
     _load_country_ids,
     _load_country_name_cache,
 )
-from scripts.scrape_player_info import _seed_queue as _seed_player_info_queue
+from scripts.scrape_player_info import _notify_all_due as _notify_player_info_due
 from scripts.scrape_players import (
     _COUNTRY_CODE_RE,
     PlayerListWorker,
@@ -381,17 +381,17 @@ async def _player_info_reseeder(
     session_factory: async_sessionmaker[AsyncSession],
     step2_done: asyncio.Event,
 ) -> None:
-    """Re-seed player_info queue every 30s while step 2 is still running.
+    """Re-notify player_info queue every 30s while step 2 is still running.
 
     Step 2 continuously adds new players to tbl_players. Without periodic
-    re-seeding, step 3 workers exhaust the initial seed and stall waiting for
-    step 2 to finish even though new jobs are available.
+    re-notification, step 3 workers exhaust initial jobs and stall while
+    new backend URL rows are becoming due.
     """
     while not step2_done.is_set():
         await asyncio.sleep(30)
-        await _seed_player_info_queue(session_factory)
-    # Final seed after step 2 completes so no player is missed.
-    await _seed_player_info_queue(session_factory)
+        await _notify_player_info_due(session_factory)
+    # Final notify after step 2 completes so no player is missed.
+    await _notify_player_info_due(session_factory)
 
 
 async def _trigger_watcher(
@@ -471,7 +471,7 @@ async def main(
     )
 
     if with_teams:
-        await _seed_country_teams_queue(session_factory, s1_rows)
+        await _notify_country_teams_due(session_factory)
         async with get_session(session_factory) as session:
             await TeamListQueueRepository(session).recover_all_stale()
             await TeamListQueueRepository(session).recover_failed()
@@ -735,8 +735,7 @@ async def main(
             if stale3:
                 logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
 
-            # Seed step-3 queue from tbl_players (idempotent)
-            await _seed_player_info_queue(session_factory)
+            await _notify_player_info_due(session_factory)
 
             # Refresh total for display after seeding
             async with get_session(session_factory) as session:
