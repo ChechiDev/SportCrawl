@@ -31,6 +31,7 @@ from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.country import Country
+from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_list_queue import (
     PlayerListQueueRepository,
 )
@@ -154,6 +155,21 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                         await repo.mark_done(job.id)
                         await session.commit()
 
+                    if job.fk_url_registry_id is not None:
+                        try:
+                            async with get_session(self._session_factory) as _s:
+                                await BackendUrlRepository(_s).mark_scraped(
+                                    "tbl_country_urls", job.fk_url_registry_id
+                                )
+                                await _s.commit()
+                        except Exception as _backend_err:
+                            logger.warning(
+                                "[worker-%d] backend mark_scraped failed (job %d): %s",
+                                self._worker_id,
+                                job.id,
+                                _backend_err,
+                            )
+
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed
                     total_players = len(page.players)
@@ -179,6 +195,22 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                 self._worker_id,
                                 mark_err,
                             )
+                        if job.fk_url_registry_id is not None:
+                            try:
+                                async with get_session(self._session_factory) as _s:
+                                    await BackendUrlRepository(_s).mark_failed(
+                                        "tbl_country_urls",
+                                        job.fk_url_registry_id,
+                                        error=str(exc),
+                                    )
+                                    await _s.commit()
+                            except Exception as _backend_err:
+                                logger.warning(
+                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    self._worker_id,
+                                    job.id,
+                                    _backend_err,
+                                )
                         browser_restart = True
                         break
 
@@ -201,6 +233,22 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                 self._worker_id,
                                 mark_err,
                             )
+                        if job.fk_url_registry_id is not None:
+                            try:
+                                async with get_session(self._session_factory) as _s:
+                                    await BackendUrlRepository(_s).mark_failed(
+                                        "tbl_country_urls",
+                                        job.fk_url_registry_id,
+                                        error=str(exc),
+                                    )
+                                    await _s.commit()
+                            except Exception as _backend_err:
+                                logger.warning(
+                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    self._worker_id,
+                                    job.id,
+                                    _backend_err,
+                                )
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] {country_display}"
                         )
