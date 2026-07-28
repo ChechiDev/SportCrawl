@@ -7,6 +7,9 @@ never calls session.commit().
 
 from __future__ import annotations
 
+import logging
+
+import sqlalchemy as sa
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,6 +19,8 @@ from core.exceptions.repository import RepositoryError
 from domains.club.models import CountrySquad
 from infrastructure.persistence.models.shared.confederation import Confederation
 from infrastructure.persistence.models.shared.country_squads import CountrySquads
+
+logger = logging.getLogger(__name__)
 
 
 class CountrySquadsRepository:
@@ -87,6 +92,38 @@ class CountrySquadsRepository:
                 },
             )
             await self._session.execute(stmt_squad)
+
+            # Co-insert backend scheduling rows — same transaction, best-effort
+            try:
+                await self._session.execute(
+                    sa.text(
+                        """
+                        INSERT INTO sch_fbref_backend.tbl_country_squad_urls
+                            (fk_country, url_type, url, cadence_hours, priority,
+                             status, next_scrape_at, created_at, updated_at, retry_count)
+                        SELECT fk_country, 'clubs', clubs_url,
+                               720, 5, 'PENDING', now(), now(), now(), 0
+                          FROM sch_fbref_shared.tbl_country_squads
+                         WHERE clubs_url IS NOT NULL
+                        UNION ALL
+                        SELECT fk_country, 'nat_team_men', nat_team_men_url,
+                               720, 5, 'PENDING', now(), now(), now(), 0
+                          FROM sch_fbref_shared.tbl_country_squads
+                         WHERE nat_team_men_url IS NOT NULL
+                        UNION ALL
+                        SELECT fk_country, 'nat_team_women', nat_team_women_url,
+                               720, 5, 'PENDING', now(), now(), now(), 0
+                          FROM sch_fbref_shared.tbl_country_squads
+                         WHERE nat_team_women_url IS NOT NULL
+                        ON CONFLICT (fk_country, url_type) DO NOTHING
+                        """
+                    ),
+                )
+            except Exception:
+                logger.warning(
+                    "Backend co-insert failed for country squad batch; skipping",
+                    exc_info=True,
+                )
 
         except SQLAlchemyError as exc:
             raise RepositoryError(

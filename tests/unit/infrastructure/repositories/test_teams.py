@@ -97,18 +97,19 @@ async def test_upsert_executes_statements() -> None:
     comp_fetch_result = MagicMock()
     comp_fetch_result.__iter__ = MagicMock(return_value=iter([comp_fetch_row]))
 
-    # Call sequence: (1) comp fetch, (2) gender fetch, (3) teams insert
+    # Call sequence: (1) comp fetch, (2) gender fetch, (3) teams insert, (4) backend co-insert
     session.execute.side_effect = [
         comp_fetch_result,  # comp select
         gender_result,  # gender select
         MagicMock(),  # teams insert
+        MagicMock(),  # backend tbl_team_urls co-insert
     ]
 
     repo = TeamsRepository(session)
     with _pg_insert_mock():
         await repo.upsert([_make_team()])
 
-    assert session.execute.call_count == 3
+    assert session.execute.call_count == 4
 
 
 async def test_upsert_no_comp_skips_comp_insert() -> None:
@@ -121,17 +122,18 @@ async def test_upsert_no_comp_skips_comp_insert() -> None:
     gender_result = MagicMock()
     gender_result.__iter__ = MagicMock(return_value=iter([gender_row]))
 
-    # Only 2 calls: gender fetch + teams insert
+    # 3 calls: gender fetch + teams insert + backend co-insert
     session.execute.side_effect = [
         gender_result,  # gender select
         MagicMock(),  # teams insert
+        MagicMock(),  # backend tbl_team_urls co-insert
     ]
 
     repo = TeamsRepository(session)
     with _pg_insert_mock():
         await repo.upsert([_make_team(comp_name=None)])
 
-    assert session.execute.call_count == 2
+    assert session.execute.call_count == 3
 
 
 # ---------------------------------------------------------------------------

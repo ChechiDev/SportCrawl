@@ -116,6 +116,37 @@ class TeamsRepository:
                 )
                 await self._session.execute(stmt_teams)
 
+                # Co-insert backend scheduling rows — same transaction, best-effort
+                try:
+                    team_ids = [v["team_id"] for v in values]
+                    await self._session.execute(
+                        sa.text(
+                            """
+                            INSERT INTO sch_fbref_backend.tbl_team_urls
+                                (fk_team, url_type, url, cadence_hours, priority,
+                                 status, next_scrape_at, created_at, updated_at, retry_count)
+                            SELECT
+                                t.team_id,
+                                'squad',
+                                t.team_url,
+                                168,
+                                5,
+                                'PENDING',
+                                now(), now(), now(), 0
+                            FROM sch_fbref_shared.tbl_teams t
+                            WHERE t.team_id = ANY(:team_ids)
+                              AND t.team_url IS NOT NULL
+                            ON CONFLICT (fk_team, url_type) DO NOTHING
+                            """
+                        ),
+                        {"team_ids": team_ids},
+                    )
+                except Exception:
+                    logger.warning(
+                        "Backend co-insert failed for team batch; skipping",
+                        exc_info=True,
+                    )
+
         except SQLAlchemyError as exc:
             raise RepositoryError(
                 "TeamsRepository.upsert failed",

@@ -109,10 +109,11 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         rows = [_make_player("aabbccdd")]
 
         # Override side_effect so scrape_queue execute returns an id
+        # +1 extra MagicMock for the backend tbl_player_urls co-insert
         sq_result = MagicMock()
         sq_result.rowcount = 0
         sq_result.scalars.return_value.all.return_value = [1]
-        session.execute.side_effect = [MagicMock(), sq_result] + [MagicMock()] * 10
+        session.execute.side_effect = [MagicMock(), MagicMock(), sq_result] + [MagicMock()] * 10
 
         with _pg_insert_mock() as mock_pg_insert:
             repo = PlayerDiscoveryRepository(session)
