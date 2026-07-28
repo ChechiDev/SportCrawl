@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 _HREF_RE = re.compile(r"/en/country/(?:[^/]+/)?([A-Za-z]{2,3})/", re.IGNORECASE)
 _FLAG_CDN = "https://cdn.fbref.com/req/202301010/images/flags"
+_FBREF_BASE = "https://fbref.com"
 
 
 class CountryScraper(BaseScraper[CountryPage]):
@@ -90,7 +91,7 @@ class CountryScraper(BaseScraper[CountryPage]):
 
             country_id = match.group(1).upper()
             country_name = country_cell.get_text(strip=True)
-            country_url = href
+            country_url = href if href.startswith("https://") else f"{_FBREF_BASE}{href}"
 
             flag_td = cells_by_stat.get("flag")
             flag_span = flag_td.find("span") if flag_td else None

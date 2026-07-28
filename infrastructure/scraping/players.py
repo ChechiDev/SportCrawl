@@ -38,6 +38,7 @@ _PLAYER_HREF_RE = re.compile(r"/en/players/([a-z0-9]{8})/", re.IGNORECASE)
 _COUNTRY_CODE_RE = re.compile(r"/en/country/players/([A-Za-z]{2,3})/", re.IGNORECASE)
 _EXPECTED_COUNT_RE = re.compile(r"(\d+)\s+Players", re.IGNORECASE)
 _MIN_PARSE_RATIO = 0.90
+_FBREF_BASE = "https://fbref.com"
 
 
 class PlayerListScraper(BaseScraper[PlayerListPage]):
@@ -101,7 +102,7 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
                 path = href
             slug = path.rstrip("/").rsplit("/", 1)[-1]
             base = path.rstrip("/").rsplit("/", 1)[0]
-            player_url = f"{base}/all_comps/{slug}-Stats---All-Competitions"
+            player_url = f"{_FBREF_BASE}{base}/all_comps/{slug}-Stats---All-Competitions"
 
             # Strip the player name from the full <p> text to isolate the date portion.
             # next_sibling is unreliable — FBRef often puts a bare newline there.

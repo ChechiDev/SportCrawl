@@ -33,7 +33,7 @@ from infrastructure.persistence.models.shared.player import Player
 
 logger = logging.getLogger(__name__)
 
-_FBREF_DOMAIN = "fbref.com"
+_FBREF_BASE_URL = "https://fbref.com"
 _CHUNK_SIZE = 500
 
 
@@ -109,7 +109,7 @@ class PlayerDiscoveryRepository:
                             SELECT
                                 p.player_id,
                                 'profile',
-                                p.player_url,
+                                :base_url || p.player_url,
                                 168,
                                 5,
                                 'PENDING',
@@ -120,7 +120,7 @@ class PlayerDiscoveryRepository:
                             ON CONFLICT (fk_player, url_type) DO NOTHING
                             """
                         ),
-                        {"player_ids": player_ids},
+                        {"player_ids": player_ids, "base_url": _FBREF_BASE_URL},
                     )
                 except Exception:
                     logger.warning(
@@ -133,7 +133,7 @@ class PlayerDiscoveryRepository:
             sq_values = [
                 {
                     "url": r.player_url,
-                    "domain": _FBREF_DOMAIN,
+                    "domain": "fbref.com",
                     "status": ScrapeStatus.PENDING,
                     "job_type": "player_discovery",
                 }

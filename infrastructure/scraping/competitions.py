@@ -37,6 +37,7 @@ _COMP_ID_RE = _re.compile(r"/en/comps/(\d+)/")
 _COUNTRY_ID_RE = _re.compile(r"/en/country/(\w+)/")
 _SEASON_RANGE_RE = _re.compile(r"^(\d{4})-(\d{4})$")
 _SEASON_SINGLE_RE = _re.compile(r"^(\d{4})$")
+_FBREF_BASE = "https://fbref.com"
 
 
 def _text(tag: Tag | None) -> str:
@@ -88,7 +89,7 @@ def parse_competitions(html: str) -> list[CompetitionRawData]:
 
             comp_id = int(m.group(1))
             comp_name = _text(link_tag).upper()
-            comp_url = href
+            comp_url = href if href.startswith("https://") else f"{_FBREF_BASE}{href}"
 
             gender_td = tr.find("td", {"data-stat": "gender"})
             gender = _text(gender_td) or "M"

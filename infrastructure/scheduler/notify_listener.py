@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 _POLL_LIMIT = 500
 _BACKOFF_STEPS = [2, 4, 8, 16, 32, 60]
+_NOTIFY_CONCURRENCY = 5  # max concurrent NOTIFY handler tasks
 
 _BACKEND_TABLES = [
     "tbl_player_urls",
@@ -57,6 +58,7 @@ class PgNotifyListener:
         self._channel = channel
         self._running = False
         self._conn: asyncpg.Connection | None = None  # type: ignore[type-arg]
+        self._sem = asyncio.Semaphore(_NOTIFY_CONCURRENCY)
 
     # ------------------------------------------------------------------
     # Public API
@@ -146,18 +148,22 @@ class PgNotifyListener:
         asyncio.get_running_loop().create_task(self._handle_payload(payload))
 
     async def _handle_payload(self, raw: str) -> None:
-        """Parse a NOTIFY payload and enqueue the URL."""
+        """Parse a NOTIFY payload and enqueue the URL — semaphore-guarded."""
         try:
             data: dict[str, Any] = json.loads(raw)
         except json.JSONDecodeError:
             logger.warning("PgNotifyListener: invalid JSON payload: %r", raw)
             return
 
-        await self._enqueue_row(
-            url=data.get("url", ""),
-            url_type=data.get("url_type", "default"),
-            registry_id=data.get("id"),
-        )
+        async with self._sem:
+            async with self._session_factory() as session:
+                await self._enqueue_row(
+                    session=session,
+                    url=data.get("url", ""),
+                    url_type=data.get("url_type", "default"),
+                    registry_id=data.get("id"),
+                )
+                await session.commit()
 
     async def _poll_fallback(self) -> None:
         """Query all five backend tables and enqueue rows already due."""
@@ -177,6 +183,7 @@ class PgNotifyListener:
                     continue
                 for row in rows:
                     await self._enqueue_row(
+                        session=session,
                         url=row.url,
                         url_type=row.url_type,
                         registry_id=row.id,
@@ -186,6 +193,7 @@ class PgNotifyListener:
     async def _enqueue_row(
         self,
         *,
+        session: AsyncSession,
         url: str,
         url_type: str,
         registry_id: int | None,
@@ -202,26 +210,23 @@ class PgNotifyListener:
             )
             return
 
-        # Mutate attributes not set by from_url()
         queue_row.job_type = url_type
         queue_row.fk_url_registry_id = registry_id
 
-        async with self._session_factory() as session:
-            stmt = (
-                pg_insert(ScrapeQueue)
-                .values(
-                    url=queue_row.url,
-                    domain=queue_row.domain,
-                    status=queue_row.status,
-                    job_type=queue_row.job_type,
-                    fk_url_registry_id=queue_row.fk_url_registry_id,
-                )
-                .on_conflict_do_nothing(
-                    index_elements=["url", "job_type"],
-                )
+        stmt = (
+            pg_insert(ScrapeQueue)
+            .values(
+                url=queue_row.url,
+                domain=queue_row.domain,
+                status=queue_row.status,
+                job_type=queue_row.job_type,
+                fk_url_registry_id=queue_row.fk_url_registry_id,
             )
-            await session.execute(stmt)
-            await session.commit()
+            .on_conflict_do_nothing(
+                index_elements=["url", "job_type"],
+            )
+        )
+        await session.execute(stmt)
 
         logger.debug(
             "PgNotifyListener: enqueued %s URL id=%s",
