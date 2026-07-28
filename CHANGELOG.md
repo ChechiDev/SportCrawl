@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-07-28
+
+### Added
+- `sch_fbref_backend` schema: centralized URL registry with scheduling metadata for all 5 entity types (players, teams, competitions, countries, country squads)
+- PostgreSQL LISTEN/NOTIFY pipeline: triggers emit `fbref_scrape_due` when rows are due, Python listener enqueues into `scrape_queue`
+- `CadenceScheduler`: async loop calling `fn_notify_all_due()` every 60s with clean shutdown
+- `PgNotifyListener`: semaphore-guarded NOTIFY consumer with poll fallback on startup and exponential backoff reconnect
+- `scripts/run_daemon.py`: standalone daemon entry point for Oracle Free Tier deployment
+- `BackendUrlRepository`: `fetch_due_rows`, `mark_scraped`, `mark_failed` with exponential retry logic
+- `scripts/backfill_backend_urls.py`: idempotent backfill + silent `sync_preflight()` called automatically on pipeline start
+- Co-insert pattern: domain repositories populate `sch_fbref_backend` URL tables in the same transaction
+- Workers wire `mark_scraped` / `mark_failed` after every queue outcome
+
+### Changed
+- All URL columns unified to absolute URLs (`https://fbref.com/...`) across domain tables and backend tables
+- Scrapers (competitions, countries, players) now store absolute URLs from source
+
+### Fixed
+- `scrape_queue.job_type` made NOT NULL with DEFAULT `'default'` to fix silent UNIQUE constraint bypass (NULL != NULL in PostgreSQL)
+
 ## [0.24.1] — 2026-07-28
 
 ### Added
