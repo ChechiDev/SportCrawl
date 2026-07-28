@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +33,7 @@ from infrastructure.persistence.models.shared.player import Player
 
 logger = logging.getLogger(__name__)
 
-_FBREF_DOMAIN = "fbref.com"
+_FBREF_BASE_URL = "https://fbref.com"
 _CHUNK_SIZE = 500
 
 
@@ -96,11 +97,43 @@ class PlayerDiscoveryRepository:
                 raw = await self._session.execute(stmt_player)
                 inserted_count += raw.rowcount  # type: ignore[attr-defined]
 
+                # Co-insert backend scheduling rows — same transaction, best-effort
+                try:
+                    player_ids = [c["player_id"] for c in chunk]
+                    await self._session.execute(
+                        sa.text(
+                            """
+                            INSERT INTO sch_fbref_backend.tbl_player_urls
+                                (fk_player, url_type, url, cadence_hours, priority,
+                                 status, next_scrape_at, created_at, updated_at, retry_count)
+                            SELECT
+                                p.player_id,
+                                'profile',
+                                :base_url || p.player_url,
+                                168,
+                                5,
+                                'PENDING',
+                                now(), now(), now(), 0
+                            FROM sch_fbref_shared.tbl_players p
+                            WHERE p.player_id = ANY(:player_ids)
+                              AND p.player_url IS NOT NULL
+                            ON CONFLICT (fk_player, url_type) DO NOTHING
+                            """
+                        ),
+                        {"player_ids": player_ids, "base_url": _FBREF_BASE_URL},
+                    )
+                except Exception:
+                    logger.warning(
+                        "Backend co-insert failed for player chunk (country=%s); skipping",
+                        country_id,
+                        exc_info=True,
+                    )
+
             # 2. ScrapeQueue upsert with RETURNING — collect IDs across all chunks
             sq_values = [
                 {
                     "url": r.player_url,
-                    "domain": _FBREF_DOMAIN,
+                    "domain": "fbref.com",
                     "status": ScrapeStatus.PENDING,
                     "job_type": "player_discovery",
                 }

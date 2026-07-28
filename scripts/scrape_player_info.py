@@ -43,6 +43,7 @@ from infrastructure.persistence.repositories.player_playing_time_stats import (
 from infrastructure.persistence.repositories.player_shooting_stats import (
     PlayerShootingStatsRepository,
 )
+from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_std_stats import (
     PlayerStdStatsRepository,
 )
@@ -300,6 +301,21 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
                         await session.commit()
 
+                    if job.fk_url_registry_id is not None:
+                        try:
+                            async with get_session(self._session_factory) as _s:
+                                await BackendUrlRepository(_s).mark_scraped(
+                                    "tbl_player_urls", job.fk_url_registry_id
+                                )
+                                await _s.commit()
+                        except Exception as _backend_err:
+                            logger.warning(
+                                "[worker-%d] backend mark_scraped failed (job %d): %s",
+                                self._worker_id,
+                                job.id,
+                                _backend_err,
+                            )
+
                     success = True
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed
@@ -323,6 +339,22 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                                 self._worker_id,
                                 mark_err,
                             )
+                        if job.fk_url_registry_id is not None:
+                            try:
+                                async with get_session(self._session_factory) as _s:
+                                    await BackendUrlRepository(_s).mark_failed(
+                                        "tbl_player_urls",
+                                        job.fk_url_registry_id,
+                                        error=str(exc),
+                                    )
+                                    await _s.commit()
+                            except Exception as _backend_err:
+                                logger.warning(
+                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    self._worker_id,
+                                    job.id,
+                                    _backend_err,
+                                )
                         browser_restart = True
                         break
                     is_terminal = attempt >= 3
@@ -342,6 +374,22 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                                 job.id,
                                 mark_err,
                             )
+                        if job.fk_url_registry_id is not None:
+                            try:
+                                async with get_session(self._session_factory) as _s:
+                                    await BackendUrlRepository(_s).mark_failed(
+                                        "tbl_player_urls",
+                                        job.fk_url_registry_id,
+                                        error=str(exc),
+                                    )
+                                    await _s.commit()
+                            except Exception as _backend_err:
+                                logger.warning(
+                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    self._worker_id,
+                                    job.id,
+                                    _backend_err,
+                                )
                     else:
                         self._labels[self._worker_id] = (
                             f"[bold yellow]WARNING[/bold yellow]"

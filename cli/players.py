@@ -80,6 +80,12 @@ async def _seed_country_players_urls(settings: Settings) -> None:
         await scraper.scrape(_PLAYERS_INDEX_URL)
 
 
+async def _sync_backend_urls() -> None:
+    from scripts.backfill_backend_urls import sync_preflight
+
+    await sync_preflight()
+
+
 async def _seed_competitions(settings: Settings) -> int:
     import logging
 
@@ -288,6 +294,8 @@ async def _run(
         console.print(
             f"  [cyan]✓[/cyan]  {comp_count} Competitions loaded successfully."
         )
+
+        await _sync_backend_urls()
 
         fatal_failures = [r for r in results if not r.passed and r.fatal]
         if fatal_failures:

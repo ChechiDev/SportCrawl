@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,8 @@ from infrastructure.persistence.models.shared.comp_type import CompType
 from infrastructure.persistence.models.shared.competition import Competition
 from infrastructure.persistence.models.shared.confederation import Confederation
 from infrastructure.persistence.models.shared.flag import Flag
+
+logger = logging.getLogger(__name__)
 
 
 class CompetitionsRepository:
@@ -102,5 +105,34 @@ class CompetitionsRepository:
                 )
                 await self._session.execute(stmt)
                 count += 1
+
+                # Co-insert backend scheduling row — same transaction, best-effort
+                try:
+                    await self._session.execute(
+                        sa.text(
+                            """
+                            INSERT INTO sch_fbref_backend.tbl_competition_urls
+                                (fk_comp, url_type, url, cadence_hours, priority,
+                                 status, next_scrape_at, created_at, updated_at, retry_count)
+                            SELECT
+                                c.comp_id,
+                                'index',
+                                c.comp_url,
+                                720,
+                                3,
+                                'PENDING',
+                                now(), now(), now(), 0
+                            FROM sch_fbref_shared.tbl_competition c
+                            WHERE c.comp_url IS NOT NULL
+                            ON CONFLICT (fk_comp, url_type) DO NOTHING
+                            """
+                        ),
+                    )
+                except Exception:
+                    logger.warning(
+                        "Backend co-insert failed for competition %s; skipping",
+                        row.comp_id,
+                        exc_info=True,
+                    )
 
         return count

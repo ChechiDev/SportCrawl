@@ -175,8 +175,8 @@ class TestSquadUpsert:
             repo = CountrySquadsRepository(session)
             await repo.upsert(squads)
 
-        # batch upsert: 1 confederation batch + 1 squad batch = 2 execute calls total
-        assert session.execute.call_count == 2
+        # batch upsert: 1 confederation batch + 1 squad batch + 1 backend co-insert = 3 execute calls
+        assert session.execute.call_count == 3
 
     async def test_upsert_empty_list_does_not_execute(self) -> None:
         """Passing an empty list must not call execute at all."""

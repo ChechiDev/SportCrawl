@@ -31,6 +31,7 @@ from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.country_squads import CountrySquads
+from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.team_list_queue import (
     TeamListQueueRepository,
 )
@@ -171,11 +172,28 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
             # claim session is already committed and closed at this point.
             fk_country = self._url_to_country.get(job.url)
             if fk_country is None:
+                _no_country_msg = f"fk_country not found for url: {job.url}"
                 async with get_session(self._session_factory) as session:
                     await TeamListQueueRepository(session).mark_failed(
-                        job.id, f"fk_country not found for url: {job.url}"
+                        job.id, _no_country_msg
                     )
                     await session.commit()
+                if job.fk_url_registry_id is not None:
+                    try:
+                        async with get_session(self._session_factory) as _s:
+                            await BackendUrlRepository(_s).mark_failed(
+                                "tbl_team_urls",
+                                job.fk_url_registry_id,
+                                error=_no_country_msg,
+                            )
+                            await _s.commit()
+                    except Exception as _backend_err:
+                        logger.warning(
+                            "[worker-%d] backend mark_failed failed (job %d): %s",
+                            self._worker_id,
+                            job.id,
+                            _backend_err,
+                        )
                 continue
 
             clubs_url = job.url
@@ -198,6 +216,21 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                         await repo.upsert(page.teams)
                         await TeamListQueueRepository(session).mark_done(job.id)
                         await session.commit()
+
+                    if job.fk_url_registry_id is not None:
+                        try:
+                            async with get_session(self._session_factory) as _s:
+                                await BackendUrlRepository(_s).mark_scraped(
+                                    "tbl_team_urls", job.fk_url_registry_id
+                                )
+                                await _s.commit()
+                        except Exception as _backend_err:
+                            logger.warning(
+                                "[worker-%d] backend mark_scraped failed (job %d): %s",
+                                self._worker_id,
+                                job.id,
+                                _backend_err,
+                            )
 
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed
@@ -224,6 +257,22 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                             self._worker_id,
                             mark_err,
                         )
+                    if job.fk_url_registry_id is not None:
+                        try:
+                            async with get_session(self._session_factory) as _s:
+                                await BackendUrlRepository(_s).mark_failed(
+                                    "tbl_team_urls",
+                                    job.fk_url_registry_id,
+                                    error=str(exc),
+                                )
+                                await _s.commit()
+                        except Exception as _backend_err:
+                            logger.warning(
+                                "[worker-%d] backend mark_failed failed (job %d): %s",
+                                self._worker_id,
+                                job.id,
+                                _backend_err,
+                            )
                     browser_restart = True
                     break
 
@@ -244,12 +293,29 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                             max_attempts,
                             exc,
                         )
+                        _fail_msg = f"Exhausted {max_attempts} attempts: {exc}"
                         async with get_session(self._session_factory) as session:
                             await TeamListQueueRepository(session).mark_failed(
                                 job.id,
-                                f"Exhausted {max_attempts} attempts: {exc}",
+                                _fail_msg,
                             )
                             await session.commit()
+                        if job.fk_url_registry_id is not None:
+                            try:
+                                async with get_session(self._session_factory) as _s:
+                                    await BackendUrlRepository(_s).mark_failed(
+                                        "tbl_team_urls",
+                                        job.fk_url_registry_id,
+                                        error=_fail_msg,
+                                    )
+                                    await _s.commit()
+                            except Exception as _backend_err:
+                                logger.warning(
+                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    self._worker_id,
+                                    job.id,
+                                    _backend_err,
+                                )
 
             if browser_restart:
                 return -1
