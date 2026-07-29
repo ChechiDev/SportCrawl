@@ -1,10 +1,10 @@
 """PlayerDiscoveryRepository — bulk-enqueues player discovery data.
 
-Inserts Player rows, then ScrapeQueue entries, PlayerDiscoveryBatch upsert,
-and PlayerQueueRef links. All operations are FK-safe and use ON CONFLICT
-DO NOTHING throughout so repeated calls are idempotent.
+Inserts Player rows, tbl_player_urls backend rows (for daemon scheduling),
+and a PlayerDiscoveryBatch upsert. All operations are FK-safe and use
+ON CONFLICT DO NOTHING / DO UPDATE throughout so repeated calls are idempotent.
 
-NOT a BaseRepository subclass — coordinates four tables instead of one.
+NOT a BaseRepository subclass — coordinates multiple tables instead of one.
 The caller owns the transaction; this repository never commits.
 """
 
@@ -27,13 +27,10 @@ from domains.player.models import PlayerRawData
 from infrastructure.persistence.models.infra.player_discovery_batch import (
     PlayerDiscoveryBatch,
 )
-from infrastructure.persistence.models.infra.player_queue_ref import PlayerQueueRef
-from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
 from infrastructure.persistence.models.shared.player import Player
 
 logger = logging.getLogger(__name__)
 
-_FBREF_BASE_URL = "https://fbref.com"
 _CHUNK_SIZE = 500
 
 
@@ -43,13 +40,12 @@ def _chunked(lst: list[Any], size: int) -> Iterator[list[Any]]:
 
 
 class PlayerDiscoveryRepository:
-    """Persists player discovery data across four tables.
+    """Persists player discovery data.
 
     Insert order per batch:
         1. tbl_players (Player) — ON CONFLICT(player_id) DO NOTHING
-        2. scrape_queue (ScrapeQueue) — ON CONFLICT(url) DO UPDATE (no-op) RETURNING id
-        3. player_discovery_batch — ON CONFLICT(country_id) DO UPDATE total_urls
-        4. player_queue_ref (PlayerQueueRef) — IDs from step 2 RETURNING clause
+        1b. tbl_player_urls (backend) — ON CONFLICT(fk_player, url_type) DO NOTHING
+        2. player_discovery_batch — ON CONFLICT(country_id) DO UPDATE total_urls
 
     The caller owns the transaction and must call session.commit() after
     bulk_enqueue().
@@ -104,7 +100,7 @@ class PlayerDiscoveryRepository:
                     backend_values = [
                         {
                             "fk_player": c["player_id"],
-                            "url": f"{_FBREF_BASE_URL}{player_url_map[c['player_id']]}",
+                            "url": player_url_map[c["player_id"]],
                         }
                         for c in chunk
                         if c["player_id"] in player_url_map
@@ -143,29 +139,7 @@ class PlayerDiscoveryRepository:
                         exc_info=True,
                     )
 
-            # 2. ScrapeQueue upsert with RETURNING — collect IDs across all chunks
-            sq_values = [
-                {
-                    "url": r.player_url,
-                    "domain": "fbref.com",
-                    "status": ScrapeStatus.PENDING,
-                    "job_type": "player_discovery",
-                }
-                for r in rows
-            ]
-            queue_ids: list[int] = []
-            for chunk in _chunked(sq_values, _CHUNK_SIZE):
-                stmt_sq = pg_insert(ScrapeQueue).values(chunk)
-                stmt_sq = stmt_sq.on_conflict_do_update(
-                    index_elements=["url", "job_type"],
-                    # no-op update — forces RETURNING to include conflicting rows too
-                    set_={"url": pg_insert(ScrapeQueue).excluded.url},
-                )
-                stmt_sq_ret = stmt_sq.returning(ScrapeQueue.id)
-                sq_result = await self._session.execute(stmt_sq_ret)
-                queue_ids.extend(sq_result.scalars().all())
-
-            # 3. PlayerDiscoveryBatch — single row, no chunking needed
+            # 2. PlayerDiscoveryBatch — single row, no chunking needed
             stmt_batch = pg_insert(PlayerDiscoveryBatch).values(
                 country_id=country_id,
                 total_urls=len(rows),
@@ -176,18 +150,6 @@ class PlayerDiscoveryRepository:
                 set_={"total_urls": len(rows)},
             )
             await self._session.execute(stmt_batch)
-
-            # 4. PlayerQueueRef — chunked
-            if queue_ids:
-                ref_values = [
-                    {"queue_id": qid, "country_id": country_id} for qid in queue_ids
-                ]
-                for chunk in _chunked(ref_values, _CHUNK_SIZE):
-                    stmt_ref = pg_insert(PlayerQueueRef).values(chunk)
-                    stmt_ref = stmt_ref.on_conflict_do_nothing(
-                        index_elements=["queue_id"]
-                    )
-                    await self._session.execute(stmt_ref)
 
         except SQLAlchemyError as exc:
             raise RepositoryError(

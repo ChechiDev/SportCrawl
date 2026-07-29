@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Protocol, runtime_checkable
@@ -127,6 +128,7 @@ class BaseWorker[TJob](ABC):
 
         while True:
             # --- Phase 1: browser start (failures count toward _MAX_RESTARTS) ---
+            _cooldown_required = False
             try:
                 async with self._build_engine() as engine:
                     # --- Phase 2: inner loop (browser running; errors restart it) ---
@@ -135,11 +137,11 @@ class BaseWorker[TJob](ABC):
                         await self.on_browser_ready(engine)
                         loop_result = await self.run_claim_loop(engine)
                     except CooldownRequired:
-                        self._labels[self._worker_id] = (
-                            f"__cooldown__{time.monotonic() + 60}"
-                        )
-                        await asyncio.sleep(60)
-                        continue
+                        # Flag set here; engine context exits cleanly below
+                        # before the cooldown sleep — avoids destroying Chrome on
+                        # every rate-limit (C2).
+                        _cooldown_required = True
+                        loop_result = -1
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
@@ -150,6 +152,7 @@ class BaseWorker[TJob](ABC):
                     if loop_result >= 0:
                         return self._processed
                     # loop_result == -1 — outer while True opens a new browser session.
+                # engine context exits here — browser cleanly torn down.
 
             except asyncio.CancelledError:
                 raise
@@ -168,4 +171,14 @@ class BaseWorker[TJob](ABC):
                     f" — retry {restart_count}/{_MAX_RESTARTS}"
                 )
                 await asyncio.sleep(10)
+                continue
+
+            # Cooldown handled AFTER engine exits cleanly (C2 + C3).
+            if _cooldown_required:
+                self._labels[self._worker_id] = (
+                    f"__cooldown__{time.monotonic() + 60}"
+                )
+                await asyncio.sleep(60)
+                # Per-worker jitter to avoid thundering herd on restart (C3).
+                await asyncio.sleep(random.uniform(0, 5))
                 continue

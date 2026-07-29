@@ -245,7 +245,7 @@ class PgNotifyListener:
                 fk_country=fk_country,
             )
             .on_conflict_do_update(
-                index_elements=["url", "job_type"],
+                constraint="uq_scrape_queue_url_job_type",
                 set_={
                     "fk_url_registry_id": insert.excluded.fk_url_registry_id,
                     "fk_country": insert.excluded.fk_country,

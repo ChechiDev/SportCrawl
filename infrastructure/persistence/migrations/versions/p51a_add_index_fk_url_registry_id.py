@@ -17,13 +17,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    conn = op.get_bind()
-    conn.execution_options(isolation_level="AUTOCOMMIT")
-    conn.execute(sa.text(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_scrape_queue_fk_url_registry_id"
-        " ON sch_fbref_infra.scrape_queue (fk_url_registry_id)"
-        " WHERE fk_url_registry_id IS NOT NULL"
-    ))
+    with op.get_context().autocommit_block():
+        op.execute(sa.text(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_scrape_queue_fk_url_registry_id"
+            " ON sch_fbref_infra.scrape_queue (fk_url_registry_id)"
+            " WHERE fk_url_registry_id IS NOT NULL"
+        ))
 
 
 def downgrade() -> None:

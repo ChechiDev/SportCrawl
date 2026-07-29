@@ -282,18 +282,26 @@ async def _run(
                 "  [cyan]✓[/cyan]  All Countries with Players loaded successfully."
             )
 
-        async def _scrape_competitions() -> None:
-            await _seed_competitions(settings)
+        existing_comps = await _fetchval(
+            dsn, "SELECT count(*) FROM sch_fbref_shared.tbl_competition"
+        )
+        if existing_comps:
+            console.print(
+                f"  [cyan]✓[/cyan]  {existing_comps} Competitions loaded successfully."
+            )
+        else:
+            async def _scrape_competitions() -> None:
+                await _seed_competitions(settings)
 
-        comp_count = await _seed_with_retry(
-            _scrape_competitions,
-            "SELECT count(*) FROM sch_fbref_shared.tbl_competition",
-            "competitions",
-            dsn,
-        )
-        console.print(
-            f"  [cyan]✓[/cyan]  {comp_count} Competitions loaded successfully."
-        )
+            comp_count = await _seed_with_retry(
+                _scrape_competitions,
+                "SELECT count(*) FROM sch_fbref_shared.tbl_competition",
+                "competitions",
+                dsn,
+            )
+            console.print(
+                f"  [cyan]✓[/cyan]  {comp_count} Competitions loaded successfully."
+            )
 
         await _sync_backend_urls()
 

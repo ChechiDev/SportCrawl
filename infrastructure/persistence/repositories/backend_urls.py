@@ -48,6 +48,7 @@ class BackendUrlRow:
     url_type: str
     priority: int
     next_scrape_at: datetime
+    fk_country: int | None = None
 
 
 class BackendUrlRepository:
@@ -79,10 +80,14 @@ class BackendUrlRepository:
             ValueError: if table is not a known backend URL table.
         """
         qualified = _qualified(table)
+        include_fk_country = table == "tbl_country_squad_urls"
+        select_cols = "id, url, url_type, priority, next_scrape_at"
+        if include_fk_country:
+            select_cols += ", fk_country"
         stmt = sa.text(
-            f"SELECT id, url, url_type, priority, next_scrape_at"  # noqa: S608
+            f"SELECT {select_cols}"  # noqa: S608
             f" FROM {qualified}"
-            f" WHERE status = 'ACTIVE'"
+            f" WHERE status = 'PENDING'"
             f"   AND next_scrape_at <= now()"
             f" ORDER BY priority ASC, next_scrape_at ASC"
             f" LIMIT :limit"
@@ -96,6 +101,7 @@ class BackendUrlRepository:
                 url_type=row.url_type,
                 priority=row.priority,
                 next_scrape_at=row.next_scrape_at,
+                fk_country=row.fk_country if include_fk_country else None,
             )
             for row in rows
         ]
@@ -126,7 +132,7 @@ class BackendUrlRepository:
             f"UPDATE {qualified}"
             f" SET last_scraped_at = now(),"
             f"     last_scrape_status = :scrape_status,"
-            f"     next_scrape_at = now() + cadence_hours * interval '1 hour',"
+            f"     next_scrape_at = now() + COALESCE(cadence_hours, 24) * interval '1 hour',"
             f"     retry_count = 0,"
             f"     last_error = NULL,"
             f"     updated_at = now()"

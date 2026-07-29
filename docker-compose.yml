@@ -25,7 +25,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.chromium
     ports:
-      - "9222:9222"
+      - "127.0.0.1:9222:9222"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9222/json/version || exit 1"]
       interval: 5s

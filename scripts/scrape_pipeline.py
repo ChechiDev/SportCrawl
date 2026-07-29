@@ -438,7 +438,7 @@ async def main(
     country: list[str] | None = None,
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
-    pool_size = max(workers * 8, settings.db.pool_size)
+    pool_size = max(workers * 4, settings.db.pool_size)
     settings.db.pool_size = pool_size
     session_factory = create_session_factory(settings.db)
 

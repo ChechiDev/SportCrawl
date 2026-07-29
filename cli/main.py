@@ -257,7 +257,7 @@ async def _do_reset(console: Console) -> None:
     _logging.getLogger("alembic").setLevel(_logging.ERROR)
     _logging.getLogger("alembic.runtime.migration").setLevel(_logging.ERROR)
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, partial(command.upgrade, alembic_cfg, "head"))
+    await loop.run_in_executor(None, partial(command.upgrade, alembic_cfg, "heads"))
 
     conn = await asyncpg.connect(dsn, timeout=5)
     try:

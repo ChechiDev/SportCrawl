@@ -36,7 +36,7 @@ echo "Waiting for Chromium CDP on 127.0.0.1:9223..."
 until curl -sf http://127.0.0.1:9223/json/version > /dev/null 2>&1; do
   sleep 1
 done
-echo "Chromium ready (Xvfb display :99). Proxying 0.0.0.0:9222 -> 127.0.0.1:9223"
+echo "Chromium ready (Xvfb display :99). Proxying 127.0.0.1:9222 -> 127.0.0.1:9223"
 
 # Proxy external 9222 → internal 9223 so Docker port mapping works
-exec socat TCP-LISTEN:9222,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:9223
+exec socat TCP-LISTEN:9222,bind=127.0.0.1,fork,reuseaddr TCP:127.0.0.1:9223

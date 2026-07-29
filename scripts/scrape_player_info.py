@@ -233,6 +233,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
             attempt = 0
             success = False
             browser_restart = False
+            _scrape_failed = False
 
             while attempt < 3 and not success:
                 try:
@@ -299,6 +300,12 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
                         await session.commit()
 
+                    # mark_scraped runs after the main commit because mark_done is
+                    # embedded inside ScrapeJobProcessor.process() in the session above.
+                    # A failed mark_scraped is logged as a warning; the backend URL
+                    # will be re-triggered by fn_notify_all_due on its next poll cycle
+                    # (idempotent re-scrape). Refactoring ScrapeJobProcessor to expose
+                    # an explicit mark_done step would allow full atomicity here.
                     if job.fk_url_registry_id is not None:
                         try:
                             async with get_session(self._session_factory) as _s:
@@ -357,6 +364,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         break
                     is_terminal = attempt >= 3
                     if is_terminal:
+                        _scrape_failed = True
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
                         )
@@ -395,15 +403,35 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             f" - {_player_name_from_url(job.url)}"
                         )
                         await asyncio.sleep(random.uniform(5.0, 15.0))
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(exc, exc_info=True)
+                    try:
+                        async with get_session(self._session_factory) as session:
+                            q_repo = PlayerInfoQueueRepository(session)
+                            await q_repo.mark_failed(job.id, str(exc))
+                            await session.commit()
+                    except Exception as mark_err:
+                        logger.error(
+                            "[worker-%d] mark_failed error after unexpected exception: %s",
+                            self._worker_id,
+                            mark_err,
+                        )
+                    success = False
+                    break
 
             if browser_restart:
                 return -1
 
             if not success:
+                if _scrape_failed:
+                    self._labels[self._worker_id] = (
+                        f"[bold red]FAILED[/] Job {job.id} — max retries reached"
+                    )
+                    raise CooldownRequired
+                # DB or unexpected error: log and continue to next job
                 self._labels[self._worker_id] = (
-                    f"[bold red]FAILED[/] Job {job.id} — max retries reached"
+                    f"[bold yellow]SKIP[/] Job {job.id} — unexpected error"
                 )
-                raise CooldownRequired
 
 
 def _player_name_from_url(url: str) -> str:
@@ -442,11 +470,15 @@ def _player_id_from_url(url: str) -> str:
 
 async def _notify_all_due(
     session_factory: async_sessionmaker[AsyncSession],
+    limit: int = 1000,
 ) -> None:
-    """Emit pg_notify for all backend URL rows that are currently due.
+    """Seed scrape_queue with player_info jobs from tbl_player_urls.
 
-    Delegates to fn_notify_all_due() so the daemon picks them up without a
-    direct INSERT into scrape_queue from the pipeline.
+    Directly inserts due rows (url_type='profile') into scrape_queue so S3
+    workers can start immediately without waiting for the background daemon.
+    Limited to *limit* rows per call; the _player_info_reseeder picks up the
+    rest while S2 is still running.
+    ON CONFLICT DO UPDATE keeps fk_url_registry_id in sync.
     """
     async with get_session(session_factory) as session:
         result = await session.execute(
@@ -459,7 +491,21 @@ async def _notify_all_due(
             )
             return
         await session.execute(
-            sa.text("SELECT sch_fbref_backend.fn_notify_all_due()")
+            sa.text(
+                "INSERT INTO sch_fbref_infra.scrape_queue"
+                "  (url, domain, status, job_type, fk_url_registry_id)"
+                " SELECT url, 'fbref.com', 'PENDING', 'player_info', id"
+                " FROM sch_fbref_backend.tbl_player_urls"
+                " WHERE url_type = 'profile'"
+                "   AND status = 'PENDING'"
+                "   AND next_scrape_at <= now()"
+                " ORDER BY priority ASC, next_scrape_at ASC"
+                " LIMIT :limit"
+                " ON CONFLICT ON CONSTRAINT uq_scrape_queue_url_job_type DO UPDATE"
+                "   SET fk_url_registry_id = EXCLUDED.fk_url_registry_id"
+                " WHERE scrape_queue.fk_url_registry_id IS NULL"
+            ),
+            {"limit": limit},
         )
         await session.commit()
 

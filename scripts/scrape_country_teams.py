@@ -58,10 +58,12 @@ logger = logging.getLogger(__name__)
 async def _notify_all_due(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Emit pg_notify for all backend URL rows that are currently due.
+    """Seed scrape_queue with team_list jobs from tbl_country_squad_urls.
 
-    Delegates to fn_notify_all_due() so the daemon picks them up without a
-    direct INSERT into scrape_queue from the pipeline.
+    Directly inserts due rows (url_type='clubs') into scrape_queue so workers
+    can start immediately without waiting for the background daemon.
+    ON CONFLICT DO UPDATE keeps fk_url_registry_id in sync if a row was already
+    queued by a previous run.
     """
     async with get_session(session_factory) as session:
         result = await session.execute(
@@ -74,7 +76,19 @@ async def _notify_all_due(
             )
             return
         await session.execute(
-            sa.text("SELECT sch_fbref_backend.fn_notify_all_due()")
+            sa.text(
+                "INSERT INTO sch_fbref_infra.scrape_queue"
+                "  (url, domain, status, job_type, fk_url_registry_id, fk_country)"
+                " SELECT url, 'fbref.com', 'PENDING', 'team_list', id, fk_country"
+                " FROM sch_fbref_backend.tbl_country_squad_urls"
+                " WHERE url_type = 'clubs'"
+                "   AND status = 'PENDING'"
+                "   AND next_scrape_at <= now()"
+                " ON CONFLICT ON CONSTRAINT uq_scrape_queue_url_job_type DO UPDATE"
+                "   SET fk_url_registry_id = EXCLUDED.fk_url_registry_id,"
+                "       fk_country         = EXCLUDED.fk_country"
+                " WHERE scrape_queue.fk_url_registry_id IS NULL"
+            )
         )
         await session.commit()
 
@@ -176,6 +190,11 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
 
             for attempt in range(1, max_attempts + 1):
                 try:
+                    # TODO(fix5): narrow fetch_gate to navigate() only.
+                    # CountryTeamsScraper.scrape() calls BaseScraper.fetch_and_parse()
+                    # which uses engine.fetch() — a monolithic navigate+wait call.
+                    # Splitting requires exposing navigate/wait_for_challenge on
+                    # BaseScraper or bypassing it in the worker. Deferred.
                     async with self._fetch_gate:
                         scraper = CountryTeamsScraper(
                             engine=engine,
@@ -184,12 +203,8 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                         )
                         page = await scraper.scrape(clubs_url)
 
-                    async with get_session(self._session_factory) as session:
-                        repo = TeamsRepository(session, gender_map=gender_map)
-                        await repo.upsert(page.teams)
-                        await TeamListQueueRepository(session).mark_done(job.id)
-                        await session.commit()
-
+                    # mark_scraped first (idempotent): if it fails, the queue job
+                    # stays IN_PROGRESS and recover_stale will retry the whole item.
                     if job.fk_url_registry_id is not None:
                         try:
                             async with get_session(self._session_factory) as _s:
@@ -204,6 +219,12 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                                 job.id,
                                 _backend_err,
                             )
+
+                    async with get_session(self._session_factory) as session:
+                        repo = TeamsRepository(session, gender_map=gender_map)
+                        await repo.upsert(page.teams)
+                        await TeamListQueueRepository(session).mark_done(job.id)
+                        await session.commit()
 
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed
