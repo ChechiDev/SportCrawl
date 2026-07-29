@@ -64,6 +64,22 @@ class PlayerPlayingTimeStatsRepository:
                     continue
                 row.fk_comp = row.comp_id
 
+                # Skip rows referencing competitions not in our table to avoid FK violations.
+                comp_check = await self._session.execute(
+                    sa.text(
+                        "SELECT 1 FROM sch_fbref_shared.tbl_competition"
+                        " WHERE comp_id = :cid"
+                    ),
+                    {"cid": row.fk_comp},
+                )
+                if not comp_check.scalar():
+                    logger.debug(
+                        "Skipping stats row: comp %s not in tbl_competition (player %s)",
+                        row.fk_comp,
+                        row.player_id,
+                    )
+                    continue
+
                 values: dict[str, object] = {
                     "player_id": row.player_id,
                     "season": row.season,
