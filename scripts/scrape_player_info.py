@@ -238,18 +238,16 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
             while attempt < 3 and not success:
                 try:
                     async with self._fetch_gate:
-                        await engine.navigate(self._fbref_base_url + job.url)
+                        await engine.navigate(job.url)
                         await asyncio.sleep(random.uniform(2.0, 6.0))
                     # Challenge polling and cooldown run outside gate so other
                     # workers are not blocked during Cloudflare resolution.
-                    html = await engine.wait_for_challenge(
-                        self._fbref_base_url + job.url
-                    )
+                    html = await engine.wait_for_challenge(job.url)
                     await asyncio.sleep(random.uniform(3, 10))
                     if not html:
                         raise PageLoadError(
                             "empty HTML response",
-                            url=self._fbref_base_url + job.url,
+                            url=job.url,
                         )
 
                     scraper = PlayerInfoScraper(
