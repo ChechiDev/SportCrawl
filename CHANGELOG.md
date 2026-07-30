@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-07-30
+
+### Changed
+- `sch_fbref_backend` is now the sole source of truth for scraping URLs — redundant URL columns dropped from all domain tables (`tbl_countries.country_url`, `tbl_players.player_url`, `tbl_country_squads.clubs_url`, `tbl_competition.comp_url`)
+- Daemon (`CadenceScheduler` + `PgNotifyListener`) removed from inline pipeline; must run as standalone `run_daemon.py`; direct INSERT used instead for immediate queue seeding
+- `scrape_queue` pool size reduced from `workers×8` to `workers×4`
+- Competitions preflight now skips re-scrape if already seeded
+- `CooldownRequired` now scoped to scraping failures only (not DB errors)
+- Work server URL scheme restricted to `https://` only (SSRF hardening)
+- Chrome keepalive loop replaced with lightweight CDP `execute_script` ping instead of full DOM serialization
+
+### Added
+- Migrations p47a–p55a: drop URL columns, add indexes, fix `fn_notify_all_due` status filter, covering index for stale recovery
+- `fk_country` propagated into `scrape_queue` rows at seed time for team_list jobs
+- ON CONFLICT DO UPDATE in all queue seed INSERTs
+
+### Fixed
+- `BackendUrlRepository.fetch_due_rows`: was filtering on `status='ACTIVE'` (never matched); corrected to `status='PENDING'`
+- S3 worker double URL prefix: `engine.navigate()` was prepending `_fbref_base_url` to an already-absolute URL
+- Stats repos (`player_std_stats`, `player_shooting_stats`, `player_playing_time_stats`, `player_misc_stats`): FK violation on unknown `comp_id` now gracefully skipped per row instead of failing the entire job
+- Phantom `player_discovery` entries removed from `scrape_queue` (no consumer worker existed)
+- `SecretStr` Pyright narrowing in `config/settings.py`
+
 ## [0.25.0] — 2026-07-28
 
 ### Added
