@@ -29,7 +29,6 @@ class CountrySquads(Base):
         ForeignKey("sch_fbref_shared.tbl_flags.flag_id", ondelete="SET NULL"),
         nullable=True,
     )
-    clubs_url: Mapped[str] = mapped_column(String(500), nullable=False)
     nat_team_men_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     nat_team_women_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     fbref_men_squad_id: Mapped[str | None] = mapped_column(String(8), nullable=True)

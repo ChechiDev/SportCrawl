@@ -31,7 +31,6 @@ from rich.text import Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
-from infrastructure.persistence.models.shared.country_squads import CountrySquads
 from infrastructure.persistence.repositories.player_info_queue import (
     PlayerInfoQueueRepository,
 )
@@ -43,13 +42,13 @@ from infrastructure.persistence.repositories.team_list_queue import (
 )
 from infrastructure.persistence.session import create_session_factory, get_session
 from scripts.scrape_country_teams import CountryTeamsWorker
-from scripts.scrape_country_teams import _seed_queue as _seed_country_teams_queue
+from scripts.scrape_country_teams import _notify_all_due as _notify_country_teams_due
 from scripts.scrape_player_info import (
     PlayerInfoWorker,
     _load_country_ids,
     _load_country_name_cache,
 )
-from scripts.scrape_player_info import _seed_queue as _seed_player_info_queue
+from scripts.scrape_player_info import _notify_all_due as _notify_player_info_due
 from scripts.scrape_players import (
     _COUNTRY_CODE_RE,
     PlayerListWorker,
@@ -382,17 +381,17 @@ async def _player_info_reseeder(
     session_factory: async_sessionmaker[AsyncSession],
     step2_done: asyncio.Event,
 ) -> None:
-    """Re-seed player_info queue every 30s while step 2 is still running.
+    """Re-notify player_info queue every 30s while step 2 is still running.
 
     Step 2 continuously adds new players to tbl_players. Without periodic
-    re-seeding, step 3 workers exhaust the initial seed and stall waiting for
-    step 2 to finish even though new jobs are available.
+    re-notification, step 3 workers exhaust initial jobs and stall while
+    new backend URL rows are becoming due.
     """
     while not step2_done.is_set():
         await asyncio.sleep(30)
-        await _seed_player_info_queue(session_factory)
-    # Final seed after step 2 completes so no player is missed.
-    await _seed_player_info_queue(session_factory)
+        await _notify_player_info_due(session_factory)
+    # Final notify after step 2 completes so no player is missed.
+    await _notify_player_info_due(session_factory)
 
 
 async def _trigger_watcher(
@@ -439,7 +438,7 @@ async def main(
     country: list[str] | None = None,
 ) -> None:
     settings = Settings()  # type: ignore[call-arg]
-    pool_size = max(workers * 8, settings.db.pool_size)
+    pool_size = max(workers * 4, settings.db.pool_size)
     settings.db.pool_size = pool_size
     session_factory = create_session_factory(settings.db)
 
@@ -451,11 +450,14 @@ async def main(
     if with_teams:
         async with get_session(session_factory) as session:
             result = await session.execute(
-                sa.select(CountrySquads.fk_country, CountrySquads.clubs_url)
-                .where(CountrySquads.clubs_url.isnot(None))
-                .order_by(CountrySquads.fk_country)
+                sa.text(
+                    "SELECT fk_country, url"
+                    " FROM sch_fbref_backend.tbl_country_squad_urls"
+                    " WHERE url_type = 'clubs'"
+                    " ORDER BY fk_country"
+                )
             )
-            s1_rows = [(r[0], r[1]) for r in result.fetchall()]
+            s1_rows = [(r.fk_country, r.url) for r in result.fetchall()]
             if country:
                 country_upper = {c.upper() for c in country}
                 s1_rows = [row for row in s1_rows if row[0] in country_upper]
@@ -463,17 +465,13 @@ async def main(
                 sa.select(Country.country_id, Country.country_name)
             )
             s1_country_names = {r[0]: r[1] for r in names_result.fetchall()}
-    # Build lookup map for workers: clubs_url → fk_country
-    s1_url_to_country: dict[str, str] = {
-        clubs_url: fk_country for fk_country, clubs_url in s1_rows
-    }
     # Determine country_filter for s1 workers from --country arg
     s1_country_filter: set[str] | None = (
         {c.upper() for c in country} if country else None
     )
 
     if with_teams:
-        await _seed_country_teams_queue(session_factory, s1_rows)
+        await _notify_country_teams_due(session_factory)
         async with get_session(session_factory) as session:
             await TeamListQueueRepository(session).recover_all_stale()
             await TeamListQueueRepository(session).recover_failed()
@@ -487,19 +485,17 @@ async def main(
                 # Scope total and done to the requested countries only
                 result = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads"
-                        " WHERE clubs_url IS NOT NULL AND fk_country = ANY(:codes)"
+                        "SELECT count(*) FROM sch_fbref_backend.tbl_country_squad_urls"
+                        " WHERE url_type = 'clubs' AND fk_country = ANY(:codes)"
                     ),
                     {"codes": list(s1_country_filter)},
                 )
                 s1_total = int(result.scalar() or 0)
                 result2 = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_fbref_infra.scrape_queue q"
-                        " JOIN sch_fbref_shared.tbl_country_squads cs"
-                        " ON cs.clubs_url = q.url"
-                        " WHERE q.job_type='team_list' AND q.status='DONE'"
-                        " AND cs.fk_country = ANY(:codes)"
+                        "SELECT count(*) FROM sch_fbref_infra.scrape_queue"
+                        " WHERE job_type='team_list' AND status='DONE'"
+                        " AND fk_country = ANY(:codes)"
                     ),
                     {"codes": list(s1_country_filter)},
                 )
@@ -507,8 +503,8 @@ async def main(
             else:
                 result = await session.execute(
                     sa.text(
-                        "SELECT count(*) FROM sch_fbref_shared.tbl_country_squads"
-                        " WHERE clubs_url IS NOT NULL"
+                        "SELECT count(*) FROM sch_fbref_backend.tbl_country_squad_urls"
+                        " WHERE url_type = 'clubs'"
                     )
                 )
                 s1_total = int(result.scalar() or 0)
@@ -697,7 +693,6 @@ async def main(
                             worker_labels=s1_labels,
                             worker_counts=s1_counts,
                             settings=settings,
-                            url_to_country=s1_url_to_country,
                             country_filter=s1_country_filter,
                             country_names=s1_country_names,
                         ).run()
@@ -740,8 +735,7 @@ async def main(
             if stale3:
                 logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
 
-            # Seed step-3 queue from tbl_players (idempotent)
-            await _seed_player_info_queue(session_factory)
+            await _notify_player_info_due(session_factory)
 
             # Refresh total for display after seeding
             async with get_session(session_factory) as session:

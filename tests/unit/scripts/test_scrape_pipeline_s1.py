@@ -47,13 +47,13 @@ class TestPipelineS1Imports:
             "scrape_pipeline must not pass queue=s1_queue to CountryTeamsWorker"
         )
 
-    def test_pipeline_passes_url_to_country_to_worker(self) -> None:
-        """CountryTeamsWorker in pipeline must receive url_to_country param."""
+    def test_pipeline_does_not_pass_url_to_country_to_worker(self) -> None:
+        """CountryTeamsWorker in pipeline must NOT receive url_to_country (removed in Fase 4)."""
         import pathlib
 
         src = pathlib.Path("scripts/scrape_pipeline.py").read_text()
-        assert "url_to_country=" in src, (
-            "scrape_pipeline must pass url_to_country= to CountryTeamsWorker"
+        assert "url_to_country=" not in src, (
+            "scrape_pipeline must not pass url_to_country= to CountryTeamsWorker (Fase 4 removed it)"
         )
 
     def test_pipeline_passes_country_filter_to_worker(self) -> None:
@@ -86,6 +86,6 @@ class TestPipelineS1Imports:
         assert "job_type='team_list' AND status='DONE'" in src, (
             "scrape_pipeline must query DB for team_list DONE count (display offset)"
         )
-        assert "tbl_country_squads" in src, (
-            "scrape_pipeline must query total country_squads for s1_total denominator"
+        assert "tbl_country_squad_urls" in src, (
+            "scrape_pipeline must query tbl_country_squad_urls for s1_total denominator (Fase 4)"
         )

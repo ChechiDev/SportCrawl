@@ -70,7 +70,6 @@ class CountrySquadsRepository:
                 {
                     "fk_country": row.fk_country,
                     "fk_flag": row.fk_flag,
-                    "clubs_url": row.clubs_url,
                     "nat_team_men_url": row.nat_team_men_url,
                     "nat_team_women_url": row.nat_team_women_url,
                     "fbref_men_squad_id": row.fbref_men_squad_id,
@@ -83,7 +82,6 @@ class CountrySquadsRepository:
                 constraint="tbl_country_squads_pkey",
                 set_={
                     "fk_flag": insert_stmt.excluded.fk_flag,
-                    "clubs_url": insert_stmt.excluded.clubs_url,
                     "nat_team_men_url": insert_stmt.excluded.nat_team_men_url,
                     "nat_team_women_url": insert_stmt.excluded.nat_team_women_url,
                     "fbref_men_squad_id": insert_stmt.excluded.fbref_men_squad_id,
@@ -93,19 +91,45 @@ class CountrySquadsRepository:
             )
             await self._session.execute(stmt_squad)
 
-            # Co-insert backend scheduling rows — same transaction, best-effort
+            # Co-insert backend scheduling rows — same transaction, best-effort.
+            # clubs_url is no longer in tbl_country_squads; use the Python-side value.
+            # nat_team URLs are still read from the ORM table.
             try:
+                clubs_backend = [
+                    (row.fk_country, row.clubs_url)
+                    for row in rows
+                    if row.clubs_url is not None
+                ]
+                if clubs_backend:
+                    await self._session.execute(
+                        sa.text(
+                            """
+                            INSERT INTO sch_fbref_backend.tbl_country_squad_urls
+                                (fk_country, url_type, url, cadence_hours, priority,
+                                 status, next_scrape_at, created_at, updated_at, retry_count)
+                            SELECT
+                                v.fk_country,
+                                'clubs',
+                                v.url,
+                                720, 5, 'PENDING', now(), now(), now(), 0
+                            FROM unnest(
+                                :country_codes ::text[],
+                                :urls ::text[]
+                            ) AS v(fk_country, url)
+                            ON CONFLICT (fk_country, url_type) DO NOTHING
+                            """
+                        ),
+                        {
+                            "country_codes": [r[0] for r in clubs_backend],
+                            "urls": [r[1] for r in clubs_backend],
+                        },
+                    )
                 await self._session.execute(
                     sa.text(
                         """
                         INSERT INTO sch_fbref_backend.tbl_country_squad_urls
                             (fk_country, url_type, url, cadence_hours, priority,
                              status, next_scrape_at, created_at, updated_at, retry_count)
-                        SELECT fk_country, 'clubs', clubs_url,
-                               720, 5, 'PENDING', now(), now(), now(), 0
-                          FROM sch_fbref_shared.tbl_country_squads
-                         WHERE clubs_url IS NOT NULL
-                        UNION ALL
                         SELECT fk_country, 'nat_team_men', nat_team_men_url,
                                720, 5, 'PENDING', now(), now(), now(), 0
                           FROM sch_fbref_shared.tbl_country_squads

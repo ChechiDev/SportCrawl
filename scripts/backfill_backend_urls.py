@@ -22,19 +22,9 @@ from infrastructure.persistence.session import create_session_factory, get_sessi
 # ---------------------------------------------------------------------------
 
 SQL_PLAYER_URLS = sa.text("""
-    INSERT INTO sch_fbref_backend.tbl_player_urls
-        (fk_player, url_type, url, cadence_hours, priority, status, next_scrape_at)
-    SELECT
-        player_id,
-        'profile',
-        player_url,
-        168,
-        5,
-        'PENDING',
-        now()
-    FROM sch_fbref_shared.tbl_players
-    WHERE player_url IS NOT NULL
-    ON CONFLICT DO NOTHING
+    -- player_url dropped from tbl_players in p48a; URLs are now co-inserted by
+    -- PlayerDiscoveryRepository at scrape time. This statement is a no-op placeholder.
+    SELECT 1 WHERE false
 """)
 
 SQL_TEAM_URLS = sa.text("""
@@ -54,37 +44,16 @@ SQL_TEAM_URLS = sa.text("""
 """)
 
 SQL_COMPETITION_URLS = sa.text("""
-    INSERT INTO sch_fbref_backend.tbl_competition_urls
-        (fk_comp, url_type, url, cadence_hours, priority, status, next_scrape_at)
-    SELECT
-        comp_id,
-        'index',
-        comp_url,
-        720,
-        3,
-        'PENDING',
-        now()
-    FROM sch_fbref_shared.tbl_competition
-    WHERE comp_url IS NOT NULL
-    ON CONFLICT DO NOTHING
+    -- comp_url dropped from tbl_competition in p50a; URLs are now co-inserted by
+    -- CompetitionsRepository at scrape time. This statement is a no-op placeholder.
+    SELECT 1 WHERE false
 """)
 
 SQL_COUNTRY_URLS = sa.text("""
+    -- country_url dropped from tbl_countries in p47a; URLs are now co-inserted by
+    -- CountryRepository at scrape time. Only players_list URLs remain here.
     INSERT INTO sch_fbref_backend.tbl_country_urls
         (fk_country, url_type, url, cadence_hours, priority, status, next_scrape_at)
-    SELECT
-        country_id,
-        'country',
-        country_url,
-        720,
-        5,
-        'PENDING',
-        now()
-    FROM sch_fbref_shared.tbl_countries
-    WHERE country_url IS NOT NULL
-
-    UNION ALL
-
     SELECT
         country_id,
         'players_list',
@@ -95,26 +64,14 @@ SQL_COUNTRY_URLS = sa.text("""
         now()
     FROM sch_fbref_shared.tbl_countries
     WHERE players_url IS NOT NULL
-
     ON CONFLICT DO NOTHING
 """)
 
 SQL_COUNTRY_SQUAD_URLS = sa.text("""
+    -- clubs_url dropped from tbl_country_squads in p49a; clubs URLs are now co-inserted by
+    -- CountrySquadsRepository at scrape time. Only nat_team URLs remain here.
     INSERT INTO sch_fbref_backend.tbl_country_squad_urls
         (fk_country, url_type, url, cadence_hours, priority, status, next_scrape_at)
-    SELECT
-        fk_country,
-        'clubs',
-        clubs_url,
-        720,
-        5,
-        'PENDING',
-        now()
-    FROM sch_fbref_shared.tbl_country_squads
-    WHERE clubs_url IS NOT NULL
-
-    UNION ALL
-
     SELECT
         fk_country,
         'nat_team_men',

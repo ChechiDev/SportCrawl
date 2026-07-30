@@ -23,6 +23,7 @@ import hmac
 import json
 import logging
 from typing import Any, cast
+from urllib.parse import urlparse
 
 from aiohttp import web
 
@@ -111,6 +112,15 @@ async def _post_jobs(request: web.Request) -> web.Response:
     rejected = []
 
     for url in urls:
+        # SSRF allowlist: only http/https fbref.com hostnames are permitted.
+        parsed = urlparse(url) if isinstance(url, str) else None
+        if parsed is None or parsed.scheme != "https":
+            rejected.append({"url": url, "reason": "invalid scheme"})
+            continue
+        hostname = parsed.hostname or ""
+        if not (hostname == "fbref.com" or hostname.endswith(".fbref.com")):
+            rejected.append({"url": url, "reason": "host not allowed"})
+            continue
         try:
             record = await port.enqueue(url)
             jobs.append(

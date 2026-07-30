@@ -18,7 +18,7 @@ class Player(Base):
     queue refs target player_id directly.
 
     Columns: player_id, full_name, fk_country, career_start, career_end,
-    player_url, created_at, updated_at.
+    created_at, updated_at.
     """
 
     __tablename__ = "tbl_players"
@@ -36,7 +36,6 @@ class Player(Base):
     )
     career_start: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     career_end: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    player_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

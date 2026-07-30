@@ -43,7 +43,6 @@ class Competition(Base):
     )
     first_season: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     last_season: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    comp_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=sa.text("now()"),

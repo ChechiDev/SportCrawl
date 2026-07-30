@@ -150,11 +150,10 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                             )
                         page, _ = await self._scraper.scrape(job.url)
 
-                    async with get_session(self._session_factory) as session:
-                        repo = PlayerListQueueRepository(session)
-                        await repo.mark_done(job.id)
-                        await session.commit()
-
+                    # mark_scraped first (idempotent): if it fails, the queue job
+                    # stays IN_PROGRESS and recover_stale will retry the whole item.
+                    # If mark_done failed after mark_scraped, the backend URL would
+                    # be correct but the queue item would re-run — harmless duplicate.
                     if job.fk_url_registry_id is not None:
                         try:
                             async with get_session(self._session_factory) as _s:
@@ -169,6 +168,11 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                 job.id,
                                 _backend_err,
                             )
+
+                    async with get_session(self._session_factory) as session:
+                        repo = PlayerListQueueRepository(session)
+                        await repo.mark_done(job.id)
+                        await session.commit()
 
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed

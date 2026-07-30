@@ -38,7 +38,7 @@ class ScrapingSettings(BaseModel):
     max_delay: float = 60.0
     request_timeout: int = 30
     work_server_url: str = "http://localhost:9731"
-    work_server_token: SecretStr = SecretStr("")
+    work_server_token: SecretStr | None = None
     fbref_base_url: str = "https://fbref.com"
     allowed_hosts: list[str] = ["fbref.com"]
     max_concurrent_requests: int = 3
@@ -89,7 +89,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def enforce_work_server_token(self) -> "Settings":
         """Require non-empty SCRAPING__WORK_SERVER_TOKEN in all environments."""
-        if not self.scraping.work_server_token.get_secret_value():
+        token = self.scraping.work_server_token
+        secret = token.get_secret_value() if token is not None else ""
+        if not secret:
             raise ValueError("SCRAPING__WORK_SERVER_TOKEN must be a non-empty value.")
         return self
 

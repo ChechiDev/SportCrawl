@@ -34,7 +34,7 @@ async def _run_migrations(console: Console) -> None:
         "-c",
         str(_ALEMBIC_INI),
         "upgrade",
-        "head",
+        "heads",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

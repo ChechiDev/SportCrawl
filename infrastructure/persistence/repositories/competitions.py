@@ -84,7 +84,6 @@ class CompetitionsRepository:
                     "fk_country": row.country_id,
                     "first_season": row.first_season,
                     "last_season": row.last_season,
-                    "comp_url": row.comp_url,
                 }
 
                 stmt = pg_insert(Competition).values(**values)
@@ -99,35 +98,29 @@ class CompetitionsRepository:
                         "fk_country": stmt.excluded.fk_country,
                         "first_season": stmt.excluded.first_season,
                         "last_season": stmt.excluded.last_season,
-                        "comp_url": stmt.excluded.comp_url,
                         "updated_at": sa.func.now(),
                     },
                 )
                 await self._session.execute(stmt)
                 count += 1
 
-                # Co-insert backend scheduling row — same transaction, best-effort
+                # Co-insert backend scheduling row — same transaction, best-effort.
+                # comp_url is no longer in tbl_competition; use the Python-side value.
                 try:
-                    await self._session.execute(
-                        sa.text(
-                            """
-                            INSERT INTO sch_fbref_backend.tbl_competition_urls
-                                (fk_comp, url_type, url, cadence_hours, priority,
-                                 status, next_scrape_at, created_at, updated_at, retry_count)
-                            SELECT
-                                c.comp_id,
-                                'index',
-                                c.comp_url,
-                                720,
-                                3,
-                                'PENDING',
-                                now(), now(), now(), 0
-                            FROM sch_fbref_shared.tbl_competition c
-                            WHERE c.comp_url IS NOT NULL
-                            ON CONFLICT (fk_comp, url_type) DO NOTHING
-                            """
-                        ),
-                    )
+                    if row.comp_url:
+                        await self._session.execute(
+                            sa.text(
+                                """
+                                INSERT INTO sch_fbref_backend.tbl_competition_urls
+                                    (fk_comp, url_type, url, cadence_hours, priority,
+                                     status, next_scrape_at, created_at, updated_at, retry_count)
+                                VALUES (:comp_id, 'index', :url, 720, 3,
+                                        'PENDING', now(), now(), now(), 0)
+                                ON CONFLICT (fk_comp, url_type) DO NOTHING
+                                """
+                            ),
+                            {"comp_id": row.comp_id, "url": row.comp_url},
+                        )
                 except Exception:
                     logger.warning(
                         "Backend co-insert failed for competition %s; skipping",

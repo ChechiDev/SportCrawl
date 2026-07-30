@@ -176,7 +176,12 @@ def parse_player_playing_time_stats(
             comp_cell = _find_cell(row, "comp_level", "comp")
             comp_raw = _text(comp_cell)
             comp_name = _COMP_PREFIX_RE.sub("", comp_raw).strip()
-            comp_url = _href_path(comp_cell)
+            comp_id: int | None = None
+            _comp_href = _href_path(comp_cell)
+            if _comp_href:
+                _m_comp = re.search(r"/en/comps/(\d+)/", _comp_href)
+                if _m_comp:
+                    comp_id = int(_m_comp.group(1))
 
             match_url = _href_path(_find_cell(row, "matches"))
 
@@ -205,7 +210,7 @@ def parse_player_playing_time_stats(
                     plus_minus_per90=_decimal(_find_cell(row, "plus_minus_per90")),
                     on_off=_decimal(_find_cell(row, "on_off")),
                     team_url=team_url,
-                    comp_url=comp_url,
+                    comp_id=comp_id,
                     match_url=match_url,
                     comp_name=comp_name,
                 )
