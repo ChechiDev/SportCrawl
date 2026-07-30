@@ -48,7 +48,7 @@ class BackendUrlRow:
     url_type: str
     priority: int
     next_scrape_at: datetime
-    fk_country: int | None = None
+    fk_country: str | None = None
 
 
 class BackendUrlRepository:
@@ -67,7 +67,7 @@ class BackendUrlRepository:
         table: str,
         limit: int = 100,
     ) -> list[BackendUrlRow]:
-        """Return rows due for scraping (ACTIVE and past next_scrape_at).
+        """Return rows due for scraping (PENDING or ACTIVE and past next_scrape_at).
 
         Args:
             table: One of the five valid backend URL table names.
@@ -87,7 +87,7 @@ class BackendUrlRepository:
         stmt = sa.text(
             f"SELECT {select_cols}"  # noqa: S608
             f" FROM {qualified}"
-            f" WHERE status = 'PENDING'"
+            f" WHERE status IN ('PENDING', 'ACTIVE')"
             f"   AND next_scrape_at <= now()"
             f" ORDER BY priority ASC, next_scrape_at ASC"
             f" LIMIT :limit"
@@ -113,11 +113,10 @@ class BackendUrlRepository:
         *,
         status: str = "SUCCESS",
     ) -> None:
-        """Record a successful scrape and advance the next_scrape_at schedule.
+        """Record a successful scrape, transition lifecycle status to ACTIVE.
 
-        Sets last_scraped_at and last_scrape_status, advances next_scrape_at
-        by cadence_hours, resets retry_count to 0, and clears last_error.
-        Does NOT modify the lifecycle `status` column.
+        Sets status to 'ACTIVE', last_scraped_at, and last_scrape_status. Advances
+        next_scrape_at by cadence_hours, resets retry_count to 0, and clears last_error.
 
         Args:
             table: One of the five valid backend URL table names.
@@ -130,7 +129,8 @@ class BackendUrlRepository:
         qualified = _qualified(table)
         stmt = sa.text(
             f"UPDATE {qualified}"
-            f" SET last_scraped_at = now(),"
+            f" SET status = 'ACTIVE',"
+            f"     last_scraped_at = now(),"
             f"     last_scrape_status = :scrape_status,"
             f"     next_scrape_at = now() + COALESCE(cadence_hours, 24) * interval '1 hour',"
             f"     retry_count = 0,"
@@ -149,17 +149,19 @@ class BackendUrlRepository:
         row_id: int,
         *,
         error: str,
+        max_retry_count: int = 5,
     ) -> None:
         """Record a failed scrape and optionally transition the row to STALE.
 
         Increments retry_count and records the error. When retry_count reaches
-        5 the lifecycle status is set to 'STALE' so the row stops being
-        fetched as due. next_scrape_at is intentionally not changed.
+        max_retry_count the lifecycle status is set to 'STALE' so the row stops
+        being fetched as due. next_scrape_at is intentionally not changed.
 
         Args:
             table: One of the five valid backend URL table names.
             row_id: Primary key of the row to update.
             error: Error message or traceback excerpt to persist.
+            max_retry_count: Retry ceiling after which the row is set to STALE.
 
         Raises:
             ValueError: if table is not a known backend URL table.
@@ -170,11 +172,29 @@ class BackendUrlRepository:
             f" SET last_scrape_status = 'FAILURE',"
             f"     retry_count = retry_count + 1,"
             f"     last_error = :error,"
-            f"     status = CASE WHEN retry_count + 1 >= 5 THEN 'STALE' ELSE status END,"
+            f"     status = CASE WHEN retry_count + 1 >= :max_retry_count THEN 'STALE' ELSE status END,"
             f"     updated_at = now()"
             f" WHERE id = :row_id"
         )
         await self._session.execute(
             stmt,
-            {"error": error, "row_id": row_id},
+            {"error": error, "row_id": row_id, "max_retry_count": max_retry_count},
         )
+
+    async def recover_stale_url(self, table: str, row_id: int) -> None:
+        """Reset a STALE URL row back to PENDING and clear error metadata.
+
+        Used by explicit job recovery to restore a URL to the scheduling queue.
+        Caller owns the transaction.
+        """
+        qualified = _qualified(table)
+        stmt = sa.text(
+            f"UPDATE {qualified}"
+            f" SET status     = 'PENDING',"
+            f"     retry_count = 0,"
+            f"     last_error  = NULL,"
+            f"     next_scrape_at = now(),"
+            f"     updated_at  = now()"
+            f" WHERE id = :row_id AND status = 'STALE'"
+        )
+        await self._session.execute(stmt, {"row_id": row_id})

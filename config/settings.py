@@ -45,6 +45,8 @@ class ScrapingSettings(BaseModel):
     request_delay_min: float = Field(default=3.0, ge=0.0)
     request_delay_max: float = Field(default=10.0, ge=0.0)
     max_queue_retries: int = 5
+    scheduling_batch_size: int = 200       # rows per startup drain batch
+    max_retry_count: int = 5               # terminal retry ceiling for player_info jobs
     # Work server runtime settings
     work_server_host: str = "127.0.0.1"
     work_server_port: int = 9731
