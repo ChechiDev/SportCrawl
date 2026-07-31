@@ -48,7 +48,7 @@ class BackendUrlRow:
     url_type: str
     priority: int
     next_scrape_at: datetime
-    fk_country: str | None = None
+    fk_country: int | None = None
 
 
 class BackendUrlRepository:

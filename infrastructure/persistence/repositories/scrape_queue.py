@@ -82,16 +82,12 @@ class ScrapeQueueRepository:
             row.locked_at = None
             await self._session.flush()
 
-    async def mark_failed(self, job_id: int, error: str) -> ScrapeStatus | None:
+    async def mark_failed(self, job_id: int, error: str) -> None:
         """Re-queue job_id as PENDING after recording the failure.
 
         Never leaves a job in terminal FAILED state — the "never die" policy
         keeps all jobs in circulation. retry_count and error_message are
         preserved for observability.
-
-        Returns:
-            The new status of the job (always PENDING for the base implementation).
-            Subclasses may return FAILED when a retry ceiling is reached.
         """
         async with repo_error_context("mark_failed", "mark_failed failed"):
             row = await self._get_job_or_raise(job_id, "mark_failed")
@@ -100,7 +96,6 @@ class ScrapeQueueRepository:
             row.locked_at = None
             row.status = ScrapeStatus.PENDING
             await self._session.flush()
-            return ScrapeStatus.PENDING
 
     async def recover_all_stale(self) -> int:
         """Reset ALL IN_PROGRESS rows with this job_type unconditionally.

@@ -61,7 +61,7 @@ class TestMarkFailedRetryCeiling:
         row = _make_job(retry_count=0)
         session.get.return_value = row
 
-        repo = PlayerInfoQueueRepository(session, max_retry_count=5)
+        repo = PlayerInfoQueueRepository(session, max_queue_retries=5)
         await repo.mark_failed(row.id, "network error")
 
         assert row.status == ScrapeStatus.PENDING
@@ -75,7 +75,7 @@ class TestMarkFailedRetryCeiling:
         row = _make_job(retry_count=4)  # will become 5 → FAILED
         session.get.return_value = row
 
-        repo = PlayerInfoQueueRepository(session, max_retry_count=5)
+        repo = PlayerInfoQueueRepository(session, max_queue_retries=5)
         await repo.mark_failed(row.id, "persistent error")
 
         assert row.status == ScrapeStatus.FAILED
@@ -88,7 +88,7 @@ class TestMarkFailedRetryCeiling:
         row = _make_job(retry_count=6)
         session.get.return_value = row
 
-        repo = PlayerInfoQueueRepository(session, max_retry_count=5)
+        repo = PlayerInfoQueueRepository(session, max_queue_retries=5)
         await repo.mark_failed(row.id, "error")
 
         assert row.status == ScrapeStatus.FAILED
@@ -99,18 +99,18 @@ class TestMarkFailedRetryCeiling:
         row = _make_job(retry_count=2)
         session.get.return_value = row
 
-        repo = PlayerInfoQueueRepository(session, max_retry_count=5)
+        repo = PlayerInfoQueueRepository(session, max_queue_retries=5)
         await repo.mark_failed(row.id, "error")
 
         assert row.retry_count == 3
 
-    async def test_default_max_retry_count_is_five(self) -> None:
-        """Default max_retry_count must be 5 (ceiling at retry_count=4→5)."""
+    async def test_default_max_queue_retries_is_five(self) -> None:
+        """Default max_queue_retries must be 5 (ceiling at retry_count=4→5)."""
         session = _make_session()
         row = _make_job(retry_count=4)
         session.get.return_value = row
 
-        repo = PlayerInfoQueueRepository(session)  # no explicit max_retry_count
+        repo = PlayerInfoQueueRepository(session)  # no explicit max_queue_retries
         await repo.mark_failed(row.id, "error")
 
         assert row.status == ScrapeStatus.FAILED

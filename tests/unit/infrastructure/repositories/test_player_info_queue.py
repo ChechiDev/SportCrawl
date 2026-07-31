@@ -118,7 +118,7 @@ class TestMarkFailed:
         row.retry_count = 1
         session.get.return_value = row
 
-        repo = PlayerInfoQueueRepository(session, max_retry_count=5)
+        repo = PlayerInfoQueueRepository(session, max_queue_retries=5)
         await repo.mark_failed(job_id=row.id, error="timeout")
 
         assert row.status == ScrapeStatus.PENDING
@@ -133,7 +133,7 @@ class TestMarkFailed:
         row.retry_count = 4  # will become 5 → FAILED (ceiling=5)
         session.get.return_value = row
 
-        repo = PlayerInfoQueueRepository(session, max_retry_count=5)
+        repo = PlayerInfoQueueRepository(session, max_queue_retries=5)
         await repo.mark_failed(job_id=row.id, error="parse error")
 
         assert row.status == ScrapeStatus.FAILED
