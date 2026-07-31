@@ -109,6 +109,54 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Failure-recording helper
+# ---------------------------------------------------------------------------
+
+
+async def _record_failure_with_retry(
+    job_id: int,
+    error: str,
+    max_queue_retries: int,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    _max_attempts: int = 3,
+) -> None:
+    """Attempt record_job_failure with bounded exponential backoff.
+
+    Uses lock_timeout (set inside record_job_failure) and retries on transient
+    database errors. If all attempts are exhausted, raises RuntimeError to stop
+    the current worker — the next startup will run recover_all_stale().
+
+    Does NOT silently swallow durable failures.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(1, _max_attempts + 1):
+        try:
+            await record_job_failure(
+                job_id, error, max_queue_retries, session_factory
+            )
+            return
+        except Exception as exc:
+            last_exc = exc
+            delay = (2.0 ** (attempt - 1)) + random.uniform(0.0, 1.0)
+            logger.error(
+                "record_job_failure attempt %d/%d for job %d failed: %s;"
+                " retrying in %.1fs",
+                attempt,
+                _max_attempts,
+                job_id,
+                type(exc).__name__,
+                delay,
+            )
+            if attempt < _max_attempts:
+                await asyncio.sleep(delay)
+    raise RuntimeError(
+        f"FATAL: cannot record failure for job {job_id}"
+        f" after {_max_attempts} attempts: {last_exc}"
+    ) from last_exc
+
+
+# ---------------------------------------------------------------------------
 # Position resolver
 # ---------------------------------------------------------------------------
 
@@ -324,20 +372,12 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         self._labels[self._worker_id] = (
                             "[bold red]ERROR[/] Browser error — Restarting"
                         )
-                        try:
-                            await record_job_failure(
-                                job.id,
-                                str(exc),
-                                self._max_queue_retries,
-                                self._session_factory,
-                            )
-                        except Exception as record_err:
-                            logger.error(
-                                "record_job_failure failed for job %d: %s",
-                                job.id,
-                                record_err,
-                                exc_info=True,
-                            )
+                        await _record_failure_with_retry(
+                            job.id,
+                            str(exc),
+                            self._max_queue_retries,
+                            self._session_factory,
+                        )
                         browser_restart = True
                         break
                     is_terminal_attempt = attempt >= 3
@@ -346,20 +386,12 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
                         )
-                        try:
-                            await record_job_failure(
-                                job.id,
-                                str(exc),
-                                self._max_queue_retries,
-                                self._session_factory,
-                            )
-                        except Exception as record_err:
-                            logger.error(
-                                "record_job_failure failed for job %d: %s",
-                                job.id,
-                                record_err,
-                                exc_info=True,
-                            )
+                        await _record_failure_with_retry(
+                            job.id,
+                            str(exc),
+                            self._max_queue_retries,
+                            self._session_factory,
+                        )
                     else:
                         self._labels[self._worker_id] = (
                             f"[bold yellow]WARNING[/bold yellow]"
@@ -369,20 +401,12 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         await asyncio.sleep(random.uniform(5.0, 15.0))
                 except Exception as exc:  # noqa: BLE001
                     logger.error(exc, exc_info=True)
-                    try:
-                        await record_job_failure(
-                            job.id,
-                            str(exc),
-                            self._max_queue_retries,
-                            self._session_factory,
-                        )
-                    except Exception as record_err:
-                        logger.error(
-                            "record_job_failure failed for job %d: %s",
-                            job.id,
-                            record_err,
-                            exc_info=True,
-                        )
+                    await _record_failure_with_retry(
+                        job.id,
+                        str(exc),
+                        self._max_queue_retries,
+                        self._session_factory,
+                    )
                     success = False
                     break
 
@@ -545,7 +569,8 @@ async def _startup_drain(
                     SELECT bpu.url, 'fbref.com', 'PENDING', 'player_info', bpu.id
                     FROM sch_fbref_backend.tbl_player_urls bpu
                     LEFT JOIN sch_fbref_infra.scrape_queue sq
-                           ON sq.fk_url_registry_id = bpu.id AND sq.job_type = 'player_info'
+                           ON sq.fk_url_registry_id = bpu.id
+                          AND sq.job_type = 'player_info'
                     WHERE bpu.url_type = 'profile'
                       AND bpu.status IN ('PENDING', 'ACTIVE')
                       AND bpu.next_scrape_at <= now()

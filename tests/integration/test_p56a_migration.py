@@ -1,4 +1,7 @@
-"""Integration tests for migration p56a: fix player_url lifecycle indexes and fn_notify_all_due."""
+"""Integration tests for migration p56a.
+
+Covers: player_url lifecycle indexes and fn_notify_all_due.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -40,10 +43,14 @@ class TestP56aMigration:
                         )
                     )
                     rows = result.fetchall()
-                    assert len(rows) == 5, f"Expected 5 *_due indexes, got {len(rows)}: {[r[0] for r in rows]}"
+                    names = [r[0] for r in rows]
+                    assert len(rows) == 5, (
+                        f"Expected 5 *_due indexes, got {len(rows)}: {names}"
+                    )
                     for indexname, indexdef in rows:
                         assert "PENDING" in indexdef, (
-                            f"Index {indexname} predicate does not include PENDING: {indexdef}"
+                            f"Index {indexname} predicate does not include"
+                            f" PENDING: {indexdef}"
                         )
             finally:
                 await engine.dispose()
@@ -69,7 +76,8 @@ class TestP56aMigration:
                     row = result.one_or_none()
                     assert row is not None, "fn_notify_all_due function not found"
                     assert "PENDING" in row[0], (
-                        f"fn_notify_all_due body does not reference PENDING: {row[0][:200]}"
+                        "fn_notify_all_due body does not reference PENDING:"
+                        f" {row[0][:200]}"
                     )
             finally:
                 await engine.dispose()
@@ -94,9 +102,12 @@ class TestP56aMigration:
                         )
                     )
                     row = result.one_or_none()
-                    assert row is not None, "ix_player_urls_due not found after downgrade"
+                    assert row is not None, (
+                        "ix_player_urls_due not found after downgrade"
+                    )
                     assert "PENDING" not in row[0], (
-                        f"Expected PENDING removed after downgrade, but found it: {row[0]}"
+                        "Expected PENDING removed after downgrade,"
+                        f" but found it: {row[0]}"
                     )
             finally:
                 await engine.dispose()

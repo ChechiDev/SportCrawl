@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.application.retry_policy import is_terminal
 from core.exceptions.repository import repo_error_context
@@ -15,6 +16,10 @@ from infrastructure.persistence.repositories.scrape_queue import ScrapeQueueRepo
 from infrastructure.persistence.session import get_session
 
 logger = logging.getLogger(__name__)
+
+
+class PlayerInfoConsistencyError(RuntimeError):
+    """Raised when scrape_queue and tbl_player_urls FK relationship is broken."""
 
 
 class PlayerInfoQueueRepository(ScrapeQueueRepository):
@@ -55,7 +60,7 @@ class PlayerInfoQueueRepository(ScrapeQueueRepository):
 
 async def recover_failed_job(
     job_id: int,
-    session_factory: object,
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Atomically recover a FAILED scrape_queue row and its STALE tbl_player_urls row.
 
@@ -63,17 +68,17 @@ async def recover_failed_job(
     in their terminal states (FAILED / STALE) and share the same fk_url_registry_id.
     Resets both to PENDING in one commit.
 
+    Lock order (must be consistent with record_job_failure to prevent deadlocks):
+        1. scrape_queue row (blocking FOR UPDATE)
+        2. tbl_player_urls row (blocking FOR UPDATE)
+
     Raises:
         ValueError: if the job is missing, wrong type, wrong state, or the URL
                     registry row is missing, wrong state, or the IDs do not match.
     """
-    from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import AsyncSession as _AS
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-
-    sf: async_sessionmaker[_AS] = session_factory  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
-
-    async with get_session(sf) as session:
+    async with get_session(session_factory) as session:
+        # SET lock timeout before any lock acquisition
+        await session.execute(text("SET LOCAL lock_timeout = '5s'"))
         # Lock queue row
         queue_row = await session.get(ScrapeQueue, job_id, with_for_update=True)
         if queue_row is None:
@@ -127,7 +132,7 @@ async def record_job_failure(
     job_id: int,
     error: str,
     max_retries: int,
-    session_factory: object,
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Coordinated failure: lock both rows, derive terminal once, apply consistently.
 
@@ -135,19 +140,22 @@ async def record_job_failure(
     FOR UPDATE (blocking). Reads the queue retry_count, computes one terminal
     decision, and applies a consistent result to both rows in one commit.
 
+    Queue retry_count is the single authority. Both rows are assigned
+    new_retry = queue.retry_count + 1.
+
     Terminal pair:   scrape_queue=FAILED,  tbl_player_urls=STALE
     Retryable pair:  scrape_queue=PENDING, tbl_player_urls counters advance
 
     If the queue row does not exist, logs a warning and returns. Uses blocking
     FOR UPDATE so failure recording always succeeds when the row is present.
+
+    Lock order (must be consistent with recover_failed_job to prevent deadlocks):
+        1. scrape_queue row (blocking FOR UPDATE)
+        2. tbl_player_urls row (blocking FOR UPDATE)
     """
-    from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import AsyncSession as _AS
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-
-    sf: async_sessionmaker[_AS] = session_factory  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
-
-    async with get_session(sf) as session:
+    async with get_session(session_factory) as session:
+        # SET lock timeout before any lock acquisition
+        await session.execute(text("SET LOCAL lock_timeout = '5s'"))
         queue_row = await session.get(
             ScrapeQueue, job_id, with_for_update=True
         )
@@ -156,7 +164,8 @@ async def record_job_failure(
             return
         if queue_row.job_type != "player_info":
             logger.error(
-                "record_job_failure: job %d has job_type=%r, expected 'player_info'",
+                "record_job_failure: job %d has job_type=%r,"
+                " expected 'player_info'",
                 job_id,
                 queue_row.job_type,
             )
@@ -173,8 +182,16 @@ async def record_job_failure(
                 {"url_id": queue_row.fk_url_registry_id},
             )
             url_row = result.one_or_none()
+            if url_row is None:
+                raise PlayerInfoConsistencyError(
+                    f"record_job_failure: job {job_id} has"
+                    f" fk_url_registry_id={queue_row.fk_url_registry_id}"
+                    " but the referenced tbl_player_urls row does not exist."
+                    " Transaction rolled back; queue row unchanged."
+                )
 
         # Derive ONE terminal decision from the queue retry_count
+        # Queue retry_count is the single authority for both rows.
         new_retry = queue_row.retry_count + 1
         terminal = new_retry >= max_retries
 
@@ -188,32 +205,32 @@ async def record_job_failure(
         else:
             queue_row.status = ScrapeStatus.PENDING
 
-        # Apply consistently to URL row
+        # Apply consistently to URL row using new_retry as single authority
         if url_row is not None:
             if terminal:
                 await session.execute(
                     text(
                         "UPDATE sch_fbref_backend.tbl_player_urls"
                         " SET status = 'STALE',"
-                        "     retry_count = retry_count + 1,"
+                        "     retry_count = :new_retry,"
                         "     last_error = :error,"
                         "     last_scrape_status = 'FAILURE',"
                         "     updated_at = now()"
                         " WHERE id = :url_id"
                     ),
-                    {"url_id": url_row.id, "error": error},
+                    {"url_id": url_row.id, "error": error, "new_retry": new_retry},
                 )
             else:
                 await session.execute(
                     text(
                         "UPDATE sch_fbref_backend.tbl_player_urls"
-                        " SET retry_count = retry_count + 1,"
+                        " SET retry_count = :new_retry,"
                         "     last_error = :error,"
                         "     last_scrape_status = 'FAILURE',"
                         "     updated_at = now()"
                         " WHERE id = :url_id"
                     ),
-                    {"url_id": url_row.id, "error": error},
+                    {"url_id": url_row.id, "error": error, "new_retry": new_retry},
                 )
 
         await session.commit()

@@ -3,12 +3,17 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from sqlalchemy import text as _text
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from infrastructure.persistence.repositories.player_info_queue import record_job_failure
+from infrastructure.persistence.repositories.player_info_queue import (
+    PlayerInfoConsistencyError,
+    record_job_failure,
+)
 from scripts.scrape_player_info import _startup_drain
 
 
@@ -32,12 +37,20 @@ async def _insert_player(session, player_id: str) -> None:
     await session.flush()
 
 
-async def _insert_player_url(session, *, fk_player: str, url: str, status: str = "PENDING", priority: int = 5) -> int:
+async def _insert_player_url(
+    session,
+    *,
+    fk_player: str,
+    url: str,
+    status: str = "PENDING",
+    priority: int = 5,
+) -> int:
     result = await session.execute(
         text(
             "INSERT INTO sch_fbref_backend.tbl_player_urls"
             " (fk_player, url_type, url, status, next_scrape_at, priority)"
-            " VALUES (:fk_player, 'profile', :url, :status, now() - interval '1 hour', :priority)"
+            " VALUES (:fk_player, 'profile', :url, :status,"
+            "         now() - interval '1 hour', :priority)"
             " RETURNING id"
         ),
         {"fk_player": fk_player, "url": url, "status": status, "priority": priority},
@@ -47,7 +60,9 @@ async def _insert_player_url(session, *, fk_player: str, url: str, status: str =
     return row[0]
 
 
-async def _insert_queue_row(session, *, url: str, status: str, fk_url_registry_id=None) -> int:
+async def _insert_queue_row(
+    session, *, url: str, status: str, fk_url_registry_id=None
+) -> int:
     result = await session.execute(
         text(
             "INSERT INTO sch_fbref_infra.scrape_queue"
@@ -64,7 +79,10 @@ async def _insert_queue_row(session, *, url: str, status: str, fk_url_registry_i
 
 async def _count_queue_rows(sf, *, url=None, status=None) -> int:
     async with sf() as s:
-        q = "SELECT COUNT(*) FROM sch_fbref_infra.scrape_queue WHERE job_type = 'player_info'"
+        q = (
+            "SELECT COUNT(*) FROM sch_fbref_infra.scrape_queue"
+            " WHERE job_type = 'player_info'"
+        )
         params: dict = {}
         if url is not None:
             q += " AND url = :url"
@@ -103,7 +121,9 @@ async def test_existing_pending_queue_not_reactivated(async_session, session_fac
     url = f"https://fbref.com/en/players/{player_id}/player"
     await _insert_player(async_session, player_id)
     url_id = await _insert_player_url(async_session, fk_player=player_id, url=url)
-    await _insert_queue_row(async_session, url=url, status="PENDING", fk_url_registry_id=url_id)
+    await _insert_queue_row(
+        async_session, url=url, status="PENDING", fk_url_registry_id=url_id
+    )
     await async_session.commit()
 
     count = await _startup_drain(session_factory, batch_size=100)
@@ -118,7 +138,9 @@ async def test_existing_in_progress_not_modified(async_session, session_factory)
     url = f"https://fbref.com/en/players/{player_id}/player"
     await _insert_player(async_session, player_id)
     url_id = await _insert_player_url(async_session, fk_player=player_id, url=url)
-    await _insert_queue_row(async_session, url=url, status="IN_PROGRESS", fk_url_registry_id=url_id)
+    await _insert_queue_row(
+        async_session, url=url, status="IN_PROGRESS", fk_url_registry_id=url_id
+    )
     await async_session.commit()
 
     count = await _startup_drain(session_factory, batch_size=100)
@@ -133,7 +155,9 @@ async def test_existing_done_reactivated_exactly_once(async_session, session_fac
     url = f"https://fbref.com/en/players/{player_id}/player"
     await _insert_player(async_session, player_id)
     url_id = await _insert_player_url(async_session, fk_player=player_id, url=url)
-    await _insert_queue_row(async_session, url=url, status="DONE", fk_url_registry_id=url_id)
+    await _insert_queue_row(
+        async_session, url=url, status="DONE", fk_url_registry_id=url_id
+    )
     await async_session.commit()
 
     count = await _startup_drain(session_factory, batch_size=100)
@@ -148,7 +172,9 @@ async def test_existing_failed_not_modified(async_session, session_factory):
     url = f"https://fbref.com/en/players/{player_id}/player"
     await _insert_player(async_session, player_id)
     url_id = await _insert_player_url(async_session, fk_player=player_id, url=url)
-    await _insert_queue_row(async_session, url=url, status="FAILED", fk_url_registry_id=url_id)
+    await _insert_queue_row(
+        async_session, url=url, status="FAILED", fk_url_registry_id=url_id
+    )
     await async_session.commit()
 
     count = await _startup_drain(session_factory, batch_size=100)
@@ -202,7 +228,9 @@ async def test_ordering_by_priority(async_session, session_factory):
         pid = f"{base}_{i}"
         url = f"https://fbref.com/en/players/{pid}/player"
         await _insert_player(async_session, pid)
-        await _insert_player_url(async_session, fk_player=pid, url=url, priority=priority)
+        await _insert_player_url(
+            async_session, fk_player=pid, url=url, priority=priority
+        )
         urls.append((priority, url))
     await async_session.commit()
 
@@ -215,7 +243,8 @@ async def test_ordering_by_priority(async_session, session_factory):
         result = await s.execute(
             text(
                 "SELECT sq.url FROM sch_fbref_infra.scrape_queue sq"
-                " JOIN sch_fbref_backend.tbl_player_urls bpu ON sq.fk_url_registry_id = bpu.id"
+                " JOIN sch_fbref_backend.tbl_player_urls bpu"
+                "   ON sq.fk_url_registry_id = bpu.id"
                 " WHERE sq.job_type = 'player_info' AND sq.status = 'PENDING'"
                 " ORDER BY bpu.priority ASC LIMIT 1"
             )
@@ -235,8 +264,9 @@ async def test_concurrent_drains_no_duplicates(async_session, session_factory):
     await async_session.commit()
 
     # asyncio.gather interleaves both drains in one event loop. PostgreSQL
-    # serializes concurrent inserts via row-level locking on uq_scrape_queue_url_job_type.
-    # The second drain's INSERT hits ON CONFLICT WHERE status='DONE' — the rows are
+    # serializes concurrent inserts via row-level locking on
+    # uq_scrape_queue_url_job_type.
+    # The second drain's INSERT hits ON CONFLICT WHERE status='DONE' — rows are
     # PENDING (not DONE), so DO UPDATE condition is false → DO NOTHING → RETURNING 0.
     # Result is always 5+0=5, not 5+5=10. This is deterministic, not a race.
     results = await asyncio.gather(
@@ -250,7 +280,9 @@ async def test_concurrent_drains_no_duplicates(async_session, session_factory):
 async def test_legacy_null_fk_does_not_block_due_url(async_session, session_factory):
     # url_A has a queue row with NULL fk — legacy row
     url_a = "https://fbref.com/en/players/legacy_null_fk_pA/player"
-    await _insert_queue_row(async_session, url=url_a, status="PENDING", fk_url_registry_id=None)
+    await _insert_queue_row(
+        async_session, url=url_a, status="PENDING", fk_url_registry_id=None
+    )
 
     # url_B is a new due player_url row
     pid_b = "test_legacy_null_fk_pB"
@@ -271,25 +303,33 @@ async def test_legacy_null_fk_does_not_block_due_url(async_session, session_fact
 
 
 async def test_retryable_transition(async_session, session_factory):
-    from sqlalchemy import text as _text
-
     player_id = "test_retryable_p10"
     url = f"https://fbref.com/en/players/{player_id}/player"
     await _insert_player(async_session, player_id)
     url_id = await _insert_player_url(async_session, fk_player=player_id, url=url)
-    queue_id = await _insert_queue_row(async_session, url=url, status="IN_PROGRESS", fk_url_registry_id=url_id)
+    queue_id = await _insert_queue_row(
+        async_session, url=url, status="IN_PROGRESS", fk_url_registry_id=url_id
+    )
     # set retry_count=0 explicitly
     await async_session.execute(
-        _text("UPDATE sch_fbref_infra.scrape_queue SET retry_count=0, locked_at=now() WHERE id=:id"),
+        _text(
+            "UPDATE sch_fbref_infra.scrape_queue"
+            " SET retry_count=0, locked_at=now() WHERE id=:id"
+        ),
         {"id": queue_id},
     )
     await async_session.commit()
 
-    await record_job_failure(queue_id, "test error", max_retries=5, session_factory=session_factory)
+    await record_job_failure(
+        queue_id, "test error", max_retries=5, session_factory=session_factory
+    )
 
     async with session_factory() as s:
         result = await s.execute(
-            _text("SELECT status, retry_count FROM sch_fbref_infra.scrape_queue WHERE id=:id"),
+            _text(
+                "SELECT status, retry_count"
+                " FROM sch_fbref_infra.scrape_queue WHERE id=:id"
+            ),
             {"id": queue_id},
         )
         row = result.one()
@@ -297,7 +337,10 @@ async def test_retryable_transition(async_session, session_factory):
         assert row[1] == 1
 
         result2 = await s.execute(
-            _text("SELECT retry_count FROM sch_fbref_backend.tbl_player_urls WHERE id=:id"),
+            _text(
+                "SELECT retry_count"
+                " FROM sch_fbref_backend.tbl_player_urls WHERE id=:id"
+            ),
             {"id": url_id},
         )
         url_row = result2.one()
@@ -305,25 +348,33 @@ async def test_retryable_transition(async_session, session_factory):
 
 
 async def test_terminal_transition(async_session, session_factory):
-    from sqlalchemy import text as _text
-
     player_id = "test_terminal_p11"
     url = f"https://fbref.com/en/players/{player_id}/player"
     await _insert_player(async_session, player_id)
     url_id = await _insert_player_url(async_session, fk_player=player_id, url=url)
-    queue_id = await _insert_queue_row(async_session, url=url, status="IN_PROGRESS", fk_url_registry_id=url_id)
+    queue_id = await _insert_queue_row(
+        async_session, url=url, status="IN_PROGRESS", fk_url_registry_id=url_id
+    )
     # set retry_count=4 so next failure (5) hits ceiling=5
     await async_session.execute(
-        _text("UPDATE sch_fbref_infra.scrape_queue SET retry_count=4, locked_at=now() WHERE id=:id"),
+        _text(
+            "UPDATE sch_fbref_infra.scrape_queue"
+            " SET retry_count=4, locked_at=now() WHERE id=:id"
+        ),
         {"id": queue_id},
     )
     await async_session.commit()
 
-    await record_job_failure(queue_id, "fatal error", max_retries=5, session_factory=session_factory)
+    await record_job_failure(
+        queue_id, "fatal error", max_retries=5, session_factory=session_factory
+    )
 
     async with session_factory() as s:
         result = await s.execute(
-            _text("SELECT status, retry_count FROM sch_fbref_infra.scrape_queue WHERE id=:id"),
+            _text(
+                "SELECT status, retry_count"
+                " FROM sch_fbref_infra.scrape_queue WHERE id=:id"
+            ),
             {"id": queue_id},
         )
         row = result.one()
@@ -331,8 +382,176 @@ async def test_terminal_transition(async_session, session_factory):
         assert row[1] == 5
 
         result2 = await s.execute(
-            _text("SELECT status FROM sch_fbref_backend.tbl_player_urls WHERE id=:id"),
+            _text(
+                "SELECT status FROM sch_fbref_backend.tbl_player_urls WHERE id=:id"
+            ),
             {"id": url_id},
         )
         url_row = result2.one()
         assert url_row[0] == "STALE"
+
+
+async def test_url_row_missing_raises_consistency_error(
+    async_session, session_factory
+):
+    """record_job_failure raises PlayerInfoConsistencyError when FK non-null
+    but URL row does not exist. Queue row must remain unchanged."""
+    player_id = "test_consistency_err_p1"
+    url = f"https://fbref.com/en/players/{player_id}/player"
+    # Insert a scrape_queue row with a fake fk_url_registry_id pointing nowhere
+    await async_session.execute(
+        _text(
+            "INSERT INTO sch_fbref_infra.scrape_queue"
+            " (url, domain, status, job_type, fk_url_registry_id,"
+            "  retry_count, locked_at)"
+            " VALUES (:url, 'fbref.com', 'IN_PROGRESS', 'player_info',"
+            "  999999, 0, now())"
+        ),
+        {"url": url},
+    )
+    await async_session.commit()
+
+    result = await async_session.execute(
+        _text(
+            "SELECT id, retry_count, status FROM sch_fbref_infra.scrape_queue"
+            " WHERE url = :url AND job_type = 'player_info'"
+        ),
+        {"url": url},
+    )
+    queue_row = result.one()
+    queue_id = queue_row.id
+    original_status = queue_row.status
+    original_retry = queue_row.retry_count
+
+    with pytest.raises(PlayerInfoConsistencyError):
+        await record_job_failure(
+            queue_id, "test error", max_retries=5,
+            session_factory=session_factory,
+        )
+
+    # Verify queue row is unchanged (no partial commit)
+    async with session_factory() as s:
+        result2 = await s.execute(
+            _text(
+                "SELECT status, retry_count FROM sch_fbref_infra.scrape_queue"
+                " WHERE id = :id"
+            ),
+            {"id": queue_id},
+        )
+        row = result2.one()
+        assert row.status == original_status
+        assert row.retry_count == original_retry
+
+
+async def test_retry_counters_reconciled_retryable(async_session, session_factory):
+    """Both retry_count fields equal new_retry after a retryable transition."""
+    player_id = "test_counters_ret_p1"
+    url = f"https://fbref.com/en/players/{player_id}/player"
+    await _insert_player(async_session, player_id)
+    url_id = await _insert_player_url(
+        async_session, fk_player=player_id, url=url,
+    )
+    queue_id = await _insert_queue_row(
+        async_session, url=url, status="IN_PROGRESS",
+        fk_url_registry_id=url_id,
+    )
+    # Set both counters to the same starting value
+    await async_session.execute(
+        _text(
+            "UPDATE sch_fbref_infra.scrape_queue"
+            " SET retry_count=2, locked_at=now() WHERE id=:id"
+        ),
+        {"id": queue_id},
+    )
+    await async_session.execute(
+        _text(
+            "UPDATE sch_fbref_backend.tbl_player_urls"
+            " SET retry_count=2 WHERE id=:id"
+        ),
+        {"id": url_id},
+    )
+    await async_session.commit()
+
+    await record_job_failure(
+        queue_id, "err", max_retries=5, session_factory=session_factory,
+    )
+
+    async with session_factory() as s:
+        qr = (
+            await s.execute(
+                _text(
+                    "SELECT status, retry_count"
+                    " FROM sch_fbref_infra.scrape_queue WHERE id=:id"
+                ),
+                {"id": queue_id},
+            )
+        ).one()
+        ur = (
+            await s.execute(
+                _text(
+                    "SELECT retry_count"
+                    " FROM sch_fbref_backend.tbl_player_urls WHERE id=:id"
+                ),
+                {"id": url_id},
+            )
+        ).one()
+        assert qr.status == "PENDING"
+        assert qr.retry_count == 3
+        assert ur.retry_count == 3  # must match queue, not independently incremented
+
+
+async def test_retry_counters_reconciled_terminal(async_session, session_factory):
+    """Both retry_count fields equal new_retry after a terminal transition."""
+    player_id = "test_counters_term_p1"
+    url = f"https://fbref.com/en/players/{player_id}/player"
+    await _insert_player(async_session, player_id)
+    url_id = await _insert_player_url(
+        async_session, fk_player=player_id, url=url,
+    )
+    queue_id = await _insert_queue_row(
+        async_session, url=url, status="IN_PROGRESS",
+        fk_url_registry_id=url_id,
+    )
+    await async_session.execute(
+        _text(
+            "UPDATE sch_fbref_infra.scrape_queue"
+            " SET retry_count=4, locked_at=now() WHERE id=:id"
+        ),
+        {"id": queue_id},
+    )
+    await async_session.execute(
+        _text(
+            "UPDATE sch_fbref_backend.tbl_player_urls"
+            " SET retry_count=4 WHERE id=:id"
+        ),
+        {"id": url_id},
+    )
+    await async_session.commit()
+
+    await record_job_failure(
+        queue_id, "fatal", max_retries=5, session_factory=session_factory,
+    )
+
+    async with session_factory() as s:
+        qr = (
+            await s.execute(
+                _text(
+                    "SELECT status, retry_count"
+                    " FROM sch_fbref_infra.scrape_queue WHERE id=:id"
+                ),
+                {"id": queue_id},
+            )
+        ).one()
+        ur = (
+            await s.execute(
+                _text(
+                    "SELECT status, retry_count"
+                    " FROM sch_fbref_backend.tbl_player_urls WHERE id=:id"
+                ),
+                {"id": url_id},
+            )
+        ).one()
+        assert qr.status == "FAILED"
+        assert qr.retry_count == 5
+        assert ur.status == "STALE"
+        assert ur.retry_count == 5  # must match queue

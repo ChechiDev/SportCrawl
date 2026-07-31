@@ -238,7 +238,7 @@ class TestRecoverFailedJob:
                 await recover_failed_job(1, factory)
 
     async def test_happy_path_resets_both_rows_to_pending(self) -> None:
-        """recover_failed_job must reset queue row and url row to PENDING in one commit."""
+        """recover_failed_job must reset queue row and url row to PENDING."""
         session = _make_session()
         queue_row = _make_job(
             job_id=1,
@@ -274,3 +274,52 @@ class TestRecoverFailedJob:
         assert queue_row.error_message is None
         assert queue_row.locked_at is None
         session.commit.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _record_failure_with_retry helper tests
+# ---------------------------------------------------------------------------
+
+
+async def test_record_failure_with_retry_succeeds_on_second_attempt() -> None:
+    """_record_failure_with_retry retries after a transient error and records once."""
+    from unittest.mock import MagicMock, patch
+
+    call_count = 0
+
+    async def _flaky_record(*args, **kwargs) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise OSError("transient db error")
+
+    with patch(
+        "scripts.scrape_player_info.record_job_failure",
+        side_effect=_flaky_record,
+    ):
+        from scripts.scrape_player_info import _record_failure_with_retry
+
+        await _record_failure_with_retry(
+            42, "err", 5, MagicMock(), _max_attempts=3
+        )
+
+    assert call_count == 2
+
+
+async def test_record_failure_with_retry_raises_after_exhaustion() -> None:
+    """_record_failure_with_retry raises RuntimeError after all attempts fail."""
+    from unittest.mock import MagicMock, patch
+
+    async def _always_fail(*args, **kwargs) -> None:
+        raise OSError("persistent db error")
+
+    with patch(
+        "scripts.scrape_player_info.record_job_failure",
+        side_effect=_always_fail,
+    ):
+        from scripts.scrape_player_info import _record_failure_with_retry
+
+        with pytest.raises(RuntimeError, match="FATAL"):
+            await _record_failure_with_retry(
+                42, "err", 5, MagicMock(), _max_attempts=3
+            )
