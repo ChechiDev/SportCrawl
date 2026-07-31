@@ -234,6 +234,11 @@ async def test_concurrent_drains_no_duplicates(async_session, session_factory):
         await _insert_player_url(async_session, fk_player=pid, url=url)
     await async_session.commit()
 
+    # asyncio.gather interleaves both drains in one event loop. PostgreSQL
+    # serializes concurrent inserts via row-level locking on uq_scrape_queue_url_job_type.
+    # The second drain's INSERT hits ON CONFLICT WHERE status='DONE' — the rows are
+    # PENDING (not DONE), so DO UPDATE condition is false → DO NOTHING → RETURNING 0.
+    # Result is always 5+0=5, not 5+5=10. This is deterministic, not a race.
     results = await asyncio.gather(
         _startup_drain(session_factory, batch_size=5),
         _startup_drain(session_factory, batch_size=5),

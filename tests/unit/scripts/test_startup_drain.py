@@ -10,40 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from scripts.scrape_player_info import _startup_drain
 
 
-def _make_session_factory(execute_results: list[list[int]]) -> MagicMock:
-    """Return a session factory that yields execute results in order.
-
-    Each element of execute_results is a list of fake row IDs returned
-    by RETURNING scrape_queue.id in a single batch call.
-    """
-    call_index = 0
-
-    async def _execute(_stmt: object, _params: dict[str, int]) -> MagicMock:
-        nonlocal call_index
-        result = MagicMock()
-        rows = execute_results[call_index] if call_index < len(execute_results) else []
-        result.fetchall.return_value = rows
-        call_index += 1
-        return result
-
-    session = AsyncMock()
-    session.execute.side_effect = _execute
-    session.commit = AsyncMock()
-
-    cm = MagicMock()
-    cm.__aenter__ = AsyncMock(return_value=session)
-    cm.__aexit__ = AsyncMock(return_value=False)
-
-    factory = MagicMock()
-    factory.return_value = cm
-    return factory
-
-
 class TestStartupDrainTermination:
     async def test_terminates_immediately_when_no_due_rows(self) -> None:
         """_startup_drain must return 0 and stop after first empty batch."""
-        factory = _make_session_factory([[]])  # first call returns 0 rows
-
         with patch("scripts.scrape_player_info.get_session") as mock_gs:
             session = AsyncMock()
             result = MagicMock()
@@ -55,7 +24,7 @@ class TestStartupDrainTermination:
                 __aexit__=AsyncMock(return_value=False),
             )
 
-            total = await _startup_drain(factory, batch_size=200)
+            total = await _startup_drain(MagicMock(), batch_size=200)
 
         assert total == 0
 

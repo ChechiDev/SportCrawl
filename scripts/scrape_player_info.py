@@ -324,12 +324,20 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         self._labels[self._worker_id] = (
                             "[bold red]ERROR[/] Browser error — Restarting"
                         )
-                        await record_job_failure(
-                            job.id,
-                            str(exc),
-                            self._max_queue_retries,
-                            self._session_factory,
-                        )
+                        try:
+                            await record_job_failure(
+                                job.id,
+                                str(exc),
+                                self._max_queue_retries,
+                                self._session_factory,
+                            )
+                        except Exception as record_err:
+                            logger.error(
+                                "record_job_failure failed for job %d: %s",
+                                job.id,
+                                record_err,
+                                exc_info=True,
+                            )
                         browser_restart = True
                         break
                     is_terminal_attempt = attempt >= 3
@@ -338,12 +346,20 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
                         )
-                        await record_job_failure(
-                            job.id,
-                            str(exc),
-                            self._max_queue_retries,
-                            self._session_factory,
-                        )
+                        try:
+                            await record_job_failure(
+                                job.id,
+                                str(exc),
+                                self._max_queue_retries,
+                                self._session_factory,
+                            )
+                        except Exception as record_err:
+                            logger.error(
+                                "record_job_failure failed for job %d: %s",
+                                job.id,
+                                record_err,
+                                exc_info=True,
+                            )
                     else:
                         self._labels[self._worker_id] = (
                             f"[bold yellow]WARNING[/bold yellow]"
@@ -353,12 +369,20 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         await asyncio.sleep(random.uniform(5.0, 15.0))
                 except Exception as exc:  # noqa: BLE001
                     logger.error(exc, exc_info=True)
-                    await record_job_failure(
-                        job.id,
-                        str(exc),
-                        self._max_queue_retries,
-                        self._session_factory,
-                    )
+                    try:
+                        await record_job_failure(
+                            job.id,
+                            str(exc),
+                            self._max_queue_retries,
+                            self._session_factory,
+                        )
+                    except Exception as record_err:
+                        logger.error(
+                            "record_job_failure failed for job %d: %s",
+                            job.id,
+                            record_err,
+                            exc_info=True,
+                        )
                     success = False
                     break
 

@@ -71,7 +71,7 @@ async def recover_failed_job(
     from sqlalchemy.ext.asyncio import AsyncSession as _AS
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    sf: async_sessionmaker[_AS] = session_factory  # type: ignore[assignment]
+    sf: async_sessionmaker[_AS] = session_factory  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
     async with get_session(sf) as session:
         # Lock queue row
@@ -131,28 +131,28 @@ async def record_job_failure(
 ) -> None:
     """Coordinated failure: lock both rows, derive terminal once, apply consistently.
 
-    Locks the scrape_queue row and its associated tbl_player_urls row (FOR UPDATE
-    SKIP LOCKED). Reads the queue retry_count, computes one terminal decision, and
-    applies a consistent result to both rows in one commit.
+    Locks the scrape_queue row and its associated tbl_player_urls row with plain
+    FOR UPDATE (blocking). Reads the queue retry_count, computes one terminal
+    decision, and applies a consistent result to both rows in one commit.
 
     Terminal pair:   scrape_queue=FAILED,  tbl_player_urls=STALE
-    Retryable pair:  scrape_queue=PENDING, tbl_player_urls unchanged, counters advance
+    Retryable pair:  scrape_queue=PENDING, tbl_player_urls counters advance
 
-    If the job cannot be found or locked, the error is logged and the function
-    returns without raising (fail-safe: the worker moves on to the next job).
+    If the queue row does not exist, logs a warning and returns. Uses blocking
+    FOR UPDATE so failure recording always succeeds when the row is present.
     """
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import AsyncSession as _AS
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    sf: async_sessionmaker[_AS] = session_factory  # type: ignore[assignment]
+    sf: async_sessionmaker[_AS] = session_factory  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
     async with get_session(sf) as session:
         queue_row = await session.get(
-            ScrapeQueue, job_id, with_for_update={"skip_locked": True}
+            ScrapeQueue, job_id, with_for_update=True
         )
         if queue_row is None:
-            logger.warning("record_job_failure: job %d not found or locked", job_id)
+            logger.warning("record_job_failure: job %d not found", job_id)
             return
         if queue_row.job_type != "player_info":
             logger.error(
@@ -168,7 +168,7 @@ async def record_job_failure(
                 text(
                     "SELECT id, retry_count, status"
                     " FROM sch_fbref_backend.tbl_player_urls"
-                    " WHERE id = :url_id FOR UPDATE SKIP LOCKED"
+                    " WHERE id = :url_id FOR UPDATE"
                 ),
                 {"url_id": queue_row.fk_url_registry_id},
             )
