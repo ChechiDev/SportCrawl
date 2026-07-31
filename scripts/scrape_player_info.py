@@ -33,6 +33,7 @@ from infrastructure.display.worker_display import build_worker_table, run_displa
 from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
 from infrastructure.persistence.repositories.player_info_queue import (
+    PlayerInfoConsistencyError,
     PlayerInfoQueueRepository,
     record_job_failure,
 )
@@ -136,6 +137,8 @@ async def _record_failure_with_retry(
                 job_id, error, max_queue_retries, session_factory
             )
             return
+        except PlayerInfoConsistencyError:
+            raise
         except Exception as exc:
             last_exc = exc
             delay = (2.0 ** (attempt - 1)) + random.uniform(0.0, 1.0)

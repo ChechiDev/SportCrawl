@@ -5,6 +5,7 @@ because they were inserted before the FK column was added. This migration popula
 the FK by matching on URL, skipping IN_PROGRESS and FAILED rows.
 """
 
+import sqlalchemy as sa
 from alembic import op
 
 revision = "p57a"
@@ -15,15 +16,15 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute(
-        """
-        UPDATE sch_fbref_infra.scrape_queue sq
-        SET fk_url_registry_id = bpu.id
-        FROM sch_fbref_backend.tbl_player_urls bpu
-        WHERE sq.job_type = 'player_info'
-          AND sq.fk_url_registry_id IS NULL
-          AND sq.url = bpu.url
-          AND sq.status NOT IN ('IN_PROGRESS', 'FAILED')
-        """
+        sa.text(
+            "UPDATE sch_fbref_infra.scrape_queue sq"
+            " SET fk_url_registry_id = bpu.id"
+            " FROM sch_fbref_backend.tbl_player_urls bpu"
+            " WHERE sq.job_type = 'player_info'"
+            "   AND sq.fk_url_registry_id IS NULL"
+            "   AND sq.url = bpu.url"
+            "   AND sq.status NOT IN ('IN_PROGRESS', 'FAILED')"
+        )
     )
 
 

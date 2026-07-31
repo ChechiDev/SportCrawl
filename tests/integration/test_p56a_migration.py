@@ -24,7 +24,7 @@ def _alembic_cfg(db_url) -> Config:
 
 
 async def _run_alembic(fn, cfg, revision: str) -> None:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, fn, cfg, revision)
 
 
