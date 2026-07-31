@@ -31,6 +31,9 @@ async def _run_alembic(fn, cfg, revision: str) -> None:
 class TestP56aMigration:
     async def test_upgrade_creates_pending_predicates(self, _integration_db_url):
         cfg = _alembic_cfg(_integration_db_url)
+        # Guard: ensure we are above p55a before downgrading (prior tests may have
+        # left the DB at an older revision, making the downgrade target invalid).
+        await _run_alembic(command.upgrade, cfg, "head")
         # downgrade to p55a first
         await _run_alembic(command.downgrade, cfg, "p55a")
         try:
@@ -65,6 +68,7 @@ class TestP56aMigration:
 
     async def test_fn_notify_all_due_updated(self, _integration_db_url):
         cfg = _alembic_cfg(_integration_db_url)
+        await _run_alembic(command.upgrade, cfg, "head")
         await _run_alembic(command.downgrade, cfg, "p55a")
         try:
             await _run_alembic(command.upgrade, cfg, "p56a")
@@ -121,6 +125,7 @@ class TestP56aMigration:
 
     async def test_upgrade_again_succeeds(self, _integration_db_url):
         cfg = _alembic_cfg(_integration_db_url)
+        await _run_alembic(command.upgrade, cfg, "head")
         await _run_alembic(command.downgrade, cfg, "p55a")
         try:
             await _run_alembic(command.upgrade, cfg, "p56a")
