@@ -459,7 +459,9 @@ def _player_id_from_url(url: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _verify_schema(session_factory: object) -> None:
+async def _verify_schema(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Verify the database schema is compatible with this scraper version.
 
     Checks Alembic revision, required columns, partial index predicate,
@@ -469,11 +471,8 @@ async def _verify_schema(session_factory: object) -> None:
         RuntimeError: with an actionable message if any check fails.
     """
     import sqlalchemy as _sa
-    from sqlalchemy.ext.asyncio import AsyncSession as _AS
 
-    sf: async_sessionmaker[_AS] = session_factory  # type: ignore[assignment]
-
-    async with get_session(sf) as session:
+    async with get_session(session_factory) as session:
         # 1. Alembic revision — must be p56a or p57a
         try:
             result = await session.execute(

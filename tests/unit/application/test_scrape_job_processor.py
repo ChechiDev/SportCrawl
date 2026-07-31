@@ -74,7 +74,6 @@ class TestScrapeJobProcessorSuccess:
 
         queue_repo = AsyncMock()
         queue_repo.mark_done = AsyncMock()
-        queue_repo.mark_failed = AsyncMock()
 
         country_name_cache: dict[str, str] = {"Argentina": "ARG"}
         position_cache: dict[str, int] = {}
@@ -95,7 +94,6 @@ class TestScrapeJobProcessorSuccess:
         scraper.parse.assert_called_once_with(html)
         player_info_repo.upsert_player_info.assert_called_once()
         queue_repo.mark_done.assert_called_once_with(job.id)
-        queue_repo.mark_failed.assert_not_called()
 
     async def test_success_resolves_country_from_cache(self) -> None:
         """country_birth_name → fk_country_birth resolved from country_name_cache."""

@@ -13,7 +13,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 
 def _alembic_cfg(db_url) -> Config:
-    cfg = Config("/home/chechidev/dev/sportcrawl/alembic.ini")
+    import os
+
+    ini_path = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "alembic.ini")
+    )
+    cfg = Config(ini_path)
     cfg.attributes["inject_url"] = db_url
     return cfg
 
