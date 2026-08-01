@@ -530,7 +530,9 @@ class TestPydollEngineWarmup:
             await engine.warmup("https://fbref.com")
 
         engine.navigate.assert_awaited_once_with("https://fbref.com")
-        engine._wait_for_challenge.assert_awaited_once_with(engine._tab, "https://fbref.com")
+        engine._wait_for_challenge.assert_awaited_once_with(
+            engine._tab, "https://fbref.com"
+        )
         assert engine._browser is not None
 
     async def test_warmup_calls_navigate(self) -> None:
