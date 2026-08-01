@@ -111,7 +111,8 @@ class PlayerDiscoveryRepository:
                                 """
                                 INSERT INTO sch_fbref_backend.tbl_player_urls
                                     (fk_player, url_type, url, cadence_hours, priority,
-                                     status, next_scrape_at, created_at, updated_at, retry_count)
+                                     status, next_scrape_at,
+                                     created_at, updated_at, retry_count)
                                 SELECT
                                     v.fk_player,
                                     'profile',
@@ -134,7 +135,8 @@ class PlayerDiscoveryRepository:
                         )
                 except Exception:
                     logger.warning(
-                        "Backend co-insert failed for player chunk (country=%s); skipping",
+                        "Backend co-insert failed for player chunk"
+                        " (country=%s); skipping",
                         country_id,
                         exc_info=True,
                     )

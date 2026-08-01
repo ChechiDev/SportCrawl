@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,7 +114,8 @@ class CompetitionsRepository:
                                 """
                                 INSERT INTO sch_fbref_backend.tbl_competition_urls
                                     (fk_comp, url_type, url, cadence_hours, priority,
-                                     status, next_scrape_at, created_at, updated_at, retry_count)
+                                     status, next_scrape_at,
+                                     created_at, updated_at, retry_count)
                                 VALUES (:comp_id, 'index', :url, 720, 3,
                                         'PENDING', now(), now(), now(), 0)
                                 ON CONFLICT (fk_comp, url_type) DO NOTHING

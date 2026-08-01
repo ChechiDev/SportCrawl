@@ -44,7 +44,7 @@ class CadenceScheduler:
                     self._stop_event.wait(),
                     timeout=self._interval,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await self._tick()
         logger.info("CadenceScheduler stopped")
 

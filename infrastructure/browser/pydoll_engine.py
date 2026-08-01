@@ -108,7 +108,6 @@ _EXTENSION_PATH = Path(__file__).parents[2] / "extensions" / "sportcrawl-chrome"
 _CHALLENGE_TIMEOUT = 120  # seconds — Turnstile managed challenge can take 30–90s
 
 
-
 class PydollEngine(ScriptableEngine):
     """ScrapingEngine that drives Chrome via CDP using pydoll-python.
 
@@ -347,7 +346,7 @@ class PydollEngine(ScriptableEngine):
         try:
             try:
                 await asyncio.wait_for(tab.go_to(url), timeout=30)
-            except asyncio.TimeoutError as exc:
+            except TimeoutError as exc:
                 raise PageLoadError("Navigation timeout", url=url, cause=exc) from exc
             except KeyError as exc:
                 raise PageLoadError(
@@ -415,8 +414,10 @@ class PydollEngine(ScriptableEngine):
         if self._browser is not None:
             logger.debug("Stopping Chrome browser")
             try:
-                await asyncio.wait_for(self._browser.stop(), timeout=10)  # type: ignore[no-untyped-call]
-            except (asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(
+                    self._browser.stop(), timeout=10  # type: ignore[no-untyped-call]
+                )
+            except (TimeoutError, Exception):
                 pass
             self._browser = None
             self._tab = None

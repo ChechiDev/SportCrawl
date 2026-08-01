@@ -14,7 +14,7 @@ import json
 import logging
 from typing import Any
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -65,7 +65,7 @@ class PgNotifyListener:
         self._session_factory = session_factory
         self._channel = channel
         self._running = False
-        self._conn: asyncpg.Connection | None = None  # type: ignore[type-arg]
+        self._conn: asyncpg.Connection | None = None
         self._sem = asyncio.Semaphore(_NOTIFY_CONCURRENCY)
 
     # ------------------------------------------------------------------
@@ -120,7 +120,7 @@ class PgNotifyListener:
 
     async def _connect_and_listen(self) -> None:
         """Open a LISTEN connection, run poll fallback, then block on notifications."""
-        conn: asyncpg.Connection = await asyncpg.connect(self._dsn)  # type: ignore[type-arg]
+        conn: asyncpg.Connection = await asyncpg.connect(self._dsn)
         self._conn = conn
         try:
             await conn.add_listener(self._channel, self._on_notification)
@@ -147,7 +147,7 @@ class PgNotifyListener:
 
     def _on_notification(
         self,
-        __conn: asyncpg.Connection,  # type: ignore[type-arg]
+        __conn: asyncpg.Connection,
         __pid: int,
         __channel: str,
         payload: str,
@@ -227,7 +227,9 @@ class PgNotifyListener:
 
         job_type = _URL_TYPE_TO_JOB_TYPE.get(url_type)
         if job_type is None:
-            logger.debug("PgNotifyListener: no worker for url_type=%r — skipping", url_type)
+            logger.debug(
+                "PgNotifyListener: no worker for url_type=%r — skipping", url_type
+            )
             return
 
         queue_row.job_type = job_type

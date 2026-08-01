@@ -106,7 +106,8 @@ class CountrySquadsRepository:
                             """
                             INSERT INTO sch_fbref_backend.tbl_country_squad_urls
                                 (fk_country, url_type, url, cadence_hours, priority,
-                                 status, next_scrape_at, created_at, updated_at, retry_count)
+                                 status, next_scrape_at,
+                                 created_at, updated_at, retry_count)
                             SELECT
                                 v.fk_country,
                                 'clubs',
@@ -129,7 +130,8 @@ class CountrySquadsRepository:
                         """
                         INSERT INTO sch_fbref_backend.tbl_country_squad_urls
                             (fk_country, url_type, url, cadence_hours, priority,
-                             status, next_scrape_at, created_at, updated_at, retry_count)
+                             status, next_scrape_at,
+                             created_at, updated_at, retry_count)
                         SELECT fk_country, 'nat_team_men', nat_team_men_url,
                                720, 5, 'PENDING', now(), now(), now(), 0
                           FROM sch_fbref_shared.tbl_country_squads

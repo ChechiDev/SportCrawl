@@ -158,7 +158,7 @@ class TestCountryTeamsWorkerConstructor:
         return CountryTeamsWorker(**defaults)  # type: ignore[arg-type]
 
     def test_worker_does_not_accept_url_to_country_param(self) -> None:
-        """Worker must NOT accept url_to_country (removed in Fase 4 — fk_country on queue)."""
+        """Worker must NOT accept url_to_country (removed in Fase 4)."""
         import inspect
 
         from scripts.scrape_country_teams import CountryTeamsWorker
