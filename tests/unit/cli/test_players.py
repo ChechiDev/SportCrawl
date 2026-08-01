@@ -43,6 +43,7 @@ class TestPlayersStart:
             ),
             patch("cli.players._fetchval", AsyncMock(return_value=100)),
             patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
+            patch("cli.players._sync_backend_urls", AsyncMock()),
             patch("scripts.scrape_pipeline.main", AsyncMock()),
         ):
             result = runner.invoke(players_app, ["--all"])
@@ -79,6 +80,7 @@ class TestPlayersStart:
             ),
             patch("cli.players._fetchval", AsyncMock(return_value=100)),
             patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
+            patch("cli.players._sync_backend_urls", AsyncMock()),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--country", "ARG"])
@@ -96,6 +98,7 @@ class TestPlayersStart:
             ),
             patch("cli.players._fetchval", AsyncMock(return_value=100)),
             patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
+            patch("cli.players._sync_backend_urls", AsyncMock()),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all"])
@@ -112,6 +115,7 @@ class TestPlayersStart:
             ),
             patch("cli.players._fetchval", AsyncMock(return_value=100)),
             patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
+            patch("cli.players._sync_backend_urls", AsyncMock()),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all", "--workers", "4"])
@@ -130,6 +134,7 @@ class TestPlayersStart:
             ),
             patch("cli.players._fetchval", AsyncMock(return_value=100)),
             patch("cli.players._seed_with_retry", AsyncMock(return_value=100)),
+            patch("cli.players._sync_backend_urls", AsyncMock()),
             patch("scripts.scrape_pipeline.main", mock_pipeline),
         ):
             runner.invoke(players_app, ["--all"])

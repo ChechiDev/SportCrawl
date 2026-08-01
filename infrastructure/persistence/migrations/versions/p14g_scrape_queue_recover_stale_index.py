@@ -26,8 +26,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_scrape_queue_recover_stale",
-        table_name="scrape_queue",
-        schema="sch_infra",
+    op.execute(
+        "DROP INDEX IF EXISTS sch_infra.ix_scrape_queue_recover_stale"
     )

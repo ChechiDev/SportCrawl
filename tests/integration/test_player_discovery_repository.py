@@ -55,8 +55,8 @@ async def _seed_country(async_session: AsyncSession) -> None:
     await async_session.execute(
         text(
             "INSERT INTO sch_fbref_shared.tbl_countries"
-            " (country_id, country_name, country_url)"
-            " VALUES (:cid, 'Spain', 'https://fbref.com/en/country/ESP/')"
+            " (country_id, country_name)"
+            " VALUES (:cid, 'Spain')"
             " ON CONFLICT DO NOTHING"
         ),
         {"cid": _COUNTRY_ID},
