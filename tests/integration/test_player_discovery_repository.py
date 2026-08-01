@@ -1,8 +1,8 @@
 """Integration tests for PlayerDiscoveryRepository.
 
 Covers:
-- bulk_enqueue persists rows across tbl_players, scrape_queue, player_queue_ref
-- v_player_scrape_progress reports correct pending count after bulk_enqueue
+- bulk_enqueue persists rows into tbl_players and tbl_player_urls
+- v_player_scrape_progress reflects correct total_urls after bulk_enqueue
 - bulk_enqueue is idempotent — repeated calls produce no duplicates
 
 All tests use the async_session fixture (function-scoped, rolled back after each
@@ -16,8 +16,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domains.player.models import PlayerRawData
-from infrastructure.persistence.models.infra.player_queue_ref import PlayerQueueRef
-from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
+from infrastructure.persistence.models.backend.player_urls import PlayerUrl
+from infrastructure.persistence.models.infra.player_discovery_batch import (
+    PlayerDiscoveryBatch,
+)
 from infrastructure.persistence.models.shared.player import Player
 from infrastructure.persistence.repositories.player_discovery import (
     PlayerDiscoveryRepository,
@@ -72,7 +74,7 @@ class TestBulkEnqueuePersistsPlayers:
     async def test_bulk_enqueue_persists_players(
         self, async_session: AsyncSession
     ) -> None:
-        """bulk_enqueue inserts rows into tbl_players, scrape_queue, and queue_ref."""
+        """bulk_enqueue inserts rows into tbl_players and tbl_player_urls."""
         repo = PlayerDiscoveryRepository(async_session)
         rows = [
             _make_player("aaaaaaaa", "Player Alpha"),
@@ -94,27 +96,28 @@ class TestBulkEnqueuePersistsPlayers:
         players = player_result.scalars().all()
         assert len(players) == 3
 
-        # Verify scrape_queue has PENDING entries for the player URLs
-        urls = [r.player_url for r in rows]
-        sq_result = await async_session.execute(
-            select(ScrapeQueue).where(ScrapeQueue.url.in_(urls))
+        # Verify tbl_player_urls has backend scheduling rows
+        url_result = await async_session.execute(
+            select(PlayerUrl).where(
+                PlayerUrl.fk_player.in_(["aaaaaaaa", "bbbbbbbb", "cccccccc"])
+            )
         )
-        sq_rows = sq_result.scalars().all()
-        assert len(sq_rows) == 3
-        assert all(r.status == ScrapeStatus.PENDING for r in sq_rows)
+        url_rows = url_result.scalars().all()
+        assert len(url_rows) == 3
 
-        # Verify player_queue_ref links
-        queue_ids = [r.id for r in sq_rows]
-        ref_result = await async_session.execute(
-            select(PlayerQueueRef).where(PlayerQueueRef.queue_id.in_(queue_ids))
+        # Verify PlayerDiscoveryBatch recorded the country
+        batch_result = await async_session.execute(
+            select(PlayerDiscoveryBatch).where(
+                PlayerDiscoveryBatch.country_id == _COUNTRY_ID
+            )
         )
-        refs = ref_result.scalars().all()
-        assert len(refs) == 3
+        batch = batch_result.scalar_one()
+        assert batch.total_urls == 3
 
     async def test_bulk_enqueue_view_pending_count(
         self, async_session: AsyncSession
     ) -> None:
-        """v_player_scrape_progress shows pending=3 after bulk_enqueue of 3 players."""
+        """v_player_scrape_progress shows total_urls=3 after bulk_enqueue."""
         repo = PlayerDiscoveryRepository(async_session)
         rows = [
             _make_player("dddddddd", "Player Delta"),
@@ -127,7 +130,7 @@ class TestBulkEnqueuePersistsPlayers:
 
         result = await async_session.execute(
             text(
-                "SELECT pending FROM sch_fbref_football.v_player_scrape_progress"
+                "SELECT total_urls FROM sch_fbref_football.v_player_scrape_progress"
                 " WHERE country_id = :cid"
             ),
             {"cid": _COUNTRY_ID},
@@ -158,21 +161,14 @@ class TestBulkEnqueueIdempotent:
         players = player_result.scalars().all()
         assert len(players) == 2
 
-        # scrape_queue — no duplicates
-        urls = [r.player_url for r in rows]
-        sq_result = await async_session.execute(
-            select(ScrapeQueue).where(ScrapeQueue.url.in_(urls))
+        # tbl_player_urls — no duplicates
+        url_result = await async_session.execute(
+            select(PlayerUrl).where(
+                PlayerUrl.fk_player.in_(["11111111", "22222222"])
+            )
         )
-        sq_rows = sq_result.scalars().all()
-        assert len(sq_rows) == 2
-
-        # player_queue_ref — no duplicates
-        queue_ids = [r.id for r in sq_rows]
-        ref_result = await async_session.execute(
-            select(PlayerQueueRef).where(PlayerQueueRef.queue_id.in_(queue_ids))
-        )
-        refs = ref_result.scalars().all()
-        assert len(refs) == 2
+        url_rows = url_result.scalars().all()
+        assert len(url_rows) == 2
 
     async def test_bulk_enqueue_idempotent_view_no_double_count(
         self, async_session: AsyncSession
@@ -191,12 +187,12 @@ class TestBulkEnqueueIdempotent:
 
         result = await async_session.execute(
             text(
-                "SELECT pending FROM sch_fbref_football.v_player_scrape_progress"
+                "SELECT total_urls FROM sch_fbref_football.v_player_scrape_progress"
                 " WHERE country_id = :cid"
             ),
             {"cid": _COUNTRY_ID},
         )
         row = result.fetchone()
         assert row is not None
-        # Only 2 unique players enqueued — pending count must not be 4
+        # Only 2 unique players enqueued — total_urls must not be 4
         assert row[0] == 2
