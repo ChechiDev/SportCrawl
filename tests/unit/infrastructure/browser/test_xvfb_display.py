@@ -1,6 +1,7 @@
 """Unit tests for XvfbDisplay — process-owned Xvfb virtual framebuffer manager."""
 from __future__ import annotations
 
+import os
 from subprocess import Popen
 from unittest.mock import MagicMock, patch
 
@@ -101,11 +102,23 @@ class TestXvfbDisplayStop:
         display.stop()
         display.stop()  # second call — _proc is None now
 
-    def test_stop_noop_when_not_owned(self) -> None:
-        """stop() must be a no-op when display was reused (no _proc)."""
+    def test_stop_noop_when_never_started(self) -> None:
+        """stop() must be a no-op when start() was never called."""
         display = XvfbDisplay()
-        # _proc is None — display was reused from existing X server
+        # _proc is None, _display_env_set is False — nothing to clean up
         display.stop()  # must not raise
+
+    def test_stop_cleans_display_env_when_reusing_external_server(self) -> None:
+        """stop() must pop DISPLAY when start() reused an existing X server."""
+        display = XvfbDisplay()
+        # Simulate start() having taken the external-X-server path
+        os.environ["DISPLAY"] = ":199"
+        display._display_env_set = True
+
+        display.stop()
+
+        assert not display._display_env_set
+        assert "DISPLAY" not in os.environ
 
 
 class TestXvfbDisplayContextManager:

@@ -27,6 +27,7 @@ class XvfbDisplay:
     def __init__(self) -> None:
         self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
+        self._display_env_set: bool = False
 
     @staticmethod
     def _display_alive(display: str) -> bool:
@@ -39,7 +40,7 @@ class XvfbDisplay:
                 timeout=2,
             )
             return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
             return False
 
     def start(self) -> None:
@@ -54,8 +55,10 @@ class XvfbDisplay:
 
             if self._display_alive(_XVFB_DISPLAY):
                 # An X server is already listening on :199 — reuse it without
-                # setting _proc, so stop() on this instance remains a no-op.
+                # setting _proc. Track that we set DISPLAY so stop() can
+                # restore the environment when the owner shuts down.
                 os.environ["DISPLAY"] = _XVFB_DISPLAY
+                self._display_env_set = True
                 return
 
             try:
@@ -74,6 +77,7 @@ class XvfbDisplay:
             while time.monotonic() < deadline:
                 if self._display_alive(_XVFB_DISPLAY):
                     os.environ["DISPLAY"] = _XVFB_DISPLAY
+                    self._display_env_set = True
                     break
                 time.sleep(0.1)
             else:
@@ -86,20 +90,26 @@ class XvfbDisplay:
                     self._proc.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     self._proc.kill()
-                    self._proc.wait()
+                    self._proc.wait(timeout=3)
                 self._proc = None
 
     def stop(self) -> None:
-        """Terminate the owned Xvfb process and restore the environment. Idempotent."""
-        if self._proc is not None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-                self._proc.wait()
-            self._proc = None
-            os.environ.pop("DISPLAY", None)
+        """Terminate the owned Xvfb process and restore the environment.
+
+        Idempotent. Thread-safe — serialized by the same lock as start().
+        """
+        with self._lock:
+            if self._proc is not None:
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    self._proc.wait(timeout=3)
+                self._proc = None
+            if self._display_env_set:
+                os.environ.pop("DISPLAY", None)
+                self._display_env_set = False
 
     def __enter__(self) -> XvfbDisplay:
         self.start()
