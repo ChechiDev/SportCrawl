@@ -21,8 +21,8 @@ from ports.browser import ScrapingEngine
 
 @pytest.fixture(autouse=True)
 def mock_xvfb_start() -> Generator[MagicMock, None, None]:
-    """Suppress _XvfbManager.start for all tests — CI has no Xvfb or xdpyinfo."""
-    with patch("infrastructure.browser.pydoll_engine._XvfbManager.start") as mock:
+    """Suppress XvfbDisplay.start for all tests — CI has no Xvfb or xdpyinfo."""
+    with patch("infrastructure.browser.xvfb_display.XvfbDisplay.start") as mock:
         yield mock
 
 
@@ -335,3 +335,82 @@ class TestPydollEngineLazyInit:
             await engine.fetch("https://example.com/page2")
 
         mock_chrome_cls.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Display ownership: shared vs engine-owned
+# ---------------------------------------------------------------------------
+
+
+class TestPydollEngineDisplayOwnership:
+    def test_no_display_arg_creates_owned_display(self) -> None:
+        """Engine created without a display arg must own its own XvfbDisplay."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        engine = PydollEngine()
+        assert engine._display_owned is True
+        assert engine._display is not None
+
+    def test_display_arg_sets_borrowed(self) -> None:
+        """Engine created with a display arg must NOT own it."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+        from infrastructure.browser.xvfb_display import XvfbDisplay
+
+        shared = XvfbDisplay()
+        engine = PydollEngine(display=shared)
+        assert engine._display_owned is False
+        assert engine._display is shared
+
+    async def test_close_stops_owned_display(self) -> None:
+        """close() must stop the display when the engine owns it."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        engine = PydollEngine()
+        mock_browser = MagicMock()
+        mock_browser.stop = AsyncMock()
+        engine._browser = mock_browser
+        engine._tab = MagicMock()
+
+        with patch.object(engine._display, "stop") as mock_stop:
+            await engine.close()
+            mock_stop.assert_called_once()
+
+    async def test_close_does_not_stop_borrowed_display(self) -> None:
+        """close() must NOT stop the display when it is borrowed."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+        from infrastructure.browser.xvfb_display import XvfbDisplay
+
+        shared = XvfbDisplay()
+        engine = PydollEngine(display=shared)
+        mock_browser = MagicMock()
+        mock_browser.stop = AsyncMock()
+        engine._browser = mock_browser
+        engine._tab = MagicMock()
+
+        with patch.object(shared, "stop") as mock_stop:
+            await engine.close()
+            mock_stop.assert_not_called()
+
+    def test_existing_callers_remain_compatible(self) -> None:
+        """PydollEngine() with no display arg must still work (backward compat)."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        # All existing callers pass only profile_dir and/or name
+        engine1 = PydollEngine()
+        engine2 = PydollEngine(profile_dir="/tmp/test")
+        engine3 = PydollEngine(name="worker-1")
+        engine4 = PydollEngine(profile_dir="/tmp/test", name="worker-1")
+
+        for e in (engine1, engine2, engine3, engine4):
+            assert e._display_owned is True
+
+    async def test_close_stops_owned_display_when_no_browser_started(self) -> None:
+        """close() must stop owned display even when no browser was ever started."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        engine = PydollEngine()
+        # _browser stays None — engine never opened a browser
+
+        with patch.object(engine._display, "stop") as mock_stop:
+            await engine.close()
+            mock_stop.assert_called_once()
