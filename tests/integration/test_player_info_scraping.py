@@ -79,7 +79,6 @@ async def session_factory_with_player(
                 full_name="Test Player",
                 career_start=2010,
                 career_end=2023,
-                player_url=_PLAYER_URL,
                 fk_country=None,
             )
             session.add(player)

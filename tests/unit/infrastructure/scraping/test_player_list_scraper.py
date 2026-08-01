@@ -153,7 +153,7 @@ class TestPlayerListScraperParse:
         assert len(page.players) == 2
 
     async def test_parse_player_url_is_absolute(self) -> None:
-        """parse() must produce an absolute URL for player_url (https://fbref.com prefix)."""
+        """parse() must produce an absolute URL for player_url (https://fbref.com)."""
         scraper = _make_scraper()
         page = await scraper.parse(_PLAYER_LIST_HTML, country_id=_COUNTRY_ID)
         messi = next(p for p in page.players if p.player_id == "d70ce98e")

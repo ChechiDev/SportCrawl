@@ -43,6 +43,9 @@ from infrastructure.persistence.repositories.team_list_queue import (
 from infrastructure.persistence.session import create_session_factory, get_session
 from scripts.scrape_country_teams import CountryTeamsWorker
 from scripts.scrape_country_teams import _notify_all_due as _notify_country_teams_due
+from scripts.scrape_country_teams import (  # noqa: F401
+    _seed_queue as _seed_country_teams_queue,
+)
 from scripts.scrape_player_info import (
     PlayerInfoWorker,
     _load_country_ids,

@@ -89,8 +89,10 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
         call_tables = [c.args[0] for c in mock_pg_insert.call_args_list]
         assert Player in call_tables
 
-    async def test_bulk_enqueue_calls_pg_insert_for_scrape_queue(self) -> None:
-        """bulk_enqueue must issue a pg_insert for ScrapeQueue ON CONFLICT(url)."""
+    async def test_bulk_enqueue_calls_pg_insert_for_player_discovery_batch(
+        self,
+    ) -> None:
+        """bulk_enqueue must issue a pg_insert for PlayerDiscoveryBatch."""
         session = _make_session()
         rows = [_make_player("aabbccdd")]
 
@@ -98,33 +100,29 @@ class TestPlayerDiscoveryRepositoryBulkEnqueue:
             repo = PlayerDiscoveryRepository(session)
             await repo.bulk_enqueue(rows, "ESP")
 
-        from infrastructure.persistence.models.scrape_queue import ScrapeQueue
-
-        call_tables = [c.args[0] for c in mock_pg_insert.call_args_list]
-        assert ScrapeQueue in call_tables
-
-    async def test_bulk_enqueue_calls_pg_insert_for_player_queue_ref(self) -> None:
-        """bulk_enqueue must issue a pg_insert for PlayerQueueRef."""
-        session = _make_session()
-        rows = [_make_player("aabbccdd")]
-
-        # Override side_effect so scrape_queue execute returns an id
-        # +1 extra MagicMock for the backend tbl_player_urls co-insert
-        sq_result = MagicMock()
-        sq_result.rowcount = 0
-        sq_result.scalars.return_value.all.return_value = [1]
-        session.execute.side_effect = [MagicMock(), MagicMock(), sq_result] + [MagicMock()] * 10
-
-        with _pg_insert_mock() as mock_pg_insert:
-            repo = PlayerDiscoveryRepository(session)
-            await repo.bulk_enqueue(rows, "ESP")
-
-        from infrastructure.persistence.models.infra.player_queue_ref import (
-            PlayerQueueRef,
+        from infrastructure.persistence.models.infra.player_discovery_batch import (
+            PlayerDiscoveryBatch,
         )
 
         call_tables = [c.args[0] for c in mock_pg_insert.call_args_list]
-        assert PlayerQueueRef in call_tables
+        assert PlayerDiscoveryBatch in call_tables
+
+    async def test_bulk_enqueue_attempts_backend_url_insert(self) -> None:
+        """bulk_enqueue must attempt to insert backend player URLs via raw SQL."""
+        import sqlalchemy as sa
+
+        session = _make_session()
+        rows = [_make_player("aabbccdd")]
+
+        with _pg_insert_mock():
+            repo = PlayerDiscoveryRepository(session)
+            await repo.bulk_enqueue(rows, "ESP")
+
+        # One of the execute calls must be a raw SQL TextClause (for tbl_player_urls).
+        all_args = [c.args[0] for c in session.execute.call_args_list]
+        assert any(isinstance(arg, sa.TextClause) for arg in all_args), (
+            "bulk_enqueue must execute raw SQL for the backend tbl_player_urls insert"
+        )
 
     async def test_bulk_enqueue_returns_player_row_count(self) -> None:
         """bulk_enqueue must return the actual inserted count from the Player INSERT."""

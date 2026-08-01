@@ -260,7 +260,8 @@ class TestRecoverFailedJob:
         factory = self._make_session_factory(session)
 
         with patch(_GET_SESSION) as mock_gs, patch(
-            "infrastructure.persistence.repositories.player_info_queue.BackendUrlRepository.recover_stale_url",
+            "infrastructure.persistence.repositories.player_info_queue"
+            ".BackendUrlRepository.recover_stale_url",
             new_callable=AsyncMock,
         ):
             mock_gs.return_value = MagicMock(

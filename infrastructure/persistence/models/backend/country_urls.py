@@ -54,7 +54,9 @@ class CountryUrl(BackendBase):
         nullable=False, server_default=text("now()")
     )
     last_scrape_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    priority: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="5")
+    priority: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default="5"
+    )
     retry_count: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default="0"
     )

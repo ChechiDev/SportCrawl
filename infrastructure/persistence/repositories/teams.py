@@ -124,7 +124,8 @@ class TeamsRepository:
                             """
                             INSERT INTO sch_fbref_backend.tbl_team_urls
                                 (fk_team, url_type, url, cadence_hours, priority,
-                                 status, next_scrape_at, created_at, updated_at, retry_count)
+                                 status, next_scrape_at,
+                                 created_at, updated_at, retry_count)
                             SELECT
                                 t.team_id,
                                 'squad',
