@@ -32,6 +32,10 @@ class RateLimitError(ScraperError):
     """Raised when the target site enforces a rate limit (429 or equivalent)."""
 
 
+class WarmupError(PageLoadError):
+    """Raised when browser warmup fails to reach a verifiable ready state."""
+
+
 class SSRFError(ScraperError):
     """Raised when a URL is rejected by SSRF validation rules."""
 

@@ -251,6 +251,12 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         self._max_queue_retries: int = max_queue_retries
         self._display: XvfbDisplay | None = display
 
+    async def on_browser_ready(self, engine: Any) -> None:
+        from ports.browser import WarmableEngine
+        if not isinstance(engine, WarmableEngine):
+            return
+        await engine.warmup(self._fbref_base_url)
+
     @property
     def profile_dir(self) -> str:
         return f"{self._profile_base}-{self._worker_id}"

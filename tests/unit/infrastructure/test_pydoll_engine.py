@@ -414,3 +414,264 @@ class TestPydollEngineDisplayOwnership:
         with patch.object(engine._display, "stop") as mock_stop:
             await engine.close()
             mock_stop.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# start(): explicit browser initialisation
+# ---------------------------------------------------------------------------
+
+
+_CHROME_PATCH = "infrastructure.browser.pydoll_engine.Chrome"
+
+
+class TestPydollEngineStart:
+    @pytest.fixture
+    def mock_browser_and_tab(
+        self,
+    ) -> Generator[tuple[AsyncMock, AsyncMock], None, None]:
+        mock_tab = _make_mock_tab("<html></html>")
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            yield mock_browser, mock_tab
+
+    async def test_start_initialises_browser(
+        self, mock_browser_and_tab: tuple[AsyncMock, AsyncMock]
+    ) -> None:
+        """start() must create a Chrome instance and set _browser."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_browser, _ = mock_browser_and_tab
+        engine = PydollEngine()
+        await engine.start()
+
+        assert engine._browser is mock_browser
+
+    async def test_start_sets_active_tab(
+        self, mock_browser_and_tab: tuple[AsyncMock, AsyncMock]
+    ) -> None:
+        """start() must set _tab after Chrome.start() resolves."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        _, mock_tab = mock_browser_and_tab
+        engine = PydollEngine()
+        await engine.start()
+
+        assert engine._tab is mock_tab
+
+    async def test_start_is_idempotent_browser_created_once(
+        self, mock_browser_and_tab: tuple[AsyncMock, AsyncMock]
+    ) -> None:
+        """start() called twice must NOT create duplicate Chrome instances."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_browser, _ = mock_browser_and_tab
+        engine = PydollEngine()
+        await engine.start()
+        await engine.start()
+
+        # browser.start() (the pydoll Tab-factory method) called exactly once
+        mock_browser.start.assert_awaited_once()
+
+    async def test_start_is_idempotent_tab_created_once(
+        self, mock_browser_and_tab: tuple[AsyncMock, AsyncMock]
+    ) -> None:
+        """start() called twice must NOT create duplicate tabs."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_browser, _ = mock_browser_and_tab
+        engine = PydollEngine()
+        await engine.start()
+        first_tab = engine._tab
+        await engine.start()
+
+        assert engine._tab is first_tab
+        mock_browser.start.assert_awaited_once()
+
+    async def test_navigate_works_after_explicit_start(
+        self, mock_browser_and_tab: tuple[AsyncMock, AsyncMock]
+    ) -> None:
+        """navigate() must still work after start() (backward compat)."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        _, mock_tab = mock_browser_and_tab
+        mock_tab.page_source = _html_coroutine("<html></html>")
+        engine = PydollEngine()
+        await engine.start()
+        await engine.navigate("https://fbref.com/")
+
+        mock_tab.go_to.assert_awaited_once_with("https://fbref.com/")
+
+
+# ---------------------------------------------------------------------------
+# warmup(): browser readiness probe
+# ---------------------------------------------------------------------------
+
+
+class TestPydollEngineWarmup:
+    async def test_warmup_succeeds_with_non_empty_html(self) -> None:
+        """warmup(url) must succeed when page returns non-empty HTML."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            engine.navigate = AsyncMock()
+            engine._wait_for_challenge = AsyncMock(
+                return_value="<html><body>FBRef</body></html>"
+            )
+
+            # Must not raise
+            await engine.warmup("https://fbref.com")
+
+        engine.navigate.assert_awaited_once_with("https://fbref.com")
+        engine._wait_for_challenge.assert_awaited_once_with(
+            engine._tab, "https://fbref.com"
+        )
+        assert engine._browser is not None
+
+    async def test_warmup_calls_navigate(self) -> None:
+        """warmup(url) must call navigate() with the readiness_url."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            engine.navigate = AsyncMock()
+            engine._wait_for_challenge = AsyncMock(return_value="<html>ok</html>")
+
+            await engine.warmup("https://fbref.com")
+
+        engine.navigate.assert_awaited_once_with("https://fbref.com")
+
+    async def test_warmup_calls_wait_for_challenge(self) -> None:
+        """warmup(url) must call _wait_for_challenge() after navigate()."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            engine.navigate = AsyncMock()
+            challenge_mock = AsyncMock(return_value="<html>ok</html>")
+            engine._wait_for_challenge = challenge_mock
+
+            await engine.warmup("https://fbref.com")
+
+        # _wait_for_challenge receives (tab, url) — tab is engine._tab
+        challenge_mock.assert_awaited_once_with(engine._tab, "https://fbref.com")
+
+    async def test_warmup_raises_warmup_error_on_navigate_failure(self) -> None:
+        """warmup(url) must raise WarmupError when navigate() raises PageLoadError."""
+        from core.exceptions.scraper import PageLoadError, WarmupError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            engine.navigate = AsyncMock(
+                side_effect=PageLoadError("nav failed", url="https://fbref.com")
+            )
+
+            with pytest.raises(WarmupError):
+                await engine.warmup("https://fbref.com")
+
+    async def test_warmup_raises_warmup_error_on_challenge_failure(self) -> None:
+        """warmup(url) raises WarmupError when _wait_for_challenge() fails."""
+        from core.exceptions.scraper import PageLoadError, WarmupError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            engine.navigate = AsyncMock()
+            engine._wait_for_challenge = AsyncMock(
+                side_effect=PageLoadError("cf timeout", url="https://fbref.com")
+            )
+
+            with pytest.raises(WarmupError):
+                await engine.warmup("https://fbref.com")
+
+    async def test_warmup_raises_warmup_error_on_empty_response(self) -> None:
+        """warmup(url) must raise WarmupError when HTML response is empty."""
+        from core.exceptions.scraper import WarmupError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            engine.navigate = AsyncMock()
+            engine._wait_for_challenge = AsyncMock(return_value="")
+
+            with pytest.raises(WarmupError):
+                await engine.warmup("https://fbref.com")
+
+    async def test_warmup_raises_warmup_error_on_whitespace_only_response(
+        self,
+    ) -> None:
+        """warmup(url) must raise WarmupError when response is whitespace-only."""
+        from core.exceptions.scraper import WarmupError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            engine.navigate = AsyncMock()
+            engine._wait_for_challenge = AsyncMock(return_value="   \n  ")
+
+            with pytest.raises(WarmupError):
+                await engine.warmup("https://fbref.com")
+
+    async def test_warmup_error_is_subclass_of_page_load_error(self) -> None:
+        """WarmupError must be a subclass of PageLoadError."""
+        from core.exceptions.scraper import PageLoadError, WarmupError
+
+        assert issubclass(WarmupError, PageLoadError)
+
+    async def test_warmup_calls_start_first(self) -> None:
+        """warmup() must call start() to guarantee browser is initialised."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = _make_mock_tab()
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+        mock_browser.stop = AsyncMock()
+
+        with patch(_CHROME_PATCH, return_value=mock_browser):
+            engine = PydollEngine()
+            # Do NOT call start() before warmup — warmup must do it
+            assert engine._browser is None
+            engine.navigate = AsyncMock()
+            engine._wait_for_challenge = AsyncMock(return_value="<html>ok</html>")
+
+            await engine.warmup("https://fbref.com")
+
+        assert engine._browser is mock_browser

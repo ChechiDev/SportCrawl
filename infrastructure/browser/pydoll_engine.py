@@ -29,7 +29,7 @@ from typing import Any
 from pydoll.browser.chromium.chrome import Chrome
 from pydoll.exceptions import PydollException
 
-from core.exceptions.scraper import PageLoadError, RateLimitError
+from core.exceptions.scraper import PageLoadError, RateLimitError, WarmupError
 from infrastructure.browser.xvfb_display import XvfbDisplay
 from ports.browser import ScriptableEngine
 
@@ -66,12 +66,57 @@ class PydollEngine(ScriptableEngine):
         self._profile_dir: str = profile_dir or "/tmp/sportcrawl-chrome-profile"
         self._name = name
         self._keepalive_task: asyncio.Task[None] | None = None
+        self._start_lock: asyncio.Lock = asyncio.Lock()
 
     async def __aenter__(self) -> PydollEngine:
         return self
 
     async def __aexit__(self, *_: object) -> None:
         await self.close()
+
+    async def start(self) -> None:
+        """Explicitly start the Chrome browser. Idempotent."""
+        await self._ensure_browser()
+
+    async def warmup(self, readiness_url: str) -> None:
+        """Navigate to readiness_url and verify the browser can reach the destination.
+
+        Handles Cloudflare challenge flow if the readiness URL triggers one.
+        Readiness is proven by a non-empty HTML response from the resolved page —
+        not by cookie presence.
+
+        Args:
+            readiness_url: URL to navigate to for readiness verification.
+
+        Raises:
+            WarmupError: If navigation fails, the challenge does not resolve,
+                or the response is empty.
+        """
+        await self.start()
+        try:
+            await self.navigate(readiness_url)
+        except PageLoadError as exc:
+            raise WarmupError(
+                f"Browser warmup navigation failed for {readiness_url}",
+                url=readiness_url,
+                cause=exc,
+            ) from exc
+        try:
+            html = await self._wait_for_challenge(self._tab, readiness_url)
+        except PageLoadError as exc:
+            raise WarmupError(
+                f"Browser warmup challenge did not resolve for {readiness_url}",
+                url=readiness_url,
+                cause=exc,
+            ) from exc
+        if not html or not html.strip():
+            raise WarmupError(
+                f"Browser warmup: empty response from {readiness_url}",
+                url=readiness_url,
+            )
+        logger.info(
+            "[%s] Browser warmed up successfully at %s", self._name, readiness_url
+        )
 
     @staticmethod
     def _clear_profile_lock(profile_dir: str) -> None:
@@ -84,7 +129,11 @@ class PydollEngine(ScriptableEngine):
 
     async def _ensure_browser(self) -> None:
         """Lazily initialize the Chrome browser and its initial tab."""
-        if self._browser is None:
+        if self._browser is not None:
+            return
+        async with self._start_lock:
+            if self._browser is not None:
+                return
             logger.debug("Starting Chrome browser (lazy init)")
             await asyncio.to_thread(self._display.start)
 
