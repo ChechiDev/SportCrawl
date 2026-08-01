@@ -55,6 +55,7 @@ _COMMON_COLUMNS = [
     ),
 ]
 
+
 def _common_constraints(table: str) -> list[sa.CheckConstraint]:
     return [
         sa.CheckConstraint(

@@ -112,7 +112,9 @@ async def _run_tasks(
 ) -> None:
     async with get_session(session_factory) as session:
         for table_name, stmt in tasks:
-            cursor: CursorResult[Any] = await session.execute(stmt)  # type: ignore[assignment]
+            cursor: CursorResult[Any] = (
+                await session.execute(stmt)  # type: ignore[assignment]
+            )
             await session.commit()
             print(f"✓ {table_name}: {cursor.rowcount} rows inserted")
 

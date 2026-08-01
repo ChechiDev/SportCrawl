@@ -81,7 +81,9 @@ async def _seed_queue(
     async with get_session(session_factory) as session:
         from sqlalchemy.engine import CursorResult
 
-        cursor: CursorResult[Any] = await session.execute(stmt)  # type: ignore[assignment]
+        cursor: CursorResult[Any] = (
+            await session.execute(stmt)  # type: ignore[assignment]
+        )
         await session.commit()
         return cursor.rowcount or 0
 
