@@ -4,9 +4,8 @@ Concrete implementations (e.g. PydollEngine) wrap a real browser/CDP client.
 Tests use in-file mock subclasses — no real browser required at unit-test time.
 """
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
+from typing import Protocol, runtime_checkable
 
 
 class ScrapingEngine(ABC):
@@ -22,7 +21,7 @@ class ScrapingEngine(ABC):
         """Release browser resources (close tabs, sessions, CDP connections)."""
         ...
 
-    async def __aenter__(self) -> ScrapingEngine:
+    async def __aenter__(self) -> "ScrapingEngine":
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -45,3 +44,10 @@ class ScriptableEngine(ScrapingEngine):
     async def get_page_source(self) -> str:
         """Return the current page's outer HTML without navigating."""
         ...
+
+
+@runtime_checkable
+class WarmableEngine(Protocol):
+    """Protocol for engines that support explicit warmup before serving requests."""
+
+    async def warmup(self, readiness_url: str) -> None: ...
