@@ -54,6 +54,43 @@ class ScrapingSettings(BaseModel):
     # Example: SCRAPING__CDP_WS_URL=ws://chromium:9222
     cdp_ws_url: str | None = None
     chrome_profile_dir: str = str(Path.home() / ".cache" / "sportcrawl" / "chrome")
+    # Warm browser pool (disabled by default — opt-in via feature flag)
+    player_info_warm_pool_enabled: bool = False
+    player_info_pool_size: int = Field(default=2, ge=1, le=25)
+    player_info_pool_browser_start_concurrency: int = Field(default=1, ge=1, le=25)
+    player_info_pool_warmup_concurrency: int = Field(default=1, ge=1, le=25)
+    player_info_pool_startup_jitter_min: float = Field(default=2.0, ge=0.0)
+    player_info_pool_startup_jitter_max: float = Field(default=15.0, ge=0.0)
+    player_info_pool_browser_backoff_base: float = Field(default=2.0, ge=0.1)
+    player_info_pool_browser_backoff_max: float = Field(default=120.0, ge=1.0)
+    player_info_pool_task_backoff_base: float = Field(default=2.0, ge=0.1)
+    player_info_pool_task_backoff_max: float = Field(default=60.0, ge=1.0)
+
+    @model_validator(mode="after")
+    def validate_warm_pool_ranges(self) -> "ScrapingSettings":
+        """Enforce ordering invariants on warm pool config ranges."""
+        jmin = self.player_info_pool_startup_jitter_min
+        jmax = self.player_info_pool_startup_jitter_max
+        if jmin > jmax:
+            raise ValueError(
+                f"player_info_pool_startup_jitter_min ({jmin}) must be "
+                f"<= jitter_max ({jmax})"
+            )
+        bbase = self.player_info_pool_browser_backoff_base
+        bmax = self.player_info_pool_browser_backoff_max
+        if bbase > bmax:
+            raise ValueError(
+                f"player_info_pool_browser_backoff_base ({bbase}) must be "
+                f"<= browser_backoff_max ({bmax})"
+            )
+        tbase = self.player_info_pool_task_backoff_base
+        tmax = self.player_info_pool_task_backoff_max
+        if tbase > tmax:
+            raise ValueError(
+                f"player_info_pool_task_backoff_base ({tbase}) must be "
+                f"<= task_backoff_max ({tmax})"
+            )
+        return self
 
 
 class Settings(BaseSettings):
