@@ -23,9 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
@@ -33,74 +30,10 @@ from pydoll.browser.chromium.chrome import Chrome
 from pydoll.exceptions import PydollException
 
 from core.exceptions.scraper import PageLoadError, RateLimitError
+from infrastructure.browser.xvfb_display import XvfbDisplay
 from ports.browser import ScriptableEngine
 
 logger = logging.getLogger(__name__)
-
-_XVFB_DISPLAY = ":199"
-
-
-class _XvfbManager:
-    """Manages a background Xvfb process so Chrome never opens a visible window.
-
-    Always uses display :199 (unlikely to conflict with system displays or WSLg).
-    Cleans up any stale socket before starting.
-    """
-
-    def __init__(self) -> None:
-        self._proc: subprocess.Popen[bytes] | None = None
-
-    @staticmethod
-    def _display_alive(display: str) -> bool:
-        """Return True if an X server is already listening on *display*."""
-        try:
-            result = subprocess.run(
-                ["xdpyinfo", "-display", display],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=2,
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
-
-    def start(self) -> None:
-        """Point DISPLAY at a virtual framebuffer — Chrome never opens a visible window.
-
-        Safe to call when Xvfb or xdpyinfo are not installed (CI environments).
-        """
-        if self._proc is not None:
-            return  # already managed by us
-
-        os.environ["DISPLAY"] = _XVFB_DISPLAY
-
-        if self._display_alive(_XVFB_DISPLAY):
-            # An X server is already listening on :199 — reuse it
-            return
-
-        try:
-            self._proc = subprocess.Popen(
-                ["Xvfb", _XVFB_DISPLAY, "-screen", "0", "1920x1080x24"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            logger.debug(
-                "Xvfb not found — Chrome will use existing DISPLAY or run headless"
-            )
-            return
-        deadline = time.monotonic() + 5.0
-        while time.monotonic() < deadline:
-            if self._display_alive(_XVFB_DISPLAY):
-                break
-            time.sleep(0.1)
-
-    def stop(self) -> None:
-        """Terminate Xvfb and restore the environment."""
-        if self._proc is not None:
-            self._proc.terminate()
-            self._proc = None
-            os.environ.pop("DISPLAY", None)
 
 
 _CHALLENGE_MARKERS = ("just a moment", "checking your browser")
@@ -115,11 +48,21 @@ class PydollEngine(ScriptableEngine):
     explicitly released via close(), or used as an async context manager.
     """
 
-    def __init__(self, profile_dir: str | None = None, name: str = "engine") -> None:
+    def __init__(
+        self,
+        profile_dir: str | None = None,
+        name: str = "engine",
+        display: XvfbDisplay | None = None,
+    ) -> None:
         self._browser: Chrome | None = None
         # pydoll Tab type is not exported; using Any until upstream types stabilize
         self._tab: Any = None
-        self._xvfb: _XvfbManager = _XvfbManager()
+        if display is not None:
+            self._display: XvfbDisplay = display
+            self._display_owned: bool = False
+        else:
+            self._display = XvfbDisplay()
+            self._display_owned = True
         self._profile_dir: str = profile_dir or "/tmp/sportcrawl-chrome-profile"
         self._name = name
         self._keepalive_task: asyncio.Task[None] | None = None
@@ -143,7 +86,7 @@ class PydollEngine(ScriptableEngine):
         """Lazily initialize the Chrome browser and its initial tab."""
         if self._browser is None:
             logger.debug("Starting Chrome browser (lazy init)")
-            await asyncio.to_thread(self._xvfb.start)
+            await asyncio.to_thread(self._display.start)
 
             _profile = self._profile_dir
             self._clear_profile_lock(_profile)
@@ -421,4 +364,5 @@ class PydollEngine(ScriptableEngine):
                 pass
             self._browser = None
             self._tab = None
-            self._xvfb.stop()
+        if self._display_owned:
+            self._display.stop()

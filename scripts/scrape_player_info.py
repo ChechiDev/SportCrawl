@@ -28,7 +28,7 @@ from config.settings import Settings
 from core.application.base_worker import BaseWorker, CooldownRequired
 from core.application.scrape_job_processor import ScrapeJobProcessor
 from core.exceptions.scraper import PageLoadError, RateLimitError
-from infrastructure.browser.pydoll_engine import PydollEngine
+from infrastructure.browser import PydollEngine, XvfbDisplay
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
@@ -233,6 +233,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         fbref_base_url: str = "https://fbref.com",
         step2_done: asyncio.Event | None = None,
         max_queue_retries: int = 5,
+        display: XvfbDisplay | None = None,
     ) -> None:
         super().__init__(
             worker_id=worker_id,
@@ -248,6 +249,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         self._fbref_base_url = fbref_base_url
         self._step2_done = step2_done
         self._max_queue_retries: int = max_queue_retries
+        self._display: XvfbDisplay | None = display
 
     @property
     def profile_dir(self) -> str:
@@ -258,7 +260,11 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         return f"Crawl-{self._worker_id}"
 
     def _build_engine(self) -> PydollEngine:
-        return PydollEngine(profile_dir=self.profile_dir, name=self.engine_name)
+        return PydollEngine(
+            profile_dir=self.profile_dir,
+            name=self.engine_name,
+            display=self._display,
+        )
 
     async def startup_delay(self) -> None:
         delay = self._worker_id * random.uniform(1.5, 3.0)
@@ -675,52 +681,57 @@ async def main(workers: int | None = None) -> None:
     worker_counts: dict[int, int] = {}
     stop_event = asyncio.Event()
 
+    shared_display = XvfbDisplay()
     t0 = time.monotonic()
-    with Live(
-        build_worker_table(
-            worker_labels,
-            worker_counts,
-            workers,
-            already_done,
-            already_done + pending_total,
-        ),
-        console=_console,
-        refresh_per_second=2,
-        vertical_overflow="crop",
-    ) as live:
-        display_task = asyncio.create_task(
-            run_display_loop(
-                workers,
+    try:
+        with Live(
+            build_worker_table(
                 worker_labels,
                 worker_counts,
+                workers,
                 already_done,
                 already_done + pending_total,
-                stop_event,
-                live,
-                _notifications.active,
+            ),
+            console=_console,
+            refresh_per_second=2,
+            vertical_overflow="crop",
+        ) as live:
+            display_task = asyncio.create_task(
+                run_display_loop(
+                    workers,
+                    worker_labels,
+                    worker_counts,
+                    already_done,
+                    already_done + pending_total,
+                    stop_event,
+                    live,
+                    _notifications.active,
+                )
             )
-        )
-        results = await asyncio.gather(
-            *[
-                PlayerInfoWorker(
-                    worker_id=i + 1,
-                    session_factory=session_factory,
-                    fetch_gate=fetch_gate,
-                    profile_base=settings.scraping.chrome_profile_dir,
-                    worker_labels=worker_labels,
-                    worker_counts=worker_counts,
-                    position_cache=position_cache,
-                    valid_countries=valid_countries,
-                    country_name_cache=country_name_cache,
-                    fbref_base_url=settings.scraping.fbref_base_url,
-                    max_queue_retries=settings.scraping.max_queue_retries,
-                ).run()
-                for i in range(workers)
-            ],
-            return_exceptions=True,
-        )
-        stop_event.set()
-        await display_task
+            results = await asyncio.gather(
+                *[
+                    PlayerInfoWorker(
+                        worker_id=i + 1,
+                        session_factory=session_factory,
+                        fetch_gate=fetch_gate,
+                        profile_base=settings.scraping.chrome_profile_dir,
+                        worker_labels=worker_labels,
+                        worker_counts=worker_counts,
+                        position_cache=position_cache,
+                        valid_countries=valid_countries,
+                        country_name_cache=country_name_cache,
+                        fbref_base_url=settings.scraping.fbref_base_url,
+                        max_queue_retries=settings.scraping.max_queue_retries,
+                        display=shared_display,
+                    ).run()
+                    for i in range(workers)
+                ],
+                return_exceptions=True,
+            )
+            stop_event.set()
+            await display_task
+    finally:
+        shared_display.stop()
     elapsed = time.monotonic() - t0
     total = sum(r for r in results if isinstance(r, int))
     rate = total / elapsed if elapsed > 0 else 0
