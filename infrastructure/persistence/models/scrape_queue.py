@@ -14,7 +14,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from config.settings import ScrapingSettings
 
-from sqlalchemy import BigInteger, DateTime, Index, String, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 

@@ -1,4 +1,4 @@
-"""One-shot backfill script: populates sch_fbref_backend URL tables from existing domain data.
+"""One-shot backfill script: populates sch_fbref_backend URL tables from existing data.
 
 All inserts use ON CONFLICT DO NOTHING — safe to re-run without duplicating rows.
 
@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.engine import CursorResult
@@ -68,8 +69,9 @@ SQL_COUNTRY_URLS = sa.text("""
 """)
 
 SQL_COUNTRY_SQUAD_URLS = sa.text("""
-    -- clubs_url dropped from tbl_country_squads in p49a; clubs URLs are now co-inserted by
-    -- CountrySquadsRepository at scrape time. Only nat_team URLs remain here.
+    -- clubs_url dropped from tbl_country_squads in p49a; clubs URLs are now
+    -- co-inserted by CountrySquadsRepository at scrape time.
+    -- Only nat_team URLs remain here.
     INSERT INTO sch_fbref_backend.tbl_country_squad_urls
         (fk_country, url_type, url, cadence_hours, priority, status, next_scrape_at)
     SELECT
@@ -110,7 +112,7 @@ async def _run_tasks(
 ) -> None:
     async with get_session(session_factory) as session:
         for table_name, stmt in tasks:
-            cursor: CursorResult[sa.Any] = await session.execute(stmt)  # type: ignore[assignment]
+            cursor: CursorResult[Any] = await session.execute(stmt)  # type: ignore[assignment]
             await session.commit()
             print(f"✓ {table_name}: {cursor.rowcount} rows inserted")
 

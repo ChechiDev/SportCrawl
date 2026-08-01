@@ -84,8 +84,10 @@ def upgrade() -> None:
             ),
             nullable=False,
         ),
-        *_COMMON_COLUMNS,
-        sa.UniqueConstraint("fk_player", "url_type", name="uq_player_urls_player_url_type"),
+        *_COMMON_COLUMNS,  # type: ignore[arg-type]
+        sa.UniqueConstraint(
+            "fk_player", "url_type", name="uq_player_urls_player_url_type"
+        ),
         *_common_constraints("player_urls"),
         schema=_SCHEMA,
     )
@@ -123,7 +125,7 @@ def upgrade() -> None:
             ),
             nullable=False,
         ),
-        *_COMMON_COLUMNS,
+        *_COMMON_COLUMNS,  # type: ignore[arg-type]
         sa.UniqueConstraint("fk_team", "url_type", name="uq_team_urls_team_url_type"),
         *_common_constraints("team_urls"),
         schema=_SCHEMA,
@@ -162,8 +164,10 @@ def upgrade() -> None:
             ),
             nullable=False,
         ),
-        *_COMMON_COLUMNS,
-        sa.UniqueConstraint("fk_comp", "url_type", name="uq_competition_urls_comp_url_type"),
+        *_COMMON_COLUMNS,  # type: ignore[arg-type]
+        sa.UniqueConstraint(
+            "fk_comp", "url_type", name="uq_competition_urls_comp_url_type"
+        ),
         *_common_constraints("competition_urls"),
         schema=_SCHEMA,
     )
@@ -201,8 +205,10 @@ def upgrade() -> None:
             ),
             nullable=False,
         ),
-        *_COMMON_COLUMNS,
-        sa.UniqueConstraint("fk_country", "url_type", name="uq_country_urls_country_url_type"),
+        *_COMMON_COLUMNS,  # type: ignore[arg-type]
+        sa.UniqueConstraint(
+            "fk_country", "url_type", name="uq_country_urls_country_url_type"
+        ),
         sa.CheckConstraint(
             "url_type IN ('country', 'players_list')",
             name="ck_country_urls_url_type",
@@ -244,7 +250,7 @@ def upgrade() -> None:
             ),
             nullable=False,
         ),
-        *_COMMON_COLUMNS,
+        *_COMMON_COLUMNS,  # type: ignore[arg-type]
         sa.UniqueConstraint(
             "fk_country", "url_type", name="uq_country_squad_urls_country_url_type"
         ),

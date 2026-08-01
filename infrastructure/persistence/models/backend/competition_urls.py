@@ -54,7 +54,9 @@ class CompetitionUrl(BackendBase):
         nullable=False, server_default=text("now()")
     )
     last_scrape_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    priority: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="5")
+    priority: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default="5"
+    )
     retry_count: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default="0"
     )
@@ -67,8 +69,12 @@ class CompetitionUrl(BackendBase):
     )
 
     __table_args__ = (
-        UniqueConstraint("fk_comp", "url_type", name="uq_competition_urls_comp_url_type"),
-        CheckConstraint("priority BETWEEN 1 AND 10", name="ck_competition_urls_priority"),
+        UniqueConstraint(
+            "fk_comp", "url_type", name="uq_competition_urls_comp_url_type"
+        ),
+        CheckConstraint(
+            "priority BETWEEN 1 AND 10", name="ck_competition_urls_priority"
+        ),
         CheckConstraint("cadence_hours > 0", name="ck_competition_urls_cadence_hours"),
         CheckConstraint("retry_count >= 0", name="ck_competition_urls_retry_count"),
         Index(

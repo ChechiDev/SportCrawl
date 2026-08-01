@@ -22,6 +22,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.markup import escape as _escape
 from rich.text import Text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config.settings import Settings
@@ -53,6 +54,36 @@ for _noisy in (
 ):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
+
+
+async def _seed_queue(
+    session_factory: async_sessionmaker[AsyncSession],
+    rows: list[tuple[str, str]],
+) -> int:
+    """Seed scrape_queue with (country_code, url) pairs for team_list jobs.
+
+    Returns the number of inserted rows. Returns 0 immediately for empty input
+    without touching the database.
+    """
+    if not rows:
+        return 0
+    values = [
+        {
+            "url": url,
+            "domain": "fbref.com",
+            "status": "PENDING",
+            "job_type": "team_list",
+            "fk_country": country_code,
+        }
+        for country_code, url in rows
+    ]
+    stmt = pg_insert(ScrapeQueue).values(values).on_conflict_do_nothing()
+    async with get_session(session_factory) as session:
+        from sqlalchemy.engine import CursorResult
+
+        cursor: CursorResult[Any] = await session.execute(stmt)  # type: ignore[assignment]
+        await session.commit()
+        return cursor.rowcount or 0
 
 
 async def _notify_all_due(
@@ -159,7 +190,9 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
             # fk_country is stored directly on the queue row (set at seed time).
             fk_country = job.fk_country
             if fk_country is None:
-                _no_country_msg = f"fk_country not set on queue row id={job.id} url={job.url}"
+                _no_country_msg = (
+                    f"fk_country not set on queue row id={job.id} url={job.url}"
+                )
                 async with get_session(self._session_factory) as session:
                     await TeamListQueueRepository(session).mark_failed(
                         job.id, _no_country_msg
@@ -228,7 +261,9 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
 
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed
-                    country_display = self._country_names.get(fk_country, fk_country or "")
+                    country_display = self._country_names.get(
+                        fk_country, fk_country or ""
+                    )
                     self._labels[self._worker_id] = (
                         f"{_escape(country_display)}: {len(page.teams)} Teams"
                     )
@@ -305,7 +340,8 @@ class CountryTeamsWorker(BaseWorker[ScrapeQueue]):
                                     await _s.commit()
                             except Exception as _backend_err:
                                 logger.warning(
-                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    "[worker-%d] backend mark_failed"
+                                    " failed (job %d): %s",
                                     self._worker_id,
                                     job.id,
                                     _backend_err,

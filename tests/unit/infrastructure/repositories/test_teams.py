@@ -97,7 +97,8 @@ async def test_upsert_executes_statements() -> None:
     comp_fetch_result = MagicMock()
     comp_fetch_result.__iter__ = MagicMock(return_value=iter([comp_fetch_row]))
 
-    # Call sequence: (1) comp fetch, (2) gender fetch, (3) teams insert, (4) backend co-insert
+    # Call sequence: (1) comp fetch, (2) gender fetch,
+    # (3) teams insert, (4) backend co-insert
     session.execute.side_effect = [
         comp_fetch_result,  # comp select
         gender_result,  # gender select

@@ -1,5 +1,7 @@
 """Declarative base for all SQLAlchemy ORM models."""
 
+from typing import Any
+
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -27,4 +29,4 @@ class BackendBase(Base):
     """Abstract base for all backend-domain ORM models (sch_fbref_backend schema)."""
 
     __abstract__ = True
-    __table_args__ = {"schema": "sch_fbref_backend"}
+    __table_args__: tuple[Any, ...] | dict[str, Any] = {"schema": "sch_fbref_backend"}

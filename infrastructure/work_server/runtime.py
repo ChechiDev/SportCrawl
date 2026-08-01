@@ -125,7 +125,7 @@ async def serve(settings: Settings) -> None:
     dsn = URL.create(
         drivername="postgresql+asyncpg",
         username=db.user,
-        password=db.password.get_secret_value(),
+        password=db.password.get_secret_value() if db.password is not None else "",
         host=db.host,
         port=db.port,
         database=db.name,
@@ -151,6 +151,8 @@ async def serve(settings: Settings) -> None:
     adapter = ScrapeQueueWorkAdapter(factory)
 
     # --- Build aiohttp application ---
+    if scraping.work_server_token is None:
+        raise ValueError("work_server_token must not be None at runtime")
     token: str = scraping.work_server_token.get_secret_value()
     app = create_app(adapter, token)
 

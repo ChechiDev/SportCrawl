@@ -347,7 +347,7 @@ class PydollEngine(ScriptableEngine):
         try:
             try:
                 await asyncio.wait_for(tab.go_to(url), timeout=30)
-            except asyncio.TimeoutError as exc:
+            except TimeoutError as exc:
                 raise PageLoadError("Navigation timeout", url=url, cause=exc) from exc
             except KeyError as exc:
                 raise PageLoadError(
@@ -416,7 +416,7 @@ class PydollEngine(ScriptableEngine):
             logger.debug("Stopping Chrome browser")
             try:
                 await asyncio.wait_for(self._browser.stop(), timeout=10)  # type: ignore[no-untyped-call]
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 pass
             self._browser = None
             self._tab = None

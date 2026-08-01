@@ -102,7 +102,9 @@ class PlayerListScraper(BaseScraper[PlayerListPage]):
                 path = href
             slug = path.rstrip("/").rsplit("/", 1)[-1]
             base = path.rstrip("/").rsplit("/", 1)[0]
-            player_url = f"{_FBREF_BASE}{base}/all_comps/{slug}-Stats---All-Competitions"
+            player_url = (
+                f"{_FBREF_BASE}{base}/all_comps/{slug}-Stats---All-Competitions"
+            )
 
             # Strip the player name from the full <p> text to isolate the date portion.
             # next_sibling is unreliable — FBRef often puts a bare newline there.

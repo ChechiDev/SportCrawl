@@ -210,7 +210,8 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                     await _s.commit()
                             except Exception as _backend_err:
                                 logger.warning(
-                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    "[worker-%d] backend mark_failed"
+                                    " failed (job %d): %s",
                                     self._worker_id,
                                     job.id,
                                     _backend_err,
@@ -248,7 +249,8 @@ class PlayerListWorker(BaseWorker["ScrapeQueue"]):
                                     await _s.commit()
                             except Exception as _backend_err:
                                 logger.warning(
-                                    "[worker-%d] backend mark_failed failed (job %d): %s",
+                                    "[worker-%d] backend mark_failed"
+                                    " failed (job %d): %s",
                                     self._worker_id,
                                     job.id,
                                     _backend_err,
