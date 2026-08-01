@@ -27,7 +27,6 @@ class _Scraper(Protocol):
 
 class _QueueRepo(Protocol):
     async def mark_done(self, job_id: int) -> None: ...
-    async def mark_failed(self, job_id: int, error: str) -> None: ...
 
 
 class _PlayerInfoRepo(Protocol):
@@ -70,102 +69,88 @@ class ScrapeJobProcessor:
         self._position_cache = position_cache
         self._valid_countries = valid_countries
 
-    async def process(self, job: _Job, html: str) -> tuple[str, str | None] | None:
-        """Parse, resolve FKs, persist, and mark the job done or failed.
+    async def process(self, job: _Job, html: str) -> tuple[str, str | None]:
+        """Parse, resolve FKs, persist, and mark the job done.
 
         Args:
             job: The ScrapeQueue row being processed.
             html: Raw HTML fetched from the player profile URL.
 
         Returns:
-            On success: (full_name, country_id) where country_id is
-            fk_nat_team if available, else fk_country_birth.
-            On failure: None (error is logged and job is marked failed).
+            (full_name, country_id) where country_id is fk_nat_team if
+            available, else fk_country_birth.
+
+        Raises:
+            Any exception raised by scraper.parse, FK resolution, or
+            player_info_repo methods — callers are responsible for
+            failure handling (record_job_failure).
 
         Side effects:
             - Calls player_info_repo.upsert_player_info, upsert_photo, upsert_position
             - Calls queue_repo.mark_done on success
-            - Calls queue_repo.mark_failed on any error
         """
-        try:
-            page = self._scraper.parse(html)
+        page = self._scraper.parse(html)
 
-            if not page.players:
-                raise RuntimeError("scraper returned empty page")
+        if not page.players:
+            raise RuntimeError("scraper returned empty page")
 
-            raw: PlayerInfoRawData = page.players[0]
+        raw: PlayerInfoRawData = page.players[0]
 
-            # Resolve country name strings to FK country_id values
-            if raw.country_birth_name is not None:
-                raw.fk_country_birth = self._country_name_cache.get(
-                    raw.country_birth_name
+        # Resolve country name strings to FK country_id values
+        if raw.country_birth_name is not None:
+            raw.fk_country_birth = self._country_name_cache.get(
+                raw.country_birth_name
+            )
+            if raw.fk_country_birth is None:
+                logger.warning(
+                    "Country birth name not found in cache: %r",
+                    raw.country_birth_name,
                 )
-                if raw.fk_country_birth is None:
+        if raw.national_team_name is not None:
+            raw.fk_nat_team = self._country_name_cache.get(raw.national_team_name)
+        if raw.youth_nat_team_name is not None:
+            raw.fk_youth_nat_team = self._country_name_cache.get(
+                raw.youth_nat_team_name
+            )
+        if raw.citizenship_name is not None:
+            fk_citizenship = self._country_name_cache.get(raw.citizenship_name)
+            if fk_citizenship and fk_citizenship in self._valid_countries:
+                raw.fk_citizenship = fk_citizenship
+            else:
+                if raw.citizenship_name:
                     logger.warning(
-                        "Country birth name not found in cache: %r",
-                        raw.country_birth_name,
+                        "Citizenship name not found in cache: %r",
+                        raw.citizenship_name,
                     )
-            if raw.national_team_name is not None:
-                raw.fk_nat_team = self._country_name_cache.get(raw.national_team_name)
-            if raw.youth_nat_team_name is not None:
-                raw.fk_youth_nat_team = self._country_name_cache.get(
-                    raw.youth_nat_team_name
-                )
-            if raw.citizenship_name is not None:
-                fk_citizenship = self._country_name_cache.get(raw.citizenship_name)
-                if fk_citizenship and fk_citizenship in self._valid_countries:
-                    raw.fk_citizenship = fk_citizenship
-                else:
-                    if raw.citizenship_name:
-                        logger.warning(
-                            "Citizenship name not found in cache: %r",
-                            raw.citizenship_name,
-                        )
-                    raw.fk_citizenship = None
+                raw.fk_citizenship = None
 
-            # Validate resolved FK values against the allowed sets
-            if raw.fk_country_birth not in self._valid_countries:
-                raw.fk_country_birth = None
-            if raw.fk_nat_team not in self._valid_countries:
-                raw.fk_nat_team = None
-            if raw.fk_youth_nat_team not in self._valid_countries:
-                raw.fk_youth_nat_team = None
+        # Validate resolved FK values against the allowed sets
+        if raw.fk_country_birth not in self._valid_countries:
+            raw.fk_country_birth = None
+        if raw.fk_nat_team not in self._valid_countries:
+            raw.fk_nat_team = None
+        if raw.fk_youth_nat_team not in self._valid_countries:
+            raw.fk_youth_nat_team = None
 
-            # Resolve position codes to surrogate IDs
-            pos_ids = await self._resolve_positions(raw)
+        # Resolve position codes to surrogate IDs
+        pos_ids = await self._resolve_positions(raw)
 
-            if raw.city_name is not None:
-                raw.fk_city = await self._player_info_repo.upsert_city(raw.city_name)
+        if raw.city_name is not None:
+            raw.fk_city = await self._player_info_repo.upsert_city(raw.city_name)
 
-            if raw.fk_team is not None:
-                await self._player_info_repo.upsert_team_stub(raw.fk_team, raw.club_url)
+        if raw.fk_team is not None:
+            await self._player_info_repo.upsert_team_stub(raw.fk_team, raw.club_url)
 
-            await self._player_info_repo.upsert_player_info(raw, pos_ids)
-            await self._player_info_repo.upsert_photo(raw.player_id, raw.photo_url)
-            if raw.fk_citizenship is not None:
-                await self._player_info_repo.upsert_citizenship(
-                    raw.player_id, raw.fk_citizenship
-                )
-            await self._queue_repo.mark_done(job.id)  # type: ignore[arg-type]
+        await self._player_info_repo.upsert_player_info(raw, pos_ids)
+        await self._player_info_repo.upsert_photo(raw.player_id, raw.photo_url)
+        if raw.fk_citizenship is not None:
+            await self._player_info_repo.upsert_citizenship(
+                raw.player_id, raw.fk_citizenship
+            )
+        await self._queue_repo.mark_done(job.id)  # type: ignore[arg-type]
 
-            country_id = raw.fk_nat_team or raw.fk_country_birth
-            return (raw.full_name or raw.player_id or "unknown", country_id)
-
-        except Exception as exc:
-            logger.error("job %d failed: %s", job.id, exc, exc_info=False)
-            try:
-                await self._queue_repo.mark_failed(
-                    job.id,  # type: ignore[arg-type]
-                    str(exc),
-                )
-            except Exception as mark_err:
-                logger.error(
-                    "Failed to mark job %d as failed: %s",
-                    job.id,
-                    mark_err,
-                    exc_info=False,
-                )
-            return None
+        country_id = raw.fk_nat_team or raw.fk_country_birth
+        return (raw.full_name or raw.player_id or "unknown", country_id)
 
     async def _resolve_positions(
         self, raw: PlayerInfoRawData

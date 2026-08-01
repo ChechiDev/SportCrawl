@@ -12,7 +12,10 @@ import asyncio
 import logging
 import random
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from infrastructure.persistence.models.scrape_queue import ScrapeQueue  # noqa: F401
 
 import sqlalchemy as sa
 from pydoll.exceptions import BrowserException
@@ -27,10 +30,12 @@ from core.application.scrape_job_processor import ScrapeJobProcessor
 from core.exceptions.scraper import PageLoadError, RateLimitError
 from infrastructure.browser.pydoll_engine import PydollEngine
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
-from infrastructure.persistence.models.scrape_queue import ScrapeQueue
+from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
 from infrastructure.persistence.repositories.player_info_queue import (
+    PlayerInfoConsistencyError,
     PlayerInfoQueueRepository,
+    record_job_failure,
 )
 from infrastructure.persistence.repositories.player_misc_stats import (
     PlayerMiscStatsRepository,
@@ -41,7 +46,6 @@ from infrastructure.persistence.repositories.player_playing_time_stats import (
 from infrastructure.persistence.repositories.player_shooting_stats import (
     PlayerShootingStatsRepository,
 )
-from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_std_stats import (
     PlayerStdStatsRepository,
 )
@@ -103,6 +107,56 @@ _root_logger.setLevel(logging.WARNING)
 for _noisy in ("pydoll", "websockets", "asyncio"):
     logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Failure-recording helper
+# ---------------------------------------------------------------------------
+
+
+async def _record_failure_with_retry(
+    job_id: int,
+    error: str,
+    max_queue_retries: int,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    _max_attempts: int = 3,
+) -> None:
+    """Attempt record_job_failure with bounded exponential backoff.
+
+    Uses lock_timeout (set inside record_job_failure) and retries on transient
+    database errors. If all attempts are exhausted, raises RuntimeError to stop
+    the current worker — the next startup will run recover_all_stale().
+
+    Does NOT silently swallow durable failures.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(1, _max_attempts + 1):
+        try:
+            await record_job_failure(
+                job_id, error, max_queue_retries, session_factory
+            )
+            return
+        except PlayerInfoConsistencyError:
+            raise
+        except Exception as exc:
+            last_exc = exc
+            delay = (2.0 ** (attempt - 1)) + random.uniform(0.0, 1.0)
+            logger.error(
+                "record_job_failure attempt %d/%d for job %d failed: %s;"
+                " retrying in %.1fs",
+                attempt,
+                _max_attempts,
+                job_id,
+                type(exc).__name__,
+                delay,
+            )
+            if attempt < _max_attempts:
+                await asyncio.sleep(delay)
+    raise RuntimeError(
+        f"FATAL: cannot record failure for job {job_id}"
+        f" after {_max_attempts} attempts: {last_exc}"
+    ) from last_exc
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +232,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         country_name_cache: dict[str, str],
         fbref_base_url: str = "https://fbref.com",
         step2_done: asyncio.Event | None = None,
+        max_queue_retries: int = 5,
     ) -> None:
         super().__init__(
             worker_id=worker_id,
@@ -192,6 +247,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         self._country_name_cache = country_name_cache
         self._fbref_base_url = fbref_base_url
         self._step2_done = step2_done
+        self._max_queue_retries: int = max_queue_retries
 
     @property
     def profile_dir(self) -> str:
@@ -219,7 +275,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
         while True:
             async with get_session(self._session_factory) as session:
-                queue_repo = PlayerInfoQueueRepository(session)
+                queue_repo = PlayerInfoQueueRepository(
+                    session, max_queue_retries=self._max_queue_retries
+                )
                 job = await queue_repo.claim_next()
                 await session.commit()
 
@@ -256,7 +314,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
                     async with get_session(self._session_factory) as session:
                         info_repo = PlayerInfoRepository(session)
-                        q_repo = PlayerInfoQueueRepository(session)
+                        q_repo = PlayerInfoQueueRepository(
+                            session, max_queue_retries=self._max_queue_retries
+                        )
                         processor = ScrapeJobProcessor(
                             scraper=scraper,
                             queue_repo=q_repo,
@@ -296,34 +356,18 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                             misc_repo = PlayerMiscStatsRepository(session)
                             await misc_repo.upsert_bulk(misc_stats)
 
-                        await session.commit()
-
-                    # mark_scraped runs after the main commit because mark_done is
-                    # embedded inside ScrapeJobProcessor.process() in the session above.
-                    # A failed mark_scraped is logged as a warning; the backend URL
-                    # will be re-triggered by fn_notify_all_due on its next poll cycle
-                    # (idempotent re-scrape). Refactoring ScrapeJobProcessor to expose
-                    # an explicit mark_done step would allow full atomicity here.
-                    if job.fk_url_registry_id is not None:
-                        try:
-                            async with get_session(self._session_factory) as _s:
-                                await BackendUrlRepository(_s).mark_scraped(
-                                    "tbl_player_urls", job.fk_url_registry_id
-                                )
-                                await _s.commit()
-                        except Exception as _backend_err:
-                            logger.warning(
-                                "[worker-%d] backend mark_scraped failed (job %d): %s",
-                                self._worker_id,
-                                job.id,
-                                _backend_err,
+                        # Atomic: mark_scraped on URL registry in the same session
+                        if job.fk_url_registry_id is not None:
+                            await BackendUrlRepository(session).mark_scraped(
+                                "tbl_player_urls", job.fk_url_registry_id
                             )
+
+                        await session.commit()
 
                     success = True
                     self._processed += 1
                     self._counts[self._worker_id] = self._processed
-                    full_name = result[0] if result else "unknown"
-                    self._labels[self._worker_id] = escape(full_name or "unknown")
+                    self._labels[self._worker_id] = escape(result[0] or "unknown")
 
                 except (PageLoadError, RateLimitError, BrowserException) as exc:
                     attempt += 1
@@ -331,69 +375,26 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         self._labels[self._worker_id] = (
                             "[bold red]ERROR[/] Browser error — Restarting"
                         )
-                        try:
-                            async with get_session(self._session_factory) as session:
-                                q_repo = PlayerInfoQueueRepository(session)
-                                await q_repo.mark_failed(job.id, str(exc))
-                                await session.commit()
-                        except Exception as mark_err:
-                            logger.error(
-                                "[worker-%d] mark_failed error: %s",
-                                self._worker_id,
-                                mark_err,
-                            )
-                        if job.fk_url_registry_id is not None:
-                            try:
-                                async with get_session(self._session_factory) as _s:
-                                    await BackendUrlRepository(_s).mark_failed(
-                                        "tbl_player_urls",
-                                        job.fk_url_registry_id,
-                                        error=str(exc),
-                                    )
-                                    await _s.commit()
-                            except Exception as _backend_err:
-                                logger.warning(
-                                    "[worker-%d] backend mark_failed failed (job %d): %s",
-                                    self._worker_id,
-                                    job.id,
-                                    _backend_err,
-                                )
+                        await _record_failure_with_retry(
+                            job.id,
+                            str(exc),
+                            self._max_queue_retries,
+                            self._session_factory,
+                        )
                         browser_restart = True
                         break
-                    is_terminal = attempt >= 3
-                    if is_terminal:
+                    is_terminal_attempt = attempt >= 3
+                    if is_terminal_attempt:
                         _scrape_failed = True
                         self._labels[self._worker_id] = (
                             f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
                         )
-                        try:
-                            async with get_session(self._session_factory) as session:
-                                q_repo = PlayerInfoQueueRepository(session)
-                                await q_repo.mark_failed(job.id, str(exc))
-                                await session.commit()
-                        except Exception as mark_err:
-                            logger.error(
-                                "[worker-%d] failed to mark job %d as failed: %s",
-                                self._worker_id,
-                                job.id,
-                                mark_err,
-                            )
-                        if job.fk_url_registry_id is not None:
-                            try:
-                                async with get_session(self._session_factory) as _s:
-                                    await BackendUrlRepository(_s).mark_failed(
-                                        "tbl_player_urls",
-                                        job.fk_url_registry_id,
-                                        error=str(exc),
-                                    )
-                                    await _s.commit()
-                            except Exception as _backend_err:
-                                logger.warning(
-                                    "[worker-%d] backend mark_failed failed (job %d): %s",
-                                    self._worker_id,
-                                    job.id,
-                                    _backend_err,
-                                )
+                        await _record_failure_with_retry(
+                            job.id,
+                            str(exc),
+                            self._max_queue_retries,
+                            self._session_factory,
+                        )
                     else:
                         self._labels[self._worker_id] = (
                             f"[bold yellow]WARNING[/bold yellow]"
@@ -403,17 +404,12 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         await asyncio.sleep(random.uniform(5.0, 15.0))
                 except Exception as exc:  # noqa: BLE001
                     logger.error(exc, exc_info=True)
-                    try:
-                        async with get_session(self._session_factory) as session:
-                            q_repo = PlayerInfoQueueRepository(session)
-                            await q_repo.mark_failed(job.id, str(exc))
-                            await session.commit()
-                    except Exception as mark_err:
-                        logger.error(
-                            "[worker-%d] mark_failed error after unexpected exception: %s",
-                            self._worker_id,
-                            mark_err,
-                        )
+                    await _record_failure_with_retry(
+                        job.id,
+                        str(exc),
+                        self._max_queue_retries,
+                        self._session_factory,
+                    )
                     success = False
                     break
 
@@ -462,50 +458,149 @@ def _player_id_from_url(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Queue trigger (replaces legacy seed)
+# Startup helpers
 # ---------------------------------------------------------------------------
 
 
-async def _notify_all_due(
+async def _verify_schema(
     session_factory: async_sessionmaker[AsyncSession],
-    limit: int = 1000,
 ) -> None:
-    """Seed scrape_queue with player_info jobs from tbl_player_urls.
+    """Verify the database schema is compatible with this scraper version.
 
-    Directly inserts due rows (url_type='profile') into scrape_queue so S3
-    workers can start immediately without waiting for the background daemon.
-    Limited to *limit* rows per call; the _player_info_reseeder picks up the
-    rest while S2 is still running.
-    ON CONFLICT DO UPDATE keeps fk_url_registry_id in sync.
+    Checks Alembic revision, required columns, partial index predicate,
+    and fn_notify_all_due existence. Does NOT apply migrations.
+
+    Raises:
+        RuntimeError: with an actionable message if any check fails.
     """
+    import sqlalchemy as _sa
+
     async with get_session(session_factory) as session:
-        result = await session.execute(
-            sa.text("SELECT count(*) FROM sch_fbref_backend.tbl_player_urls")
-        )
-        if not int(result.scalar() or 0):
-            logger.error(
-                "tbl_player_urls is empty — nothing to notify; "
-                "run the player scraper first"
+        # 1. Alembic revision — must be p56a or p57a
+        try:
+            result = await session.execute(
+                _sa.text("SELECT version_num FROM alembic_version LIMIT 1")
             )
-            return
-        await session.execute(
-            sa.text(
-                "INSERT INTO sch_fbref_infra.scrape_queue"
-                "  (url, domain, status, job_type, fk_url_registry_id)"
-                " SELECT url, 'fbref.com', 'PENDING', 'player_info', id"
-                " FROM sch_fbref_backend.tbl_player_urls"
-                " WHERE url_type = 'profile'"
-                "   AND status = 'PENDING'"
-                "   AND next_scrape_at <= now()"
-                " ORDER BY priority ASC, next_scrape_at ASC"
-                " LIMIT :limit"
-                " ON CONFLICT ON CONSTRAINT uq_scrape_queue_url_job_type DO UPDATE"
-                "   SET fk_url_registry_id = EXCLUDED.fk_url_registry_id"
-                " WHERE scrape_queue.fk_url_registry_id IS NULL"
-            ),
-            {"limit": limit},
+            row = result.one_or_none()
+        except Exception as exc:
+            raise RuntimeError(
+                "Cannot read alembic_version. Run: uv run alembic upgrade p57a"
+            ) from exc
+
+        if row is None:
+            raise RuntimeError(
+                "No Alembic revision applied. Run: uv run alembic upgrade p57a"
+            )
+
+        current = row[0]
+        if current not in {"p56a", "p57a"}:
+            raise RuntimeError(
+                f"Schema revision {current!r} is not compatible with this scraper. "
+                "Required: p57a (or p56a). Run: uv run alembic upgrade p57a"
+            )
+
+        # 2. Required columns on tbl_player_urls
+        required = {"id", "url", "status", "retry_count", "fk_player",
+                    "url_type", "next_scrape_at", "priority"}
+        result = await session.execute(
+            _sa.text(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_schema = 'sch_fbref_backend'"
+                "   AND table_name = 'tbl_player_urls'"
+            )
         )
-        await session.commit()
+        existing = {r[0] for r in result.fetchall()}
+        missing = required - existing
+        if missing:
+            raise RuntimeError(
+                f"tbl_player_urls is missing columns: {sorted(missing)}. "
+                "Run: uv run alembic upgrade p57a"
+            )
+
+        # 3. ix_player_urls_due must include PENDING in its predicate
+        result = await session.execute(
+            _sa.text(
+                "SELECT indexdef FROM pg_indexes"
+                " WHERE schemaname = 'sch_fbref_backend'"
+                "   AND indexname = 'ix_player_urls_due'"
+            )
+        )
+        idx_row = result.one_or_none()
+        if idx_row is None or "PENDING" not in idx_row[0]:
+            raise RuntimeError(
+                "ix_player_urls_due has wrong predicate or does not exist. "
+                "Run: uv run alembic upgrade p57a"
+            )
+
+        # 4. fn_notify_all_due must exist
+        result = await session.execute(
+            _sa.text(
+                "SELECT 1 FROM pg_proc WHERE proname = 'fn_notify_all_due' LIMIT 1"
+            )
+        )
+        if result.one_or_none() is None:
+            raise RuntimeError(
+                "fn_notify_all_due function not found. "
+                "Run: uv run alembic upgrade p57a"
+            )
+
+
+async def _startup_drain(
+    session_factory: async_sessionmaker[AsyncSession],
+    batch_size: int = 200,
+) -> int:
+    """Seed scrape_queue with all currently-due player_info URLs.
+
+    Uses a LEFT JOIN predicate so that only genuinely schedulable registry rows
+    are selected: those with no existing queue row, or whose existing queue row
+    is DONE. Rows with PENDING, IN_PROGRESS, or FAILED queue rows are excluded.
+
+    Terminates when no eligible candidates remain (RETURNING count == 0).
+
+    Returns:
+        Total number of rows inserted or reactivated.
+    """
+    total = 0
+    while True:
+        async with get_session(session_factory) as session:
+            result = await session.execute(
+                sa.text(
+                    """
+                    INSERT INTO sch_fbref_infra.scrape_queue
+                        (url, domain, status, job_type, fk_url_registry_id)
+                    SELECT bpu.url, 'fbref.com', 'PENDING', 'player_info', bpu.id
+                    FROM sch_fbref_backend.tbl_player_urls bpu
+                    LEFT JOIN sch_fbref_infra.scrape_queue sq
+                           ON sq.fk_url_registry_id = bpu.id
+                          AND sq.job_type = 'player_info'
+                    WHERE bpu.url_type = 'profile'
+                      AND bpu.status IN ('PENDING', 'ACTIVE')
+                      AND bpu.next_scrape_at <= now()
+                      AND (sq.id IS NULL OR sq.status = 'DONE')
+                    ORDER BY bpu.priority ASC, bpu.next_scrape_at ASC, bpu.id ASC
+                    LIMIT :batch_size
+                    ON CONFLICT ON CONSTRAINT uq_scrape_queue_url_job_type
+                    DO UPDATE SET
+                        status             = 'PENDING',
+                        completed_at       = NULL,
+                        locked_at          = NULL,
+                        error_message      = NULL,
+                        retry_count        = 0,
+                        fk_url_registry_id = EXCLUDED.fk_url_registry_id
+                    WHERE scrape_queue.status = 'DONE'
+                    RETURNING scrape_queue.id
+                    """
+                ),
+                {"batch_size": batch_size},
+            )
+            n = len(result.fetchall())
+            await session.commit()
+
+        if n == 0:
+            break
+        total += n
+
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +629,8 @@ async def main(workers: int | None = None) -> None:
 
     session_factory = create_session_factory(settings.db)
 
+    await _verify_schema(session_factory)
+
     # Recover any stale IN_PROGRESS rows from a previous interrupted run
     async with get_session(session_factory) as session:
         queue_repo = PlayerInfoQueueRepository(session)
@@ -542,15 +639,10 @@ async def main(workers: int | None = None) -> None:
     if stale:
         logger.debug("Resumed: %d interrupted jobs restored to queue", stale)
 
-    # Recover any permanently FAILED rows so they are retried this run
-    async with get_session(session_factory) as session:
-        queue_repo = PlayerInfoQueueRepository(session)
-        failed = await queue_repo.recover_failed()
-        await session.commit()
-    if failed:
-        logger.info("Recovered %d failed jobs back to PENDING", failed)
-
-    await _notify_all_due(session_factory)
+    drained = await _startup_drain(
+        session_factory, batch_size=settings.scraping.scheduling_batch_size
+    )
+    logger.info("Startup drain complete: %d jobs scheduled", drained)
 
     async with get_session(session_factory) as session:
         result = await session.execute(
@@ -621,6 +713,7 @@ async def main(workers: int | None = None) -> None:
                     valid_countries=valid_countries,
                     country_name_cache=country_name_cache,
                     fbref_base_url=settings.scraping.fbref_base_url,
+                    max_queue_retries=settings.scraping.max_queue_retries,
                 ).run()
                 for i in range(workers)
             ],

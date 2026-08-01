@@ -48,7 +48,7 @@ from scripts.scrape_player_info import (
     _load_country_ids,
     _load_country_name_cache,
 )
-from scripts.scrape_player_info import _notify_all_due as _notify_player_info_due
+from scripts.scrape_player_info import _startup_drain as _startup_drain_player_info
 from scripts.scrape_players import (
     _COUNTRY_CODE_RE,
     PlayerListWorker,
@@ -389,9 +389,9 @@ async def _player_info_reseeder(
     """
     while not step2_done.is_set():
         await asyncio.sleep(30)
-        await _notify_player_info_due(session_factory)
-    # Final notify after step 2 completes so no player is missed.
-    await _notify_player_info_due(session_factory)
+        await _startup_drain_player_info(session_factory)
+    # Final drain after step 2 completes so no player is missed.
+    await _startup_drain_player_info(session_factory)
 
 
 async def _trigger_watcher(
@@ -735,7 +735,7 @@ async def main(
             if stale3:
                 logger.info("Resumed: %d interrupted jobs restored to queue", stale3)
 
-            await _notify_player_info_due(session_factory)
+            await _startup_drain_player_info(session_factory)
 
             # Refresh total for display after seeding
             async with get_session(session_factory) as session:

@@ -74,7 +74,6 @@ class TestScrapeJobProcessorSuccess:
 
         queue_repo = AsyncMock()
         queue_repo.mark_done = AsyncMock()
-        queue_repo.mark_failed = AsyncMock()
 
         country_name_cache: dict[str, str] = {"Argentina": "ARG"}
         position_cache: dict[str, int] = {}
@@ -95,7 +94,6 @@ class TestScrapeJobProcessorSuccess:
         scraper.parse.assert_called_once_with(html)
         player_info_repo.upsert_player_info.assert_called_once()
         queue_repo.mark_done.assert_called_once_with(job.id)
-        queue_repo.mark_failed.assert_not_called()
 
     async def test_success_resolves_country_from_cache(self) -> None:
         """country_birth_name → fk_country_birth resolved from country_name_cache."""
@@ -414,8 +412,9 @@ class TestScrapeJobProcessorCityUpsert:
 
 
 class TestScrapeJobProcessorFailure:
-    async def test_scraper_parse_error_calls_mark_failed(self) -> None:
-        """If scraper.parse raises, processor calls mark_failed with the error."""
+    async def test_scraper_parse_error_propagates(self) -> None:
+        """If scraper.parse raises, processor propagates the exception."""
+        import pytest
 
         job = _make_job()
         scraper = MagicMock()
@@ -423,7 +422,6 @@ class TestScrapeJobProcessorFailure:
 
         queue_repo = AsyncMock()
         queue_repo.mark_done = AsyncMock()
-        queue_repo.mark_failed = AsyncMock()
 
         processor = ScrapeJobProcessor(
             scraper=scraper,
@@ -434,13 +432,14 @@ class TestScrapeJobProcessorFailure:
             valid_countries=frozenset(),
         )
 
-        await processor.process(job, "<html></html>")
+        with pytest.raises(RuntimeError, match="parse exploded"):
+            await processor.process(job, "<html></html>")
 
-        queue_repo.mark_failed.assert_called_once()
         queue_repo.mark_done.assert_not_called()
 
-    async def test_db_upsert_error_calls_mark_failed(self) -> None:
-        """If upsert_player_info raises, processor calls mark_failed."""
+    async def test_db_upsert_error_propagates(self) -> None:
+        """If upsert_player_info raises, processor propagates the exception."""
+        import pytest
 
         raw = _make_raw_data()
         page = _make_page(raw)
@@ -457,7 +456,6 @@ class TestScrapeJobProcessorFailure:
 
         queue_repo = AsyncMock()
         queue_repo.mark_done = AsyncMock()
-        queue_repo.mark_failed = AsyncMock()
 
         processor = ScrapeJobProcessor(
             scraper=scraper,
@@ -468,9 +466,9 @@ class TestScrapeJobProcessorFailure:
             valid_countries=frozenset(),
         )
 
-        await processor.process(job, "<html></html>")
+        with pytest.raises(Exception, match="DB constraint violation"):
+            await processor.process(job, "<html></html>")
 
-        queue_repo.mark_failed.assert_called_once()
         queue_repo.mark_done.assert_not_called()
 
 
