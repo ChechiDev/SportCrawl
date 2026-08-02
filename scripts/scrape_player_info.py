@@ -1003,12 +1003,17 @@ async def main(workers: int | None = None) -> None:
                     )
                     for i in range(workers)
                 ]
-                results = await asyncio.gather(
-                    *[w.run_buffered(_dispatch_buffer) for w in _worker_instances],
-                    return_exceptions=True,
-                )
-                _producer.request_stop()
-                await _producer_task
+                try:
+                    results = await asyncio.gather(
+                        *[
+                            w.run_buffered(_dispatch_buffer)
+                            for w in _worker_instances
+                        ],
+                        return_exceptions=True,
+                    )
+                finally:
+                    _producer.request_stop()
+                    await _producer_task
             else:
                 results = await asyncio.gather(
                     *[

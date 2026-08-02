@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from infrastructure.persistence.models.scrape_queue import ScrapeQueue, ScrapeStatus
@@ -217,60 +218,90 @@ class TestClaimById:
 
         Uses two independent sessions so FOR UPDATE SKIP LOCKED contention
         works correctly — a single shared session would not produce real locking.
+        The committed row is deleted in a finally block so it does not ghost
+        subsequent test runs (this test commits outside the async_session rollback).
         """
         from sqlalchemy.engine.url import URL
 
         db_url: URL = _integration_db_url  # type: ignore[assignment]  # fixture is URL
+        engine_setup = create_async_engine(db_url, echo=False)
         engine_a = create_async_engine(db_url, echo=False)
         engine_b = create_async_engine(db_url, echo=False)
-
-        # Insert the job with a fresh engine (to ensure it's committed)
-        engine_setup = create_async_engine(db_url, echo=False)
-        async with engine_setup.connect() as conn:
-            await conn.begin()
-            async with AsyncSession(bind=conn, expire_on_commit=False) as setup_session:
-                row = ScrapeQueue(
-                    url="https://fbref.com/concurrent-claim-test",
-                    domain="fbref.com",
-                    status=ScrapeStatus.PENDING,
-                    job_type=_JOB_TYPE,
-                )
-                setup_session.add(row)
-                await setup_session.flush()
-                await setup_session.refresh(row)
-                job_id = row.id
-            await conn.commit()
-        await engine_setup.dispose()
-
-        results: list[ScrapeQueue | None] = []
-
-        async def _claim_with_engine(engine: AsyncEngine) -> ScrapeQueue | None:
-
-            async with engine.connect() as conn:
-                async with conn.begin():
-                    async with AsyncSession(
-                        bind=conn, expire_on_commit=False
-                    ) as session:
-                        repo = ScrapeQueueRepository(session, job_type=_JOB_TYPE)
-                        claimed = await repo.claim_by_id(job_id)
-                        await session.flush()
-                    # commit happens here when conn.begin() context exits
-                return claimed
+        job_id: int | None = None
 
         try:
+            async with engine_setup.connect() as conn:
+                await conn.begin()
+                async with AsyncSession(
+                    bind=conn, expire_on_commit=False
+                ) as setup_session:
+                    row = ScrapeQueue(
+                        url="https://fbref.com/concurrent-claim-test",
+                        domain="fbref.com",
+                        status=ScrapeStatus.PENDING,
+                        job_type=_JOB_TYPE,
+                    )
+                    setup_session.add(row)
+                    await setup_session.flush()
+                    await setup_session.refresh(row)
+                    job_id = row.id
+                await conn.commit()
+
+            async def _claim_with_engine(engine: AsyncEngine) -> ScrapeQueue | None:
+                async with engine.connect() as conn:
+                    async with conn.begin():
+                        async with AsyncSession(
+                            bind=conn, expire_on_commit=False
+                        ) as session:
+                            repo = ScrapeQueueRepository(session, job_type=_JOB_TYPE)
+                            claimed = await repo.claim_by_id(job_id)
+                            await session.flush()
+                        return claimed
+
             claimed_a, claimed_b = await asyncio.gather(
                 _claim_with_engine(engine_a),
                 _claim_with_engine(engine_b),
             )
+
+            results = [claimed_a, claimed_b]
+            successes = [r for r in results if r is not None]
+            failures = [r for r in results if r is None]
+
+            assert len(successes) == 1, (
+                f"Expected exactly 1 successful claim, got {len(successes)}: {results}"
+            )
+            assert len(failures) == 1
         finally:
+            if job_id is not None:
+                async with engine_setup.connect() as conn:
+                    await conn.execute(
+                        text(
+                            "DELETE FROM sch_fbref_infra.scrape_queue WHERE id = :id"
+                        ),
+                        {"id": job_id},
+                    )
+                    await conn.commit()
             await engine_a.dispose()
             await engine_b.dispose()
+            await engine_setup.dispose()
 
-        results = [claimed_a, claimed_b]
-        successes = [r for r in results if r is not None]
-        failures = [r for r in results if r is None]
-
-        assert len(successes) == 1, (
-            f"Expected exactly 1 successful claim, got {len(successes)}: {results}"
+    async def test_returns_none_for_wrong_job_type(
+        self, async_session: AsyncSession
+    ) -> None:
+        """claim_by_id returns None when the job exists but has a different job_type."""
+        repo = _make_repo(async_session)  # job_type = "player_info"
+        row = ScrapeQueue(
+            url="https://fbref.com/wrong-type",
+            domain="fbref.com",
+            status=ScrapeStatus.PENDING,
+            job_type=_OTHER_JOB_TYPE,  # "player_discovery"
         )
-        assert len(failures) == 1
+        async_session.add(row)
+        await async_session.flush()
+        await async_session.refresh(row)
+
+        claimed = await repo.claim_by_id(row.id)
+
+        assert claimed is None
+        await async_session.refresh(row)
+        assert row.status == ScrapeStatus.PENDING
