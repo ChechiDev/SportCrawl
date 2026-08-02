@@ -288,10 +288,13 @@ async def test_producer_no_transaction_held_during_put():
 
     buf.put = tracked_put  # type: ignore[method-assign]
 
+    _peek_calls = 0
+
     async def peek_with_simulated_tx() -> list[int]:
-        nonlocal tx_open
+        nonlocal tx_open, _peek_calls
+        _peek_calls += 1
         tx_open = True
-        ids = [1, 2, 3]
+        ids = [1, 2, 3] if _peek_calls == 1 else []
         tx_open = False  # transaction closed before returning
         return ids
 
