@@ -280,11 +280,11 @@ async def test_producer_no_transaction_held_during_put():
 
     original_put = buf.put
 
-    async def tracked_put(ref: CandidateRef) -> None:
+    async def tracked_put(ref: CandidateRef) -> bool:
         nonlocal tx_open_during_put
         if tx_open:
             tx_open_during_put = True
-        await original_put(ref)
+        return await original_put(ref)
 
     buf.put = tracked_put  # type: ignore[method-assign]
 
@@ -311,6 +311,48 @@ async def test_producer_no_transaction_held_during_put():
     assert not tx_open_during_put, (
         "put() was called while simulated transaction was open"
     )
+
+
+@pytest.mark.asyncio
+async def test_producer_backs_off_on_duplicate_only_peek_batch() -> None:
+    """Producer yields/backs off when peek returns only IDs already in _seen.
+
+    Without the duplicate-only backoff, the producer spins with zero yield
+    points once _seen is saturated, starving the event loop.  With the fix,
+    it calls asyncio.sleep(poll_interval) after any batch where accepted==0,
+    giving the event loop control so request_stop() can be observed promptly.
+    """
+    buf = BoundedCandidateBuffer(maxsize=10)
+    # Pre-load IDs so _seen already contains {1, 2, 3}.
+    for job_id in [1, 2, 3]:
+        await buf.put(CandidateRef(job_id=job_id))
+    assert buf.qsize == 3
+
+    peek_calls = 0
+
+    async def peek_duplicates() -> list[int]:
+        nonlocal peek_calls
+        peek_calls += 1
+        return [1, 2, 3]  # all already in _seen — no new candidates
+
+    producer = CandidateProducer(
+        peek_fn=peek_duplicates,
+        buffer=buf,
+        n_workers=1,
+        poll_interval=0.005,  # 10x margin under the 0.05s test sleep
+    )
+    task = asyncio.create_task(producer.run())
+    # If the producer starves the event loop this sleep never fires and the
+    # subsequent wait_for raises TimeoutError — proving the fix is needed.
+    await asyncio.sleep(0.05)
+    producer.request_stop()
+    await asyncio.wait_for(task, timeout=2.0)
+
+    # Producer must have iterated more than once (backoff yielded the loop).
+    assert peek_calls >= 2, f"expected ≥2 peek calls, got {peek_calls}"
+    # close(n_workers=1) adds one shutdown sentinel to the queue.
+    # Total = 3 pre-loaded items + 1 sentinel — no duplicates were inserted.
+    assert buf.qsize == 4
 
 
 # ---------------------------------------------------------------------------
