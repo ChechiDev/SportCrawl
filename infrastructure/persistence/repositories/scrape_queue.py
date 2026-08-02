@@ -64,6 +64,56 @@ class ScrapeQueueRepository:
             await self._session.flush()
             return row
 
+    async def peek_pending_ids(self, limit: int = 50) -> list[int]:
+        """Return up to limit PENDING job IDs without claiming them.
+
+        Read-only peek; no FOR UPDATE, no status mutation. Safe for producer
+        prefetch. Caller owns the transaction and must commit/close it before
+        calling BoundedCandidateBuffer.put() to avoid holding an open
+        transaction while blocking on buffer backpressure.
+        """
+        async with repo_error_context("peek_pending_ids", "peek_pending_ids failed"):
+            stmt = (
+                select(ScrapeQueue.id)
+                .where(
+                    ScrapeQueue.status == ScrapeStatus.PENDING,
+                    ScrapeQueue.job_type == self._job_type,
+                )
+                .order_by(ScrapeQueue.id)
+                .limit(limit)
+            )
+            result = await self._session.execute(stmt)
+            return [row[0] for row in result.all()]
+
+    async def claim_by_id(self, job_id: int) -> ScrapeQueue | None:
+        """Atomically claim a specific PENDING job by ID (claim-at-handoff).
+
+        Uses FOR UPDATE SKIP LOCKED so a row locked by another process returns
+        None instead of blocking. Returns None if the job is already IN_PROGRESS,
+        DONE, FAILED, or locked by another process — all safe to discard.
+
+        This is the claim-at-handoff counterpart to claim_next(). Workers call
+        this after receiving a CandidateRef from BoundedCandidateBuffer.
+        """
+        async with repo_error_context("claim_by_id", "claim_by_id failed"):
+            stmt = (
+                select(ScrapeQueue)
+                .where(
+                    ScrapeQueue.id == job_id,
+                    ScrapeQueue.status == ScrapeStatus.PENDING,
+                    ScrapeQueue.job_type == self._job_type,
+                )
+                .with_for_update(skip_locked=True)
+            )
+            result = await self._session.execute(stmt)
+            row = result.scalars().first()
+            if row is None:
+                return None
+            row.status = ScrapeStatus.IN_PROGRESS
+            row.locked_at = datetime.now(UTC)
+            await self._session.flush()
+            return row
+
     async def _get_job_or_raise(self, job_id: int, operation: str) -> ScrapeQueue:
         row = await self._session.get(ScrapeQueue, job_id)
         if row is None:
