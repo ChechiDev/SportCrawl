@@ -153,6 +153,7 @@ class CandidateProducer:
         n_workers: int,
         poll_interval: float = 5.0,
         step2_done: asyncio.Event | None = None,
+        wait_fn: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         if CandidateProducer._active:
             raise RuntimeError(
@@ -164,6 +165,7 @@ class CandidateProducer:
         self._n_workers = n_workers
         self._poll_interval = poll_interval
         self._step2_done = step2_done
+        self._wait_fn = wait_fn
         self._stop = asyncio.Event()
 
     def request_stop(self) -> None:
@@ -179,6 +181,8 @@ class CandidateProducer:
         """Run the producer loop until the queue is exhausted or stop is requested."""
         try:
             while not self._stop.is_set():
+                if self._wait_fn is not None:
+                    await self._wait_fn()
                 ids = await self._peek_fn()
                 # Transaction inside peek_fn is closed before put() is called.
                 if ids:

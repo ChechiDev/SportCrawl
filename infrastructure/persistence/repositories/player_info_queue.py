@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.application.retry_policy import is_terminal
@@ -56,6 +56,33 @@ class PlayerInfoQueueRepository(ScrapeQueueRepository):
             else:
                 row.status = ScrapeStatus.PENDING
             await self._session.flush()
+
+    async def release_to_pending(self, job_id: int) -> bool:
+        """Release an IN_PROGRESS job back to PENDING without penalty.
+
+        Used when the rate-limit gate closes between claim-at-handoff and
+        navigation. Does NOT increment retry_count or advance failure state.
+        Only transitions IN_PROGRESS → PENDING; skips any other state silently.
+
+        Returns True if the row was updated, False if job was not IN_PROGRESS
+        or does not exist (safe to ignore in both cases).
+        """
+        async with repo_error_context(
+            "release_to_pending", "release_to_pending failed"
+        ):
+            stmt = (
+                update(ScrapeQueue)
+                .where(
+                    ScrapeQueue.id == job_id,
+                    ScrapeQueue.status == ScrapeStatus.IN_PROGRESS,
+                    ScrapeQueue.job_type == self._job_type,
+                )
+                .values(status=ScrapeStatus.PENDING, locked_at=None)
+                .returning(ScrapeQueue.id)
+                .execution_options(synchronize_session=False)
+            )
+            result = await self._session.execute(stmt)
+            return result.fetchone() is not None
 
 
 async def recover_failed_job(

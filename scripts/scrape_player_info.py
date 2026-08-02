@@ -12,6 +12,7 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ from infrastructure.browser.dispatch import (
     BoundedCandidateBuffer,
     CandidateProducer,
 )
+from infrastructure.browser.gate import RateLimitGate
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
@@ -238,6 +240,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         step2_done: asyncio.Event | None = None,
         max_queue_retries: int = 5,
         display: XvfbDisplay | None = None,
+        rate_limit_gate: RateLimitGate | None = None,
     ) -> None:
         super().__init__(
             worker_id=worker_id,
@@ -254,6 +257,7 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         self._step2_done = step2_done
         self._max_queue_retries: int = max_queue_retries
         self._display: XvfbDisplay | None = display
+        self._rate_limit_gate: RateLimitGate | None = rate_limit_gate
 
     async def on_browser_ready(self, engine: Any) -> None:
         from ports.browser import WarmableEngine
@@ -473,6 +477,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     try:
                         restart_count = 0
                         await self.on_browser_ready(engine)
+                        # Gate was closed by rate-limit; warmup just proved readiness.
+                        if self._rate_limit_gate is not None:
+                            self._rate_limit_gate.mark_engine_ready()
                         loop_result = await self._run_buffered_loop(engine, buffer)
                     except CooldownRequired:
                         _cooldown_required = True
@@ -480,6 +487,8 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
+                        if self._rate_limit_gate is not None:
+                            self._rate_limit_gate.cancel_recovery()
                         _w_log.error(exc, exc_info=True)
                         self._labels[self._worker_id] = "unexpected error — restarting"
                         await asyncio.sleep(5)
@@ -491,6 +500,11 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                 raise
             except Exception:
                 restart_count += 1
+                # Engine is torn down. Cancel any in-flight gate recovery that
+                # captured this engine's probe_fn — a dead-engine probe would
+                # exhaust all attempts and leave the gate permanently closed.
+                if self._rate_limit_gate is not None:
+                    self._rate_limit_gate.cancel_recovery()
                 if restart_count >= _MAX_RESTARTS:
                     self._labels[self._worker_id] = (
                         f"[bold red]ERROR[/] Browser failed"
@@ -507,6 +521,10 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                 continue
 
             if _cooldown_required:
+                # Engine torn down. Cancel gate recovery so next engine session
+                # can start a fresh probe rather than probing a dead engine.
+                if self._rate_limit_gate is not None:
+                    self._rate_limit_gate.cancel_recovery()
                 self._labels[self._worker_id] = (
                     f"__cooldown__{time.monotonic() + 60}"
                 )
@@ -525,6 +543,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
         self._labels[self._worker_id] = "Starting buffered crawl..."
 
         while True:
+            # Check gate before blocking on buffer.get() — unblocks quickly if closed.
+            if self._rate_limit_gate is not None:
+                await self._rate_limit_gate.wait_if_closed()
             # Guard: if buffer is already closed and empty (e.g., this is a
             # browser restart and the sentinel was consumed in the prior session),
             # exit immediately instead of blocking on get() forever.
@@ -552,6 +573,23 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                 )
                 continue
 
+            # Gate-after-claim race: if gate closed between claim and navigation,
+            # release the job back to PENDING without a retry penalty.
+            if self._rate_limit_gate is not None and not self._rate_limit_gate.is_open:
+                async with get_session(self._session_factory) as _rs:
+                    _r_repo = PlayerInfoQueueRepository(
+                        _rs, max_queue_retries=self._max_queue_retries
+                    )
+                    released = await _r_repo.release_to_pending(job.id)
+                    await _rs.commit()
+                if released:
+                    logger.info(
+                        "rate_limit_gate: released job %d to PENDING (gate closed)",
+                        job.id,
+                    )
+                await self._rate_limit_gate.wait_if_closed()
+                continue
+
             attempt = 0
             success = False
             browser_restart = False
@@ -559,6 +597,8 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
             while attempt < 3 and not success:
                 try:
+                    if self._rate_limit_gate is not None:
+                        await self._rate_limit_gate.wait_if_closed()
                     async with self._fetch_gate:
                         await engine.navigate(job.url)
                         await asyncio.sleep(random.uniform(2.0, 6.0))
@@ -629,6 +669,34 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
 
                 except (PageLoadError, RateLimitError, BrowserException) as exc:
                     attempt += 1
+                    if (
+                        isinstance(exc, RateLimitError)
+                        and self._rate_limit_gate is not None
+                    ):
+                        _engine_ref = engine  # capture for closure
+                        _fbref_url = self._fbref_base_url
+
+                        from ports.browser import WarmableEngine as _WarmableEngine
+                        _probe: Callable[[], Awaitable[bool]] | None = None
+                        if isinstance(_engine_ref, _WarmableEngine):
+                            _e_ref = _engine_ref
+                            _u_ref = _fbref_url
+
+                            async def _probe_fn(  # noqa: E306
+                                _e: Any = _e_ref,
+                                _url: str = _u_ref,
+                            ) -> bool:
+                                try:
+                                    await _e.warmup(_url)
+                                    return True
+                                except Exception:  # noqa: BLE001
+                                    return False
+
+                            _probe = _probe_fn
+                        self._rate_limit_gate.signal_rate_limit(
+                            reason="rate_limit_429",
+                            probe_fn=_probe,
+                        )
                     if isinstance(exc, BrowserException):
                         self._labels[self._worker_id] = (
                             "[bold red]ERROR[/] Browser error — Restarting"
@@ -960,6 +1028,19 @@ async def main(workers: int | None = None) -> None:
                 )
             )
             if settings.scraping.player_info_dispatch_buffer_enabled:
+                _sc = settings.scraping
+                _gate = RateLimitGate(
+                    cooldown_secs=_sc.player_info_gate_cooldown_secs,
+                    probe_timeout_secs=_sc.player_info_gate_probe_timeout_secs,
+                    max_probe_attempts=_sc.player_info_gate_max_probe_attempts,
+                )
+                logger.info(
+                    "player_info: buffered mode | workers=%d | buffer_size=%d"
+                    " | gate_cooldown=%.0fs",
+                    workers,
+                    settings.scraping.player_info_dispatch_buffer_size,
+                    settings.scraping.player_info_gate_cooldown_secs,
+                )
                 _dispatch_buffer = BoundedCandidateBuffer(
                     maxsize=settings.scraping.player_info_dispatch_buffer_size
                 )
@@ -982,6 +1063,7 @@ async def main(workers: int | None = None) -> None:
                     poll_interval=(
                         settings.scraping.player_info_dispatch_buffer_poll_interval
                     ),
+                    wait_fn=_gate.wait_if_closed,
                 )
                 _producer_task = asyncio.create_task(
                     _producer.run(), name="dispatch-producer"
@@ -1000,6 +1082,7 @@ async def main(workers: int | None = None) -> None:
                         fbref_base_url=settings.scraping.fbref_base_url,
                         max_queue_retries=settings.scraping.max_queue_retries,
                         display=shared_display,
+                        rate_limit_gate=_gate,
                     )
                     for i in range(workers)
                 ]
@@ -1014,7 +1097,12 @@ async def main(workers: int | None = None) -> None:
                 finally:
                     _producer.request_stop()
                     await _producer_task
+                    _gate.shutdown()
             else:
+                logger.info(
+                    "player_info: direct mode | workers=%d",
+                    workers,
+                )
                 results = await asyncio.gather(
                     *[
                         PlayerInfoWorker(
