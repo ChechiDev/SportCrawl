@@ -12,6 +12,7 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -476,6 +477,9 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     try:
                         restart_count = 0
                         await self.on_browser_ready(engine)
+                        # Gate was closed by rate-limit; warmup just proved readiness.
+                        if self._rate_limit_gate is not None:
+                            self._rate_limit_gate.mark_engine_ready()
                         loop_result = await self._run_buffered_loop(engine, buffer)
                     except CooldownRequired:
                         _cooldown_required = True
@@ -483,6 +487,8 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
+                        if self._rate_limit_gate is not None:
+                            self._rate_limit_gate.cancel_recovery()
                         _w_log.error(exc, exc_info=True)
                         self._labels[self._worker_id] = "unexpected error — restarting"
                         await asyncio.sleep(5)
@@ -670,22 +676,26 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                         _engine_ref = engine  # capture for closure
                         _fbref_url = self._fbref_base_url
 
-                        async def _probe_fn(
-                            _e: Any = _engine_ref,
-                            _url: str = _fbref_url,
-                        ) -> bool:
-                            try:
-                                from ports.browser import WarmableEngine
-                                if isinstance(_e, WarmableEngine):
+                        from ports.browser import WarmableEngine as _WarmableEngine
+                        _probe: Callable[[], Awaitable[bool]] | None = None
+                        if isinstance(_engine_ref, _WarmableEngine):
+                            _e_ref = _engine_ref
+                            _u_ref = _fbref_url
+
+                            async def _probe_fn(  # noqa: E306
+                                _e: Any = _e_ref,
+                                _url: str = _u_ref,
+                            ) -> bool:
+                                try:
                                     await _e.warmup(_url)
                                     return True
-                                return True
-                            except Exception:  # noqa: BLE001
-                                return False
+                                except Exception:  # noqa: BLE001
+                                    return False
 
+                            _probe = _probe_fn
                         self._rate_limit_gate.signal_rate_limit(
                             reason="rate_limit_429",
-                            probe_fn=_probe_fn,
+                            probe_fn=_probe,
                         )
                     if isinstance(exc, BrowserException):
                         self._labels[self._worker_id] = (
@@ -1053,6 +1063,7 @@ async def main(workers: int | None = None) -> None:
                     poll_interval=(
                         settings.scraping.player_info_dispatch_buffer_poll_interval
                     ),
+                    wait_fn=_gate.wait_if_closed,
                 )
                 _producer_task = asyncio.create_task(
                     _producer.run(), name="dispatch-producer"
@@ -1086,6 +1097,7 @@ async def main(workers: int | None = None) -> None:
                 finally:
                     _producer.request_stop()
                     await _producer_task
+                    _gate.shutdown()
             else:
                 logger.info(
                     "player_info: direct mode | workers=%d",

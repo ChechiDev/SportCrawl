@@ -220,19 +220,20 @@ async def test_resignal_after_all_probes_exhausted_starts_new_recovery():
 
 
 # ---------------------------------------------------------------------------
-# cancel_recovery() reopens gate and handles no-op when no task running
+# cancel_recovery() leaves gate closed and handles no-op when no task running
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_cancel_recovery_reopens_gate():
+async def test_cancel_recovery_leaves_gate_closed():
+    """cancel_recovery() cancels the stale task but does NOT reopen the gate."""
     _, sleep = instant_sleep()
     gate = RateLimitGate(cooldown_secs=100.0, sleep_fn=sleep)
     gate.signal_rate_limit(reason="rl")
     assert gate.is_open is False
     gate.cancel_recovery()
-    assert gate.is_open is True
-    # Recovery task was cancelled — await it to clean up
+    assert gate.is_open is False  # gate stays closed
+    # Clean up cancelled task
     if gate._recovery_task is not None:
         try:
             await gate._recovery_task
@@ -245,6 +246,57 @@ def test_cancel_recovery_noop_when_no_task():
     gate = RateLimitGate(sleep_fn=sleep)
     gate.cancel_recovery()  # must not raise
     assert gate.is_open is True
+
+
+# ---------------------------------------------------------------------------
+# mark_engine_ready() opens gate and cancels stale recovery
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mark_engine_ready_opens_gate():
+    """mark_engine_ready() opens a closed gate and cancels stale recovery."""
+    _, sleep = instant_sleep()
+    gate = RateLimitGate(cooldown_secs=100.0, sleep_fn=sleep)
+    gate.signal_rate_limit(reason="rl")
+    assert gate.is_open is False
+    gate.mark_engine_ready()
+    assert gate.is_open is True
+    # Recovery task was cancelled
+    if gate._recovery_task is not None:
+        try:
+            await gate._recovery_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
+def test_mark_engine_ready_noop_when_already_open():
+    """mark_engine_ready() on an already-open gate does not raise."""
+    _, sleep = instant_sleep()
+    gate = RateLimitGate(sleep_fn=sleep)
+    gate.mark_engine_ready()  # gate was already open, no recovery task
+    assert gate.is_open is True
+
+
+# ---------------------------------------------------------------------------
+# shutdown() cancels recovery without changing gate state
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_recovery_task():
+    """shutdown() cancels an in-flight recovery without changing gate state."""
+    _, sleep = instant_sleep()
+    gate = RateLimitGate(cooldown_secs=100.0, sleep_fn=sleep)
+    gate.signal_rate_limit(reason="rl")
+    assert gate.is_open is False
+    gate.shutdown()
+    assert gate.is_open is False  # gate state unchanged
+    if gate._recovery_task is not None:
+        try:
+            await gate._recovery_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +313,53 @@ async def test_recovery_task_cancel():
     gate._recovery_task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await gate._recovery_task
+
+
+# ---------------------------------------------------------------------------
+# wait_if_closed blocks while gate is closed and unblocks on reopen
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wait_if_closed_blocks_then_unblocks():
+    """wait_if_closed() blocks while gate is closed and unblocks when it reopens."""
+    # A sleep that yields to the event loop so tasks interleave naturally.
+    async def yielding_sleep(_: float) -> None:
+        await asyncio.sleep(0)
+
+    gate = RateLimitGate(cooldown_secs=100.0, sleep_fn=yielding_sleep)
+    gate.signal_rate_limit(reason="rl")
+    assert gate.is_open is False
+
+    # Cancel the recovery task immediately so it cannot auto-reopen the gate.
+    assert gate._recovery_task is not None
+    gate._recovery_task.cancel()
+    try:
+        await gate._recovery_task
+    except (asyncio.CancelledError, Exception):
+        pass
+
+    unblocked = False
+
+    async def waiter() -> None:
+        nonlocal unblocked
+        await gate.wait_if_closed()
+        unblocked = True
+
+    # Start the waiter concurrently.
+    task = asyncio.create_task(waiter())
+    # Allow the event loop to run — waiter should be blocked in wait loop.
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not unblocked  # still blocked
+
+    # Reopen the gate manually.
+    gate.mark_engine_ready()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert unblocked  # now unblocked
+
+    await task
 
 
 # ---------------------------------------------------------------------------

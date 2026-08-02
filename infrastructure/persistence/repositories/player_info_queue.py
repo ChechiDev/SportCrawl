@@ -79,6 +79,7 @@ class PlayerInfoQueueRepository(ScrapeQueueRepository):
                 )
                 .values(status=ScrapeStatus.PENDING, locked_at=None)
                 .returning(ScrapeQueue.id)
+                .execution_options(synchronize_session=False)
             )
             result = await self._session.execute(stmt)
             return result.fetchone() is not None

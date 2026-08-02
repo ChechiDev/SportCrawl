@@ -117,3 +117,47 @@ async def test_release_to_pending_noop_for_nonexistent_job(
     await async_session.flush()
 
     assert released is False
+
+
+async def test_release_to_pending_noop_for_done_job(
+    async_session: AsyncSession,
+) -> None:
+    """release_to_pending() must not touch a DONE job."""
+    job = ScrapeQueue(
+        url="https://fbref.com/en/players/done_player",
+        domain="fbref.com",
+        job_type="player_info",
+        status=ScrapeStatus.DONE,
+    )
+    async_session.add(job)
+    await async_session.flush()
+
+    repo = PlayerInfoQueueRepository(async_session)
+    released = await repo.release_to_pending(job.id)
+    await async_session.flush()
+
+    assert released is False
+    await async_session.refresh(job)
+    assert job.status == ScrapeStatus.DONE
+
+
+async def test_release_to_pending_noop_for_failed_job(
+    async_session: AsyncSession,
+) -> None:
+    """release_to_pending() must not touch a FAILED job."""
+    job = ScrapeQueue(
+        url="https://fbref.com/en/players/failed_player",
+        domain="fbref.com",
+        job_type="player_info",
+        status=ScrapeStatus.FAILED,
+    )
+    async_session.add(job)
+    await async_session.flush()
+
+    repo = PlayerInfoQueueRepository(async_session)
+    released = await repo.release_to_pending(job.id)
+    await async_session.flush()
+
+    assert released is False
+    await async_session.refresh(job)
+    assert job.status == ScrapeStatus.FAILED

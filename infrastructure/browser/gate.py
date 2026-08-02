@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 _log = logging.getLogger(__name__)
 
 _POLL_INTERVAL: float = 1.0
+_MAX_PROBE_BACKOFF_SECS: float = 300.0
 
 
 class RateLimitGate:
@@ -76,6 +77,9 @@ class RateLimitGate:
         probe_fn: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         """Close the gate and schedule cooldown+probe recovery.
+
+        Must be called from within a running asyncio event loop because it
+        calls asyncio.create_task() to schedule the recovery coroutine.
 
         Idempotent: duplicate signals while a recovery task is running are
         silently dropped to prevent overlapping cooldown/probe tasks.
@@ -149,7 +153,7 @@ class RateLimitGate:
                     self._max_probe_attempts,
                 )
                 if attempt < self._max_probe_attempts:
-                    backoff = min(self._cooldown_secs, 300.0)
+                    backoff = min(self._cooldown_secs, _MAX_PROBE_BACKOFF_SECS)
                     _log.info(
                         "rate_limit_gate: backing off %.0fs before next probe",
                         backoff,
@@ -165,16 +169,31 @@ class RateLimitGate:
             raise
 
     def cancel_recovery(self) -> None:
-        """Cancel an in-flight recovery task and reopen the gate.
+        """Cancel an in-flight recovery task without reopening the gate.
 
         Called when the engine that supplied the probe_fn is torn down.
-        Cancelling prevents the probe from running against a dead engine (which
-        would exhaust all attempts and leave the gate permanently closed).
-        Reopening ensures workers can resume once a new engine is started.
-        The next rate-limit signal will start a fresh recovery with the new
-        engine's probe_fn.
+        Cancelling prevents exhausting probe attempts against a dead engine.
+        The gate remains CLOSED until the next engine proves readiness via
+        mark_engine_ready().
+        """
+        if self._recovery_task is not None and not self._recovery_task.done():
+            self._recovery_task.cancel()
+        _log.debug("rate_limit_gate: recovery task cancelled (engine teardown), gate remains CLOSED")  # noqa: E501
+
+    def mark_engine_ready(self) -> None:
+        """Open the gate after a new engine session has proven readiness.
+
+        Called after a successful on_browser_ready()/warmup() so workers can
+        resume navigation. Also cancels any residual recovery task from a
+        previous engine session.
         """
         if self._recovery_task is not None and not self._recovery_task.done():
             self._recovery_task.cancel()
         self._open = True
-        _log.info("rate_limit_gate: recovery cancelled (engine teardown), gate REOPENED")  # noqa: E501
+        _log.info("rate_limit_gate: REOPENED (new engine ready via warmup)")
+
+    def shutdown(self) -> None:
+        """Cancel any in-flight recovery task on process exit (no gate state change)."""
+        if self._recovery_task is not None and not self._recovery_task.done():
+            self._recovery_task.cancel()
+        _log.debug("rate_limit_gate: shutdown, recovery task cancelled if running")

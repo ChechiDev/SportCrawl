@@ -484,3 +484,42 @@ def test_dispatch_module_gate_is_separate_module():
     # gate is its own module, not merged into dispatch
     assert not hasattr(dispatch, "RateLimitGate")
     assert hasattr(gate_module, "RateLimitGate")
+
+
+# ---------------------------------------------------------------------------
+# Producer gate awareness via wait_fn
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_producer_pauses_while_gate_closed():
+    """Producer wait_fn is called at the start of each loop iteration.
+
+    The producer runs until the queue is empty (no step2_done), so it executes
+    at least one full iteration: wait → peek → (empty → stop). This verifies
+    that wait_fn is always called before peek_fn.
+    """
+    calls: list[str] = []
+
+    async def mock_peek() -> list[int]:
+        calls.append("peek")
+        return []  # empty — producer exits naturally (step2_done=None, buffer empty)
+
+    async def mock_wait() -> None:
+        calls.append("wait")
+
+    buf = BoundedCandidateBuffer(maxsize=10)
+    producer = CandidateProducer(
+        peek_fn=mock_peek,
+        buffer=buf,
+        n_workers=1,
+        poll_interval=0.01,
+        wait_fn=mock_wait,
+    )
+    # Do NOT call request_stop() before run() — that would skip the loop body.
+    # The producer stops naturally when peek returns [] and the buffer is empty.
+    await asyncio.wait_for(producer.run(), timeout=2.0)
+    # wait was called before peek in every iteration
+    assert len(calls) >= 2
+    assert calls[0] == "wait"
+    assert calls[1] == "peek"
