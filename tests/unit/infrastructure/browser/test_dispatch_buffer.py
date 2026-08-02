@@ -476,14 +476,11 @@ def test_dispatch_module_no_persistence_import():
     assert "infrastructure.persistence" not in source
 
 
-def test_pr6_rate_limit_gate_not_implemented():
-    """Verify no rate_limit_gate attribute exists on dispatch module."""
+def test_dispatch_module_gate_is_separate_module():
+    """RateLimitGate lives in gate.py, not dispatch.py — keeps dispatch focused."""
     import infrastructure.browser.dispatch as dispatch
+    import infrastructure.browser.gate as gate_module
+
+    # gate is its own module, not merged into dispatch
     assert not hasattr(dispatch, "RateLimitGate")
-    assert not hasattr(dispatch, "rate_limit_gate")
-
-
-def test_pr6_cooldown_gate_not_implemented():
-    import infrastructure.browser.dispatch as dispatch
-    assert not hasattr(dispatch, "CooldownGate")
-    assert not hasattr(dispatch, "cooldown_gate")
+    assert hasattr(gate_module, "RateLimitGate")

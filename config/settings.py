@@ -70,6 +70,10 @@ class ScrapingSettings(BaseModel):
     player_info_dispatch_buffer_size: int = Field(default=20, ge=1, le=500)
     player_info_dispatch_buffer_prefetch: int = Field(default=50, ge=1, le=500)
     player_info_dispatch_buffer_poll_interval: float = Field(default=5.0, ge=0.5)
+    # Rate-limit gate for buffered player_info mode
+    player_info_gate_cooldown_secs: float = Field(default=60.0, ge=5.0)
+    player_info_gate_probe_timeout_secs: float = Field(default=30.0, ge=5.0)
+    player_info_gate_max_probe_attempts: int = Field(default=3, ge=1, le=10)
 
     @model_validator(mode="after")
     def validate_warm_pool_ranges(self) -> "ScrapingSettings":
