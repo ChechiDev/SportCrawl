@@ -42,6 +42,9 @@ class BoundedCandidateBuffer:
       dies before claiming allows the producer to re-insert the same ref later.
     """
 
+    # Sleep between capacity checks in the put() backpressure loop.
+    _BACKPRESSURE_POLL: ClassVar[float] = 0.05
+
     def __init__(self, maxsize: int) -> None:
         # Unbounded asyncio.Queue; soft limit enforced in put().
         # Extra capacity ensures close() sentinels always fit.
@@ -72,32 +75,36 @@ class BoundedCandidateBuffer:
         """
         self._closed = True
 
-    async def put(self, ref: CandidateRef) -> None:
+    async def put(self, ref: CandidateRef) -> bool:
         """Put a candidate ref into the buffer.
 
-        Silently skips if already present (de-dup) or if the buffer is closed.
-        Blocks (without holding a DB transaction) when the buffer is at capacity.
+        Returns True when the candidate is accepted (reserved and enqueued).
+        Returns False when the candidate is skipped because the buffer is
+        closed or the job_id is already present in _seen.
 
-        De-dup reservation happens before the backpressure await so a concurrent
-        put() with the same job_id sees the reservation immediately.
+        Blocks (without holding a DB transaction) when the buffer is at
+        capacity. De-dup reservation happens before the backpressure await
+        so a concurrent put() with the same job_id sees the reservation
+        immediately.
         """
         if self._closed:
-            return
+            return False
         if ref.job_id in self._seen:
-            return
+            return False
         # Reserve de-dup slot BEFORE the await point.
         self._seen.add(ref.job_id)
         # Backpressure: block until below soft capacity limit.
         # No DB transaction is held here — callers must close their
         # transaction before calling put().
         while self._queue.qsize() >= self._maxsize and not self._closed:
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(self._BACKPRESSURE_POLL)
         if not self._closed:
             self._queue.put_nowait(ref)
-        else:
-            # Buffer was closed during the wait; undo reservation so the ref
-            # can be re-inserted if the buffer is reused after a restart.
-            self._seen.discard(ref.job_id)
+            return True
+        # Buffer was closed during the wait; undo reservation so the ref
+        # can be re-inserted if the buffer is reused after a restart.
+        self._seen.discard(ref.job_id)
+        return False
 
     async def get(self) -> CandidateRef | None:
         """Wait for the next candidate ref, or None on shutdown."""
@@ -175,11 +182,22 @@ class CandidateProducer:
                 ids = await self._peek_fn()
                 # Transaction inside peek_fn is closed before put() is called.
                 if ids:
+                    accepted = 0
                     for job_id in ids:
                         if self._stop.is_set():
                             break
-                        await self._buffer.put(CandidateRef(job_id=job_id))
-                    _log.debug("dispatch buffer: enqueued %d candidates", len(ids))
+                        if await self._buffer.put(CandidateRef(job_id=job_id)):
+                            accepted += 1
+                    _log.debug(
+                        "dispatch buffer: enqueued %d/%d candidates",
+                        accepted,
+                        len(ids),
+                    )
+                    if accepted == 0 and not self._stop.is_set():
+                        # Every ID in the batch was already buffered (duplicate-
+                        # only peek). Back off so we do not hot-poll PostgreSQL
+                        # when the dedup set is saturated.
+                        await asyncio.sleep(self._poll_interval)
                 else:
                     # Queue appears empty. Stop if step2 is also done (or absent).
                     step2_ready = (
