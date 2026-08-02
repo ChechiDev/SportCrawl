@@ -35,6 +35,11 @@ from infrastructure.browser.dispatch import (
     CandidateProducer,
 )
 from infrastructure.browser.gate import RateLimitGate
+from infrastructure.browser.pool import (
+    BackoffPolicy,
+    WarmBrowserPool,
+    WorkerSlot,
+)
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
@@ -1034,24 +1039,28 @@ async def main(workers: int | None = None) -> None:
                     probe_timeout_secs=_sc.player_info_gate_probe_timeout_secs,
                     max_probe_attempts=_sc.player_info_gate_max_probe_attempts,
                 )
+                _mode_name = (
+                    "buffered+warm_pool"
+                    if _sc.player_info_warm_pool_enabled
+                    else "buffered"
+                )
                 logger.info(
-                    "player_info: buffered mode | workers=%d | buffer_size=%d"
+                    "player_info: %s mode | workers=%d | buffer_size=%d"
                     " | gate_cooldown=%.0fs",
+                    _mode_name,
                     workers,
-                    settings.scraping.player_info_dispatch_buffer_size,
-                    settings.scraping.player_info_gate_cooldown_secs,
+                    _sc.player_info_dispatch_buffer_size,
+                    _sc.player_info_gate_cooldown_secs,
                 )
                 _dispatch_buffer = BoundedCandidateBuffer(
-                    maxsize=settings.scraping.player_info_dispatch_buffer_size
+                    maxsize=_sc.player_info_dispatch_buffer_size
                 )
 
                 async def _peek_pending() -> list[int]:
                     async with get_session(session_factory) as _peek_session:
                         _peek_repo = PlayerInfoQueueRepository(_peek_session)
                         _ids = await _peek_repo.peek_pending_ids(
-                            limit=(
-                                settings.scraping.player_info_dispatch_buffer_prefetch
-                            )
+                            limit=_sc.player_info_dispatch_buffer_prefetch
                         )
                         await _peek_session.commit()
                     return _ids
@@ -1060,9 +1069,7 @@ async def main(workers: int | None = None) -> None:
                     peek_fn=_peek_pending,
                     buffer=_dispatch_buffer,
                     n_workers=workers,
-                    poll_interval=(
-                        settings.scraping.player_info_dispatch_buffer_poll_interval
-                    ),
+                    poll_interval=_sc.player_info_dispatch_buffer_poll_interval,
                     wait_fn=_gate.wait_if_closed,
                 )
                 _producer_task = asyncio.create_task(
@@ -1073,30 +1080,88 @@ async def main(workers: int | None = None) -> None:
                         worker_id=i + 1,
                         session_factory=session_factory,
                         fetch_gate=fetch_gate,
-                        profile_base=settings.scraping.chrome_profile_dir,
+                        profile_base=_sc.chrome_profile_dir,
                         worker_labels=worker_labels,
                         worker_counts=worker_counts,
                         position_cache=position_cache,
                         valid_countries=valid_countries,
                         country_name_cache=country_name_cache,
-                        fbref_base_url=settings.scraping.fbref_base_url,
-                        max_queue_retries=settings.scraping.max_queue_retries,
+                        fbref_base_url=_sc.fbref_base_url,
+                        max_queue_retries=_sc.max_queue_retries,
                         display=shared_display,
                         rate_limit_gate=_gate,
                     )
                     for i in range(workers)
                 ]
-                try:
-                    results = await asyncio.gather(
-                        *[
-                            w.run_buffered(_dispatch_buffer)
-                            for w in _worker_instances
-                        ],
-                        return_exceptions=True,
+
+                _warm_pool: WarmBrowserPool | None = None
+                if _sc.player_info_warm_pool_enabled:
+                    _start_sem = asyncio.Semaphore(
+                        _sc.player_info_pool_browser_start_concurrency
                     )
+                    _warmup_sem = asyncio.Semaphore(
+                        _sc.player_info_pool_warmup_concurrency
+                    )
+
+                    def _make_slot(slot_id: int) -> WorkerSlot:
+                        _w = _worker_instances[slot_id - 1]
+
+                        async def _claim_fn(engine: Any) -> int:
+                            try:
+                                return await _w._run_buffered_loop(
+                                    engine, _dispatch_buffer
+                                )
+                            except CooldownRequired:
+                                return -1
+
+                        # Bind shared_display at slot-creation time so each
+                        # slot captures the same singleton display instance.
+                        _disp = shared_display
+                        return WorkerSlot(
+                            slot_id=slot_id,
+                            engine_factory=lambda: PydollEngine(
+                                profile_dir=_w.profile_dir,
+                                name=_w.engine_name,
+                                display=_disp,
+                            ),
+                            claim_loop_fn=_claim_fn,
+                            readiness_url=_sc.fbref_base_url,
+                            start_semaphore=_start_sem,
+                            warmup_semaphore=_warmup_sem,
+                            startup_jitter_fn=lambda: random.uniform(
+                                _sc.player_info_pool_startup_jitter_min,
+                                _sc.player_info_pool_startup_jitter_max,
+                            ),
+                            browser_backoff=BackoffPolicy(
+                                base=_sc.player_info_pool_browser_backoff_base,
+                                max_delay=_sc.player_info_pool_browser_backoff_max,
+                            ),
+                            task_backoff=BackoffPolicy(
+                                base=_sc.player_info_pool_task_backoff_base,
+                                max_delay=_sc.player_info_pool_task_backoff_max,
+                            ),
+                            on_warmup_success=_gate.mark_engine_ready,
+                            on_engine_teardown=_gate.cancel_recovery,
+                        )
+
+                    _warm_pool = WarmBrowserPool(size=workers, slot_factory=_make_slot)
+
+                try:
+                    if _warm_pool is not None:
+                        results = await _warm_pool.run()
+                    else:
+                        results = await asyncio.gather(
+                            *[
+                                w.run_buffered(_dispatch_buffer)
+                                for w in _worker_instances
+                            ],
+                            return_exceptions=True,
+                        )
                 finally:
                     _producer.request_stop()
                     await _producer_task
+                    if _warm_pool is not None:
+                        await _warm_pool.shutdown()
                     _gate.shutdown()
             else:
                 logger.info(
