@@ -29,6 +29,10 @@ from core.application.base_worker import BaseWorker, CooldownRequired
 from core.application.scrape_job_processor import ScrapeJobProcessor
 from core.exceptions.scraper import PageLoadError, RateLimitError
 from infrastructure.browser import PydollEngine, XvfbDisplay
+from infrastructure.browser.dispatch import (
+    BoundedCandidateBuffer,
+    CandidateProducer,
+)
 from infrastructure.display.worker_display import build_worker_table, run_display_loop
 from infrastructure.persistence.repositories.backend_urls import BackendUrlRepository
 from infrastructure.persistence.repositories.player_info import PlayerInfoRepository
@@ -439,6 +443,247 @@ class PlayerInfoWorker(BaseWorker["ScrapeQueue"]):
                     f"[bold yellow]SKIP[/] Job {job.id} — unexpected error"
                 )
 
+    async def run_buffered(self, buffer: BoundedCandidateBuffer) -> int:
+        """Process player_info jobs using the bounded candidate dispatch buffer.
+
+        Mirrors BaseWorker.run() engine lifecycle but consumes jobs from the
+        dispatch buffer instead of calling claim_next(). Gets a CandidateRef
+        from the buffer (blocks until available or shutdown), then claims the
+        job from PostgreSQL at handoff — short transaction, no lock held during
+        buffer wait.
+
+        If claim fails (race with another worker/process), discards the ref and
+        loops. At-least-once: a crash between claim and commit leaves the job
+        IN_PROGRESS; recover_all_stale() at next startup resets it.
+
+        Engine lifecycle mirrors BaseWorker.run(): startup delay, build engine,
+        on_browser_ready hook, then the buffered claim loop. On BrowserException
+        the browser restarts; on clean buffer exhaustion the method returns.
+        """
+        _w_log = logging.getLogger(__name__)
+        await self.startup_delay()
+
+        _MAX_RESTARTS = 5
+        restart_count = 0
+
+        while True:
+            _cooldown_required = False
+            try:
+                async with self._build_engine() as engine:
+                    try:
+                        restart_count = 0
+                        await self.on_browser_ready(engine)
+                        loop_result = await self._run_buffered_loop(engine, buffer)
+                    except CooldownRequired:
+                        _cooldown_required = True
+                        loop_result = -1
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        _w_log.error(exc, exc_info=True)
+                        self._labels[self._worker_id] = "unexpected error — restarting"
+                        await asyncio.sleep(5)
+                        continue
+                    if loop_result >= 0:
+                        return self._processed
+
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                restart_count += 1
+                if restart_count >= _MAX_RESTARTS:
+                    self._labels[self._worker_id] = (
+                        f"[bold red]ERROR[/] Browser failed"
+                        f" {_MAX_RESTARTS}x — waiting 60s"
+                    )
+                    await asyncio.sleep(60)
+                    restart_count = 0
+                    continue
+                self._labels[self._worker_id] = (
+                    f"[bold yellow]WARNING[/] Browser start failed"
+                    f" — retry {restart_count}/{_MAX_RESTARTS}"
+                )
+                await asyncio.sleep(10)
+                continue
+
+            if _cooldown_required:
+                self._labels[self._worker_id] = (
+                    f"__cooldown__{time.monotonic() + 60}"
+                )
+                await asyncio.sleep(60)
+                await asyncio.sleep(random.uniform(0, 5))
+                continue
+
+    async def _run_buffered_loop(
+        self, engine: Any, buffer: BoundedCandidateBuffer
+    ) -> int:
+        """Inner buffered claim loop for one browser session.
+
+        Returns self._processed when buffer is exhausted (sentinel received).
+        Returns -1 on BrowserException (triggers browser restart in run_buffered).
+        """
+        self._labels[self._worker_id] = "Starting buffered crawl..."
+
+        while True:
+            # Guard: if buffer is already closed and empty (e.g., this is a
+            # browser restart and the sentinel was consumed in the prior session),
+            # exit immediately instead of blocking on get() forever.
+            if buffer.is_exhausted:
+                return self._processed
+            ref = await buffer.get()
+            if ref is None:
+                # Shutdown sentinel received — queue is exhausted.
+                return self._processed
+
+            # Claim at handoff: short DB transaction, closed immediately.
+            async with get_session(self._session_factory) as session:
+                queue_repo = PlayerInfoQueueRepository(
+                    session, max_queue_retries=self._max_queue_retries
+                )
+                job = await queue_repo.claim_by_id(ref.job_id)
+                await session.commit()
+
+            buffer.task_done()
+
+            if job is None:
+                # Race: another process/worker claimed this job first. Discard.
+                logger.debug(
+                    "dispatch: job %d already claimed, skipping", ref.job_id
+                )
+                continue
+
+            attempt = 0
+            success = False
+            browser_restart = False
+            _scrape_failed = False
+
+            while attempt < 3 and not success:
+                try:
+                    async with self._fetch_gate:
+                        await engine.navigate(job.url)
+                        await asyncio.sleep(random.uniform(2.0, 6.0))
+                    html = await engine.wait_for_challenge(job.url)
+                    await asyncio.sleep(random.uniform(3, 10))
+                    if not html:
+                        raise PageLoadError("empty HTML response", url=job.url)
+
+                    scraper = PlayerInfoScraper(
+                        player_id=_player_id_from_url(job.url),
+                    )
+
+                    async with get_session(self._session_factory) as session:
+                        info_repo = PlayerInfoRepository(session)
+                        q_repo = PlayerInfoQueueRepository(
+                            session, max_queue_retries=self._max_queue_retries
+                        )
+                        processor = ScrapeJobProcessor(
+                            scraper=scraper,
+                            queue_repo=q_repo,
+                            player_info_repo=info_repo,
+                            country_name_cache=self._country_name_cache,
+                            position_cache=self._position_cache,
+                            valid_countries=self._valid_countries,
+                        )
+                        result = await processor.process(
+                            job,  # type: ignore[arg-type]
+                            html,
+                        )
+
+                        player_id = _player_id_from_url(job.url)
+
+                        std_stats = parse_player_std_stats(html, player_id)
+                        if std_stats:
+                            std_repo = PlayerStdStatsRepository(session)
+                            await std_repo.upsert_bulk(std_stats)
+
+                        shooting_stats = parse_player_shooting_stats(html, player_id)
+                        if shooting_stats:
+                            shooting_repo = PlayerShootingStatsRepository(session)
+                            await shooting_repo.upsert_bulk(shooting_stats)
+
+                        playing_time_stats = parse_player_playing_time_stats(
+                            html, player_id
+                        )
+                        if playing_time_stats:
+                            playing_time_repo = PlayerPlayingTimeStatsRepository(
+                                session
+                            )
+                            await playing_time_repo.upsert_bulk(playing_time_stats)
+
+                        misc_stats = parse_player_misc_stats(html, player_id)
+                        if misc_stats:
+                            misc_repo = PlayerMiscStatsRepository(session)
+                            await misc_repo.upsert_bulk(misc_stats)
+
+                        if job.fk_url_registry_id is not None:
+                            await BackendUrlRepository(session).mark_scraped(
+                                "tbl_player_urls", job.fk_url_registry_id
+                            )
+
+                        await session.commit()
+
+                    success = True
+                    self._processed += 1
+                    self._counts[self._worker_id] = self._processed
+                    self._labels[self._worker_id] = escape(result[0] or "unknown")
+
+                except (PageLoadError, RateLimitError, BrowserException) as exc:
+                    attempt += 1
+                    if isinstance(exc, BrowserException):
+                        self._labels[self._worker_id] = (
+                            "[bold red]ERROR[/] Browser error — Restarting"
+                        )
+                        await _record_failure_with_retry(
+                            job.id,
+                            str(exc),
+                            self._max_queue_retries,
+                            self._session_factory,
+                        )
+                        browser_restart = True
+                        break
+                    is_terminal_attempt = attempt >= 3
+                    if is_terminal_attempt:
+                        _scrape_failed = True
+                        self._labels[self._worker_id] = (
+                            f"[bold red]FAILED[/] Job {job.id} — {escape(str(exc))}"
+                        )
+                        await _record_failure_with_retry(
+                            job.id,
+                            str(exc),
+                            self._max_queue_retries,
+                            self._session_factory,
+                        )
+                    else:
+                        self._labels[self._worker_id] = (
+                            f"[bold yellow]WARNING[/bold yellow]"
+                            f" - Retrying ({attempt}/3)"
+                            f" - {_player_name_from_url(job.url)}"
+                        )
+                        await asyncio.sleep(random.uniform(5.0, 15.0))
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(exc, exc_info=True)
+                    await _record_failure_with_retry(
+                        job.id,
+                        str(exc),
+                        self._max_queue_retries,
+                        self._session_factory,
+                    )
+                    success = False
+                    break
+
+            if browser_restart:
+                return -1
+
+            if not success:
+                if _scrape_failed:
+                    self._labels[self._worker_id] = (
+                        f"[bold red]FAILED[/] Job {job.id} — max retries reached"
+                    )
+                    raise CooldownRequired
+                self._labels[self._worker_id] = (
+                    f"[bold yellow]SKIP[/] Job {job.id} — unexpected error"
+                )
+
 
 def _player_name_from_url(url: str) -> str:
     parts = url.rstrip("/").split("/")
@@ -714,8 +959,34 @@ async def main(workers: int | None = None) -> None:
                     _notifications.active,
                 )
             )
-            results = await asyncio.gather(
-                *[
+            if settings.scraping.player_info_dispatch_buffer_enabled:
+                _dispatch_buffer = BoundedCandidateBuffer(
+                    maxsize=settings.scraping.player_info_dispatch_buffer_size
+                )
+
+                async def _peek_pending() -> list[int]:
+                    async with get_session(session_factory) as _peek_session:
+                        _peek_repo = PlayerInfoQueueRepository(_peek_session)
+                        _ids = await _peek_repo.peek_pending_ids(
+                            limit=(
+                                settings.scraping.player_info_dispatch_buffer_prefetch
+                            )
+                        )
+                        await _peek_session.commit()
+                    return _ids
+
+                _producer = CandidateProducer(
+                    peek_fn=_peek_pending,
+                    buffer=_dispatch_buffer,
+                    n_workers=workers,
+                    poll_interval=(
+                        settings.scraping.player_info_dispatch_buffer_poll_interval
+                    ),
+                )
+                _producer_task = asyncio.create_task(
+                    _producer.run(), name="dispatch-producer"
+                )
+                _worker_instances = [
                     PlayerInfoWorker(
                         worker_id=i + 1,
                         session_factory=session_factory,
@@ -729,11 +1000,41 @@ async def main(workers: int | None = None) -> None:
                         fbref_base_url=settings.scraping.fbref_base_url,
                         max_queue_retries=settings.scraping.max_queue_retries,
                         display=shared_display,
-                    ).run()
+                    )
                     for i in range(workers)
-                ],
-                return_exceptions=True,
-            )
+                ]
+                try:
+                    results = await asyncio.gather(
+                        *[
+                            w.run_buffered(_dispatch_buffer)
+                            for w in _worker_instances
+                        ],
+                        return_exceptions=True,
+                    )
+                finally:
+                    _producer.request_stop()
+                    await _producer_task
+            else:
+                results = await asyncio.gather(
+                    *[
+                        PlayerInfoWorker(
+                            worker_id=i + 1,
+                            session_factory=session_factory,
+                            fetch_gate=fetch_gate,
+                            profile_base=settings.scraping.chrome_profile_dir,
+                            worker_labels=worker_labels,
+                            worker_counts=worker_counts,
+                            position_cache=position_cache,
+                            valid_countries=valid_countries,
+                            country_name_cache=country_name_cache,
+                            fbref_base_url=settings.scraping.fbref_base_url,
+                            max_queue_retries=settings.scraping.max_queue_retries,
+                            display=shared_display,
+                        ).run()
+                        for i in range(workers)
+                    ],
+                    return_exceptions=True,
+                )
             stop_event.set()
             await display_task
     finally:

@@ -65,6 +65,11 @@ class ScrapingSettings(BaseModel):
     player_info_pool_browser_backoff_max: float = Field(default=120.0, ge=1.0)
     player_info_pool_task_backoff_base: float = Field(default=2.0, ge=0.1)
     player_info_pool_task_backoff_max: float = Field(default=60.0, ge=1.0)
+    # Dispatch buffer (disabled by default — opt-in via feature flag)
+    player_info_dispatch_buffer_enabled: bool = False
+    player_info_dispatch_buffer_size: int = Field(default=20, ge=1, le=500)
+    player_info_dispatch_buffer_prefetch: int = Field(default=50, ge=1, le=500)
+    player_info_dispatch_buffer_poll_interval: float = Field(default=5.0, ge=0.5)
 
     @model_validator(mode="after")
     def validate_warm_pool_ranges(self) -> "ScrapingSettings":
