@@ -61,6 +61,8 @@ class WorkerSlot:
         browser_backoff: BackoffPolicy,
         task_backoff: BackoffPolicy,
         sleep_fn: Callable[[float], Awaitable[None]] | None = None,
+        on_warmup_success: Callable[[], None] | None = None,
+        on_engine_teardown: Callable[[], None] | None = None,
     ) -> None:
         self.slot_id = slot_id
         self._engine_factory = engine_factory
@@ -72,6 +74,8 @@ class WorkerSlot:
         self._browser_backoff = browser_backoff
         self._task_backoff = task_backoff
         self._sleep = sleep_fn if sleep_fn is not None else asyncio.sleep
+        self._on_warmup_success = on_warmup_success
+        self._on_engine_teardown = on_engine_teardown
 
     async def run(self) -> int:
         """Run the slot to completion. Returns total processed jobs."""
@@ -90,6 +94,9 @@ class WorkerSlot:
                     await engine.warmup(self._readiness_url)
 
                 browser_failures = 0
+
+                if self._on_warmup_success is not None:
+                    self._on_warmup_success()
 
                 result = await self._claim_loop_fn(engine)
                 if result >= 0:
@@ -118,6 +125,8 @@ class WorkerSlot:
                 )
                 await self._sleep(delay)
             finally:
+                if self._on_engine_teardown is not None:
+                    self._on_engine_teardown()
                 await engine.close()
 
 

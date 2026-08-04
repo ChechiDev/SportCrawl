@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -47,6 +49,8 @@ def make_slot(
     sleep_fn: AsyncMock | None = None,
     start_sem: asyncio.Semaphore | None = None,
     warmup_sem: asyncio.Semaphore | None = None,
+    on_warmup_success: Callable[[], None] | None = None,
+    on_engine_teardown: Callable[[], None] | None = None,
 ) -> WorkerSlot:
     if engine is None:
         engine = make_engine_mock()
@@ -61,7 +65,7 @@ def make_slot(
     if warmup_sem is None:
         warmup_sem = asyncio.Semaphore(1)
 
-    async def _claim(_e: object) -> int:
+    async def _claim(_: object) -> int:
         return claim_result
 
     return WorkerSlot(
@@ -75,10 +79,12 @@ def make_slot(
         browser_backoff=browser_backoff,
         task_backoff=task_backoff,
         sleep_fn=sleep_fn,
+        on_warmup_success=on_warmup_success,
+        on_engine_teardown=on_engine_teardown,
     )
 
 
-async def _claim_zero(_e: object) -> int:
+async def _claim_zero(_: object) -> int:
     """Claim loop that immediately returns 0. Replaces asyncio.coroutine usage."""
     return 0
 
@@ -153,7 +159,7 @@ class TestWorkerSlot:
         async def _start() -> None:
             call_order.append("start")
 
-        async def _warmup(_url: str) -> None:
+        async def _warmup(_: str) -> None:
             call_order.append("warmup")
 
         engine.start = AsyncMock(side_effect=_start)
@@ -223,7 +229,7 @@ class TestWorkerSlot:
             engines_created.append(e)
             return e
 
-        async def _claim(_e: object) -> int:
+        async def _claim(_: object) -> int:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -253,6 +259,41 @@ class TestWorkerSlot:
         slot = make_slot(engine=engine)
         await slot.run()
         engine.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_closes_engine_when_claim_returns_minus_one(self) -> None:
+        """engine.close() must fire in finally even when claim_loop_fn returns -1."""
+        engines_created: list[AsyncMock] = []
+        call_count = 0
+
+        def engine_factory() -> AsyncMock:
+            e = make_engine_mock()
+            engines_created.append(e)
+            return e
+
+        async def _claim(_: object) -> int:
+            nonlocal call_count
+            call_count += 1
+            return -1 if call_count == 1 else 0
+
+        sleep_fn, _ = make_no_sleep()
+        slot = WorkerSlot(
+            slot_id=1,
+            engine_factory=engine_factory,
+            claim_loop_fn=_claim,
+            readiness_url="https://fbref.com",
+            start_semaphore=asyncio.Semaphore(1),
+            warmup_semaphore=asyncio.Semaphore(1),
+            startup_jitter_fn=lambda: 0.0,
+            browser_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            task_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            sleep_fn=sleep_fn,
+        )
+        await slot.run()
+        assert len(engines_created) == 2
+        # Both engines are closed via the finally block — -1 does not skip close.
+        engines_created[0].close.assert_awaited_once()
+        engines_created[1].close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_run_closes_engine_on_warmup_failure(self) -> None:
@@ -366,7 +407,7 @@ class TestWorkerSlot:
             engines_created.append(e)
             return e
 
-        async def _claim(_e: object) -> int:
+        async def _claim(_: object) -> int:
             nonlocal call_count
             call_count += 1
             return -1 if call_count < 3 else 0
@@ -389,13 +430,15 @@ class TestWorkerSlot:
 
     @pytest.mark.asyncio
     async def test_run_cancelled_error_propagates(self) -> None:
-        async def _claim_cancel(_e: object) -> int:
+        engine = make_engine_mock()
+
+        async def _claim_cancel(_: object) -> int:
             raise asyncio.CancelledError()
 
         sleep_fn, _ = make_no_sleep()
         slot = WorkerSlot(
             slot_id=1,
-            engine_factory=lambda: make_engine_mock(),
+            engine_factory=lambda: engine,
             claim_loop_fn=_claim_cancel,
             readiness_url="https://fbref.com",
             start_semaphore=asyncio.Semaphore(1),
@@ -407,6 +450,8 @@ class TestWorkerSlot:
         )
         with pytest.raises(asyncio.CancelledError):
             await slot.run()
+        # engine.close() must run in finally even on CancelledError
+        engine.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_startup_jitter_is_from_jitter_fn_not_slot_id(self) -> None:
@@ -527,7 +572,7 @@ class TestWarmBrowserPool:
         all_started = asyncio.Event()
         started_count = 0
 
-        async def _claim_blocking(_e: object) -> int:
+        async def _claim_blocking(_: object) -> int:
             nonlocal started_count
             started_count += 1
             if started_count == 3:
@@ -725,3 +770,229 @@ class TestSecurityScope:
             assert "cdp" not in lower, f"Log contains 'cdp': {msg}"
             assert "ws://" not in msg, f"Log contains WebSocket URL: {msg}"
             assert "token" not in lower, f"Log contains 'token': {msg}"
+
+
+# ---------------------------------------------------------------------------
+# TestWorkerSlotCallbacks
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerSlotCallbacks:
+    @pytest.mark.asyncio
+    async def test_on_warmup_success_called_after_warmup(self) -> None:
+        """on_warmup_success must be called after warmup() succeeds."""
+        call_order: list[str] = []
+        engine = make_engine_mock()
+
+        async def _warmup(_: str) -> None:
+            call_order.append("warmup")
+
+        engine.warmup = AsyncMock(side_effect=_warmup)
+
+        def _on_success() -> None:
+            call_order.append("on_warmup_success")
+
+        async def _claim(_: object) -> int:
+            call_order.append("claim")
+            return 0
+
+        sleep_fn, _ = make_no_sleep()
+        slot = WorkerSlot(
+            slot_id=1,
+            engine_factory=lambda: engine,
+            claim_loop_fn=_claim,
+            readiness_url="https://fbref.com",
+            start_semaphore=asyncio.Semaphore(1),
+            warmup_semaphore=asyncio.Semaphore(1),
+            startup_jitter_fn=lambda: 0.0,
+            browser_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            task_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            sleep_fn=sleep_fn,
+            on_warmup_success=_on_success,
+        )
+        await slot.run()
+        # warmup must precede on_warmup_success, which must precede claim
+        assert call_order == ["warmup", "on_warmup_success", "claim"]
+
+    @pytest.mark.asyncio
+    async def test_on_warmup_success_not_called_on_warmup_failure(self) -> None:
+        """on_warmup_success must NOT be called when warmup raises."""
+        success_called: list[bool] = []
+
+        def _on_success() -> None:
+            success_called.append(True)
+
+        call_count = 0
+
+        def engine_factory() -> AsyncMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return make_engine_mock(warmup_exc=RuntimeError("warmup failed"))
+            return make_engine_mock()
+
+        sleep_fn, _ = make_no_sleep()
+        slot = WorkerSlot(
+            slot_id=1,
+            engine_factory=engine_factory,
+            claim_loop_fn=_claim_zero,
+            readiness_url="https://fbref.com",
+            start_semaphore=asyncio.Semaphore(1),
+            warmup_semaphore=asyncio.Semaphore(1),
+            startup_jitter_fn=lambda: 0.0,
+            browser_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            task_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            sleep_fn=sleep_fn,
+            on_warmup_success=_on_success,
+        )
+        await slot.run()
+        # on_warmup_success called once (second engine) but NOT on first failed warmup
+        assert len(success_called) == 1
+
+    @pytest.mark.asyncio
+    async def test_on_engine_teardown_called_in_finally(self) -> None:
+        """on_engine_teardown must be called in finally (normal path)."""
+        teardown_called: list[bool] = []
+
+        def _on_teardown() -> None:
+            teardown_called.append(True)
+
+        slot = make_slot(on_engine_teardown=_on_teardown)
+        await slot.run()
+        assert len(teardown_called) == 1
+
+    @pytest.mark.asyncio
+    async def test_on_engine_teardown_called_before_engine_close(self) -> None:
+        """on_engine_teardown must be called before engine.close()."""
+        call_order: list[str] = []
+        engine = make_engine_mock()
+
+        async def _close() -> None:
+            call_order.append("close")
+
+        engine.close = AsyncMock(side_effect=_close)
+
+        def _on_teardown() -> None:
+            call_order.append("teardown")
+
+        sleep_fn, _ = make_no_sleep()
+        slot = WorkerSlot(
+            slot_id=1,
+            engine_factory=lambda: engine,
+            claim_loop_fn=_claim_zero,
+            readiness_url="https://fbref.com",
+            start_semaphore=asyncio.Semaphore(1),
+            warmup_semaphore=asyncio.Semaphore(1),
+            startup_jitter_fn=lambda: 0.0,
+            browser_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            task_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            sleep_fn=sleep_fn,
+            on_engine_teardown=_on_teardown,
+        )
+        await slot.run()
+        assert call_order == ["teardown", "close"]
+
+    @pytest.mark.asyncio
+    async def test_on_engine_teardown_called_on_browser_failure(self) -> None:
+        """on_engine_teardown must be called even when browser start fails."""
+        teardown_count: list[bool] = []
+
+        def _on_teardown() -> None:
+            teardown_count.append(True)
+
+        call_count = 0
+
+        def engine_factory() -> AsyncMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return make_engine_mock(start_exc=OSError("no chrome"))
+            return make_engine_mock()
+
+        sleep_fn, _ = make_no_sleep()
+        slot = WorkerSlot(
+            slot_id=1,
+            engine_factory=engine_factory,
+            claim_loop_fn=_claim_zero,
+            readiness_url="https://fbref.com",
+            start_semaphore=asyncio.Semaphore(1),
+            warmup_semaphore=asyncio.Semaphore(1),
+            startup_jitter_fn=lambda: 0.0,
+            browser_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            task_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            sleep_fn=sleep_fn,
+            on_engine_teardown=_on_teardown,
+        )
+        await slot.run()
+        # Called for both the failed and successful engine
+        assert len(teardown_count) == 2
+
+    @pytest.mark.asyncio
+    async def test_callbacks_default_to_none(self) -> None:
+        """WorkerSlot works correctly when callbacks are not provided."""
+        slot = make_slot()  # no on_warmup_success or on_engine_teardown
+        result = await slot.run()
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_on_warmup_success_called_once_per_engine(self) -> None:
+        """on_warmup_success is called once per engine start, not per claim attempt."""
+        success_calls: list[int] = []
+
+        def _on_success() -> None:
+            success_calls.append(len(success_calls) + 1)
+
+        call_count = 0
+
+        async def _claim(_: object) -> int:
+            nonlocal call_count
+            call_count += 1
+            return -1 if call_count < 2 else 0
+
+        sleep_fn, _ = make_no_sleep()
+        slot = WorkerSlot(
+            slot_id=1,
+            engine_factory=lambda: make_engine_mock(),
+            claim_loop_fn=_claim,
+            readiness_url="https://fbref.com",
+            start_semaphore=asyncio.Semaphore(1),
+            warmup_semaphore=asyncio.Semaphore(1),
+            startup_jitter_fn=lambda: 0.0,
+            browser_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            task_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            sleep_fn=sleep_fn,
+            on_warmup_success=_on_success,
+        )
+        await slot.run()
+        # on_warmup_success called once per engine (two engines started)
+        assert len(success_calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_on_warmup_success_no_sensitive_data_logged(self) -> None:
+        """Callbacks must not cause sensitive data to appear in logs."""
+        captured: list[str] = []
+
+        class _Handler(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                captured.append(record.getMessage())
+
+        log = logging.getLogger("infrastructure.browser.pool")
+        h = _Handler()
+        log.addHandler(h)
+        try:
+            called: list[bool] = []
+
+            def _on_success() -> None:
+                called.append(True)
+
+            slot = make_slot(on_warmup_success=_on_success)
+            await slot.run()
+        finally:
+            log.removeHandler(h)
+
+        for msg in captured:
+            lower = msg.lower()
+            assert "cookie" not in lower
+            assert "cdp" not in lower
+            assert "ws://" not in msg
+            assert "token" not in lower
