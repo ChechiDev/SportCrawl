@@ -261,6 +261,41 @@ class TestWorkerSlot:
         engine.close.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_run_closes_engine_when_claim_returns_minus_one(self) -> None:
+        """engine.close() must fire in finally even when claim_loop_fn returns -1."""
+        engines_created: list[AsyncMock] = []
+        call_count = 0
+
+        def engine_factory() -> AsyncMock:
+            e = make_engine_mock()
+            engines_created.append(e)
+            return e
+
+        async def _claim(_: object) -> int:
+            nonlocal call_count
+            call_count += 1
+            return -1 if call_count == 1 else 0
+
+        sleep_fn, _ = make_no_sleep()
+        slot = WorkerSlot(
+            slot_id=1,
+            engine_factory=engine_factory,
+            claim_loop_fn=_claim,
+            readiness_url="https://fbref.com",
+            start_semaphore=asyncio.Semaphore(1),
+            warmup_semaphore=asyncio.Semaphore(1),
+            startup_jitter_fn=lambda: 0.0,
+            browser_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            task_backoff=BackoffPolicy(jitter_fn=lambda: 0.0),
+            sleep_fn=sleep_fn,
+        )
+        await slot.run()
+        assert len(engines_created) == 2
+        # Both engines are closed via the finally block — -1 does not skip close.
+        engines_created[0].close.assert_awaited_once()
+        engines_created[1].close.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_run_closes_engine_on_warmup_failure(self) -> None:
         engine = make_engine_mock(warmup_exc=WarmupError("warmup failed"))
         # Second engine succeeds so slot terminates

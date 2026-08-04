@@ -277,7 +277,7 @@ class TestWarmPoolGateInteraction:
     async def test_gate_reopens_only_after_mark_engine_ready(self) -> None:
         """Sequential: cancel_recovery then mark_engine_ready reopens gate."""
         gate = make_gate()
-        gate._open = False
+        gate.signal_rate_limit(reason="test")
         gate.cancel_recovery()
         assert gate.is_open is False
         gate.mark_engine_ready()
