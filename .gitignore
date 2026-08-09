@@ -2,6 +2,7 @@
 .claude
 .gga
 .atl/
+.opencode/
 
 # Personal documentation (Obsidian) — not committed to git
 .doc/
