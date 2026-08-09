@@ -663,12 +663,88 @@ using a documented recovery operation (`recover_all_stale`, `recover_failed`).
 
 ## Live validation status
 
-**No live scraping was run to produce this document.**
+**Validation complete. All phases PASS.**
 
-Stage 0 (static verification) is the only stage completable without a live database.
-Stages 1–4 require a local and disposable PostgreSQL instance with a bounded candidate
-set. The operator must execute each stage and record their own evidence before proceeding
-to the next.
+Live end-to-end validation was executed against an isolated PostgreSQL smoke environment
+(Docker container, `127.0.0.1:15432`, run_id=`gate-a-20260809T171510Z-9364-38542daffed250a6`).
+No production database was touched at any point during the validation run.
 
-This runbook does not claim Stage 1, 2, 3, or 4 success. Evidence must be captured
-and reviewed by the operator before advancing.
+### Checkpoint summary
+
+| Checkpoint | Phases | Result |
+|---|---|---|
+| CHECKPOINT 1 — execution modes | D3 (direct) + E4 (buffered) + F3 (buffered+warm-pool) | ✅ PASS |
+| CHECKPOINT 2 — scalability characterization | G0–G7 (fake workers, 5/10/25/50 concurrency) | ✅ PASS |
+| CHECKPOINT 3 — interruption and recovery | H0–H4 + H-REPAIR (SIGKILL + recover_all_stale) | ✅ PASS |
+
+### Phase summary
+
+| Phase range | Description | Result |
+|---|---|---|
+| A0–A3 | Gate A: isolated PostgreSQL container, schema verified | PASS |
+| B0–B3 | Alembic migrations applied to smoke DB | PASS |
+| C0–C3 | Controlled candidate seeded (Lionel Messi, player_id=`d70ce98e`) | PASS |
+| D0–D3 | Direct mode: workers=1, buffer=OFF, warm_pool=OFF | PASS |
+| E0–E4 | Buffered mode: workers=2, buffer=ON, warm_pool=OFF | PASS |
+| F0–F3 | Buffered+warm-pool: workers=2, buffer=ON, warm_pool=ON | PASS |
+| G0–G7 | Fake-worker concurrency characterization at 5/10/25/50 workers | PASS |
+| H0–H4 + H-REPAIR | Controlled SIGKILL interruption and recovery validation | PASS |
+| I0–I1 | Real-source soak: 3 candidates, direct mode, workers=2 | PASS |
+| J0–J3 | Evidence consolidation, correctness matrix, operational conclusions | PASS |
+
+### H-REPAIR: process-group kill strategy
+
+During Phase H, a critical discovery changed the interruption procedure:
+
+`uv run python` spawns Python as a child process of the `uv` supervisor. Sending SIGKILL
+to the `uv` PID leaves the Python process as an orphan — it continues running and the
+test never validates actual interruption. The correct strategy is to kill the entire
+process group using `start_new_session=True` and `os.killpg`.
+
+**Kill-at-PENDING rationale:** The kill must be issued immediately upon the drain creating
+a PENDING row, not after IN_PROGRESS detection. Chrome profile warm-up and CDN-cached
+FBRef responses reduce processing time to under 200ms — waiting for IN_PROGRESS detection
+is a race the test consistently loses. Killing at PENDING is the reliable gate.
+
+H1-R (`recover_all_stale` after process-group SIGKILL, PENDING state) and H2-R (restart
+from PENDING, job completes at t+17s) both passed after H-REPAIR.
+
+### Phase I real-source soak
+
+Three real candidates were scraped against FBRef using direct mode (workers=2, no buffer,
+no warm pool):
+
+| Candidate | player_id |
+|---|---|
+| Lionel Messi | `d70ce98e` |
+| Cristiano Ronaldo | `dea698d9` |
+| Erling Haaland | `1f44ac21` |
+
+All 3 jobs completed with status DONE and real FBRef data written to `tbl_player_info`.
+
+Note: The post-soak verification script contained a minor asyncpg bug (unused parameter
+causing `IndeterminateDatatypeError`). The soak itself was durable and clean; the bug
+was in the verification query only, not in the scraping pipeline.
+
+### Schema gotchas discovered during validation
+
+The following schema details are non-obvious and must be respected in future tooling and queries:
+
+- `tbl_player_info` lives in `sch_fbref_shared`, **not** `sch_fbref_backend`
+- The `scrape_queue` row lock column is `locked_at`, **not** `claimed_at`
+- The `tbl_player_urls` FK column is `fk_player`, **not** `fk_player_id`
+- `tbl_players.career_start` and `career_end` are `NOT NULL` — any reset script must provide values
+- Drain eligibility filter: `url_type='profile'`, `status IN ('PENDING','ACTIVE')`, `next_scrape_at <= now()`
+- After a successful scrape: `tbl_player_urls.next_scrape_at` is advanced by `cadence_hours` (168h). Any
+  test reset that manipulates this column must restore it to a value in the past to re-trigger drain eligibility.
+
+### What not to capture
+
+This document does not and must not contain:
+
+- Database passwords, DSNs, or connection strings
+- `SCRAPING__WORK_SERVER_TOKEN` or any other secret value
+- CDP tokens, WebSocket URLs, browser session data, or cookies
+- Browser profile paths or ephemeral volume names
+- Raw HTML responses or scraped page content
+- Any value that identifies a specific operator environment

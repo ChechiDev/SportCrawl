@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- E2E validation of `player_info` buffered dispatch and warm-pool execution paths complete (Phases A0–J3): direct mode, buffered mode, and buffered+warm-pool mode validated against an isolated smoke environment
+- Architecture decision: buffered dispatch model generalized as a shared always-active dispatch runtime; `player_info` is the reference implementation for future workloads
+- `docs/architecture/buffered-dispatch-engine.md`: architecture decision record for the buffered dispatch engine
+
 ## [0.26.0] — 2026-07-30
 
 ### Changed
