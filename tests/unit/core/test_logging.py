@@ -165,7 +165,10 @@ class TestRedactSensitiveGaps:
 
     def test_cookie_key_is_redacted(self) -> None:
         """'cookie' key must be redacted (gap: not in current substrings)."""
-        event_dict: dict[str, Any] = {"cookie": "<TEST_COOKIE_VALUE>", "url": "https://fbref.com"}
+        event_dict: dict[str, Any] = {
+            "cookie": "<TEST_COOKIE_VALUE>",
+            "url": "https://fbref.com",
+        }
         result = _redact_sensitive(None, None, event_dict)
         assert result["cookie"] == "[REDACTED]", (
             f"Expected [REDACTED] but got: {result['cookie']!r}. "
@@ -223,7 +226,10 @@ class TestRedactSensitiveGaps:
 
     def test_raw_html_key_is_redacted(self) -> None:
         """'raw_html' key must be redacted (gap: HTML response content)."""
-        event_dict: dict[str, Any] = {"raw_html": "<TEST_RAW_HTML>", "url": "https://fbref.com"}
+        event_dict: dict[str, Any] = {
+            "raw_html": "<TEST_RAW_HTML>",
+            "url": "https://fbref.com",
+        }
         result = _redact_sensitive(None, None, event_dict)
         assert result["raw_html"] == "[REDACTED]", (
             f"Expected [REDACTED] but got: {result['raw_html']!r}. "

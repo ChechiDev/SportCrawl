@@ -149,7 +149,7 @@ async def _run_smoke(
     candidate: str,
     reset: bool,
 ) -> None:
-    import asyncpg  # type: ignore[import-untyped]
+    import asyncpg
 
     try:
         conn = await asyncpg.connect(

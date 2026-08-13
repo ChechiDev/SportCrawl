@@ -83,9 +83,20 @@ def _src() -> str:
 
 
 def _execute_in_help() -> bool:
-    """Return True if --execute appears in smoke-clearance --help output."""
-    result = runner.invoke(app, ["smoke-clearance", "--help"])
-    return "--execute" in result.output
+    """Return True if --execute is registered as a Click option on smoke-clearance.
+
+    Uses direct Click param inspection instead of help-text rendering to avoid
+    fragility across Typer/Rich versions and terminal-width environments.
+    """
+    import typer.main as typer_main
+
+    cli = typer_main.get_command(app)
+    sub = getattr(cli, "commands", {}).get("smoke-clearance")
+    if sub is None:
+        return False
+    return any(
+        "--execute" in getattr(p, "opts", []) for p in sub.params
+    )
 
 
 def _require_execute_registered() -> None:
