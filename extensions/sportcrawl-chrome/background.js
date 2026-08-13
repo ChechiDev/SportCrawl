@@ -3,7 +3,7 @@
  *
  * Responsibilities:
  *   1. CF clearance capture: listen for cf_clearance cookie on fbref.com, POST to work_server.
- *   2. Task poll loop: chrome.alarms fires every 1 min, GET /api/tasks/next, execute, POST result.
+ *   2. Task poll loop: chrome.alarms fires every 1 min, polls for the next task, executes, posts result.
  *   3. Auth: every outbound request carries Authorization: Bearer {token}.
  *   4. Backoff: exponential on 5xx / network errors (base 2s, x2, cap 60s); reset on success.
  *   5. Fatal stop: 401/403 → log error, stop polling (bad token, manual fix required).
@@ -14,7 +14,7 @@ const ALARM_PERIOD_MINUTES = 1;
 const BACKOFF_BASE_MS = 2000;
 const BACKOFF_CAP_MS = 60000;
 
-let _config = { work_server_url: "", work_server_token: "" };
+let _config = { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false };
 let _backoffMs = BACKOFF_BASE_MS;
 let _fatalStop = false;
 
@@ -23,20 +23,23 @@ let _fatalStop = false;
 // ---------------------------------------------------------------------------
 
 /**
- * Load config from chrome.storage.sync. Returns true when both url and token
- * are present; false otherwise.
+ * Load runtime config from chrome.storage.local (device-local, never synced).
+ * Returns true when both url and token are present; false otherwise.
  */
 async function loadConfig() {
   const { fatalStop } = await chrome.storage.local.get("fatalStop");
   _fatalStop = !!fatalStop;
 
   return new Promise((resolve) => {
-    chrome.storage.sync.get(
-      { work_server_url: "", work_server_token: "" },
+    chrome.storage.local.get(
+      { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false },
       (data) => {
         _config = {
           work_server_url: data.work_server_url.trim(),
           work_server_token: data.work_server_token.trim(),
+          profile_id: data.profile_id.trim(),
+          worker_id: data.worker_id.trim(),
+          disable_task_polling: !!data.disable_task_polling,
         };
         resolve(_config.work_server_url !== "" && _config.work_server_token !== "");
       }
@@ -52,6 +55,15 @@ async function setFatalStop() {
   _fatalStop = true;
   await chrome.storage.local.set({ fatalStop: true });
   persistStatus("fatal");
+}
+
+// ---------------------------------------------------------------------------
+// Runtime readiness
+// ---------------------------------------------------------------------------
+
+/** Returns true when all required runtime config fields are present. */
+function _isRuntimeReady() {
+  return _config.work_server_url !== "" && _config.work_server_token !== "";
 }
 
 // ---------------------------------------------------------------------------
@@ -87,10 +99,35 @@ chrome.cookies.onChanged.addListener((details) => {
     return;
   }
 
-  if (!_config.work_server_url || !_config.work_server_token) {
-    console.warn("[SportCrawl] cf_clearance captured but work_server not configured — skipping POST.");
+  if (!_isRuntimeReady()) {
+    console.warn("[SportCrawl] Runtime configuration incomplete — skipping clearance POST.");
     return;
   }
+
+  // Validate explicit operational identifiers — must be configured, not derived.
+  const _ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+  if (!_config.profile_id || !_ID_RE.test(_config.profile_id)) {
+    console.warn("[SportCrawl] profile_id missing or invalid — skipping clearance POST.");
+    return;
+  }
+  if (!_config.worker_id || !_ID_RE.test(_config.worker_id)) {
+    console.warn("[SportCrawl] worker_id missing or invalid — skipping clearance POST.");
+    return;
+  }
+
+  // Validate cookie expiry — must be present and in the future.
+  const expirationDate = cookie.expirationDate;
+  if (
+    typeof expirationDate !== "number" ||
+    !isFinite(expirationDate) ||
+    expirationDate * 1000 <= Date.now()
+  ) {
+    console.warn("[SportCrawl] Cookie expiry missing or already past — skipping clearance POST.");
+    return;
+  }
+
+  const observed_at = new Date().toISOString();
+  const expires_at = new Date(expirationDate * 1000).toISOString();
 
   const url = `${_config.work_server_url}/api/clearance`;
   fetch(url, {
@@ -100,8 +137,12 @@ chrome.cookies.onChanged.addListener((details) => {
       ...authHeaders(),
     },
     body: JSON.stringify({
-      cf_clearance: cookie.value,
       domain: cookie.domain,
+      profile_id: _config.profile_id,
+      worker_id: _config.worker_id,
+      observed_at: observed_at,
+      expires_at: expires_at,
+      clearance: cookie.value,
     }),
   })
     .then((res) => {
@@ -109,7 +150,7 @@ chrome.cookies.onChanged.addListener((details) => {
         console.error(`[SportCrawl] /api/clearance POST failed: HTTP ${res.status}`);
         persistStatus("err");
       } else {
-        console.log("[SportCrawl] cf_clearance delivered to work_server.");
+        console.log("[SportCrawl] Clearance delivered to work_server.");
         persistStatus("ok");
       }
     })
@@ -128,7 +169,11 @@ async function pollNextTask() {
 
   const configReady = await loadConfig();
   if (!configReady) {
-    console.warn("[SportCrawl] Poll skipped — work_server_url or work_server_token not set.");
+    console.warn("[SportCrawl] Runtime configuration incomplete — skipping poll.");
+    return;
+  }
+
+  if (_config.disable_task_polling) {
     return;
   }
 
@@ -249,6 +294,10 @@ async function postTaskResult(taskId, payload) {
 // ---------------------------------------------------------------------------
 
 async function startAlarmIfNeeded() {
+  if (_config.disable_task_polling) {
+    await chrome.alarms.clear(ALARM_NAME);
+    return;
+  }
   const existing = await chrome.alarms.get(ALARM_NAME);
   if (!existing) {
     chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MINUTES });
