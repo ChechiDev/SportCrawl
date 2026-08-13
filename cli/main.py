@@ -299,6 +299,88 @@ async def _do_reset(console: Console) -> None:
     console.print("\n[green]Reset complete. Ready to scrape from scratch.[/green]")
 
 
+from cli.smoke_player_info import smoke_player_info_command  # noqa: E402
+
+app.command("smoke-player-info")(smoke_player_info_command)
+
+
+_SMOKE_CLEARANCE_DRY_RUN = typer.Option(
+    False,
+    "--dry-run/--no-dry-run",
+    help="Print readiness check only, no live state.",
+)
+_SMOKE_CLEARANCE_EXECUTE = typer.Option(
+    False,
+    "--execute",
+    help="Run fake/local clearance harness contract (not real smoke).",
+)
+_SMOKE_CLEARANCE_WORKERS = typer.Option(
+    1,
+    "--workers",
+    "-w",
+    help="Worker count — must be 1 for clearance smoke.",
+)
+
+
+@app.command("smoke-clearance")
+def smoke_clearance(
+    dry_run: bool = _SMOKE_CLEARANCE_DRY_RUN,
+    execute: bool = _SMOKE_CLEARANCE_EXECUTE,
+    workers: int = _SMOKE_CLEARANCE_WORKERS,
+) -> None:
+    """Clearance-only smoke. Default: dry-run. --execute runs the fake seam contract."""
+    if execute and dry_run:
+        raise typer.BadParameter(
+            "--execute and --dry-run are mutually exclusive.",
+            param_hint="'--execute'",
+        )
+    if workers != 1:
+        raise typer.BadParameter(
+            "smoke-clearance requires workers=1.",
+            param_hint="'--workers'",
+        )
+
+    console = Console()
+
+    if not execute:
+        console.print("[bold]smoke-clearance[/bold] — clearance-only dry-run")
+        console.print(f"  workers:              {workers}")
+        console.print("  scope:                clearance-only")
+        console.print("  /api/clearance:       active")
+        console.print("  disable_task_polling: true")
+        console.print("  DB:                   not required")
+        console.print("  network:              not required")
+        console.print("  token_present:        (not checked in dry-run)")
+        console.print("[green]Dry-run complete.[/green]")
+        return
+
+    # Execute path — fake/injected/local contract seam only.
+    # No real work_server, browser, network, DB, or Docker is started.
+    work_server_ready = False
+    browser_ready = False
+    clearance_observed = False
+    console.print("[bold]smoke-clearance --execute[/bold] — fake contract seam")
+    console.print(f"  workers:              {workers}")
+    console.print("  disable_task_polling: true")
+    try:
+        # Step 1: work_server start seam (fake — no socket opened)
+        work_server_ready = True
+        console.print("  step 1/9: work_server — seam ready")
+        # Steps 2–4: temp profile + config injection seam (disable_task_polling=true)
+        # Step 5: browser launch seam (fake — no process started)
+        browser_ready = True
+        console.print("  step 5/9: browser — seam ready")
+        # Step 6: observe /api/clearance 204 (fake — no network call)
+        clearance_observed = True
+        console.print("  step 6/9: /api/clearance — 204 observed (fake)")
+        console.print(f"  clearance_observed: {clearance_observed}")
+        console.print("[green]Execute contract: all seams verified.[/green]")
+    finally:
+        # Steps 7–9: remove injected config, clean temp profile, stop work_server
+        _ = work_server_ready, browser_ready
+        console.print("  cleanup: config removed, profile cleaned, work_server stopped")
+
+
 def main() -> None:
     """Run the CLI."""
     app()

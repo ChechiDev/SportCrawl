@@ -1,9 +1,10 @@
 """aiohttp HTTP work server.
 
-Exposes three routes:
-- GET  /health        — shallow liveness check, no auth required (REQ-9.1)
-- POST /jobs          — batch URL submission (REQ-9.3)
-- GET  /jobs/{id}     — job status polling (REQ-9.4)
+Exposes four routes:
+- GET  /health           — shallow liveness check, no auth required (REQ-9.1)
+- POST /jobs             — batch URL submission (REQ-9.3)
+- GET  /jobs/{id}        — job status polling (REQ-9.4)
+- POST /api/clearance    — clearance payload ingestion, validation-only (CP1.3)
 
 Auth is enforced by a @web.middleware bearer-token check using
 hmac.compare_digest to avoid timing-side-channel attacks (REQ-9.2).
@@ -22,6 +23,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -36,6 +38,39 @@ logger = logging.getLogger(__name__)
 _KEY_PORT = web.AppKey("work_queue_port", WorkQueuePort)
 _KEY_TOKEN = web.AppKey("work_server_token", str)
 _KEY_EXEMPT = web.AppKey("auth_exempt_paths", set)
+
+# ---------------------------------------------------------------------------
+# /api/clearance — validation constants (CP1.3)
+# ---------------------------------------------------------------------------
+
+# Exact match only — no endswith/prefix tricks.
+_CLEARANCE_ALLOWED_DOMAINS: frozenset[str] = frozenset({"fbref.com", ".fbref.com"})
+
+# Characters that disqualify a domain value before allowlist lookup.
+_DOMAIN_REJECT_CHARS: frozenset[str] = frozenset("/\\:@?#[]")
+
+# Strict field allowlist for the clearance payload.
+_CLEARANCE_REQUIRED_KEYS: frozenset[str] = frozenset(
+    {"domain", "profile_id", "worker_id", "observed_at", "expires_at", "clearance"}
+)
+
+# Maximum byte length for the clearance field value.
+_CLEARANCE_MAX_BYTES: int = 64 * 1024  # 64 KB
+
+
+def _parse_utc(value: str) -> datetime | None:
+    """Parse an ISO-8601 UTC-compatible string to a timezone-aware datetime.
+
+    Accepts trailing Z (replaced with +00:00). Returns None for malformed input
+    or naive datetimes.
+    """
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    if dt.tzinfo is None:
+        return None
+    return dt.astimezone(UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +199,70 @@ async def _get_job(request: web.Request) -> web.Response:
     )
 
 
+async def _post_clearance(request: web.Request) -> web.Response:
+    """POST /api/clearance — validate clearance payload; no persistence (CP1.3).
+
+    Accepts an authenticated JSON payload reporting browser/profile readiness.
+    Returns 204 on success. Does not store, log, or echo sensitive values.
+    """
+    _invalid = web.json_response({"error": "invalid_request"}, status=422)
+
+    # 1. Require application/json content type.
+    if request.content_type != "application/json":
+        return web.json_response({"error": "unsupported_media_type"}, status=415)
+
+    # 2. Parse JSON body — invalid JSON → 400.
+    try:
+        body: Any = await request.json()
+    except (json.JSONDecodeError, Exception):
+        return web.json_response({"error": "invalid_request"}, status=400)
+
+    # 3. Top-level must be a JSON object — non-object → 400.
+    if not isinstance(body, dict):
+        return web.json_response({"error": "invalid_request"}, status=400)
+
+    # 4. Reject unknown fields (strict allowlist, case-sensitive key names).
+    extra_keys = set(body.keys()) - _CLEARANCE_REQUIRED_KEYS
+    if extra_keys:
+        return _invalid
+
+    # 5. Check required fields present.
+    missing = _CLEARANCE_REQUIRED_KEYS - set(body.keys())
+    if missing:
+        return _invalid
+
+    # 6. All required field values must be strings.
+    for key in _CLEARANCE_REQUIRED_KEYS:
+        if not isinstance(body[key], str):
+            return _invalid
+
+    # 7. Domain: reject-by-default allowlist.
+    domain: str = body["domain"].strip().lower()
+    if any(c in domain for c in _DOMAIN_REJECT_CHARS):
+        return _invalid
+    if domain not in _CLEARANCE_ALLOWED_DOMAINS:
+        return _invalid
+
+    # 8. Timestamps: parse and validate ordering + expiry.
+    observed_at = _parse_utc(body["observed_at"])
+    if observed_at is None:
+        return _invalid
+    expires_at = _parse_utc(body["expires_at"])
+    if expires_at is None:
+        return _invalid
+    if expires_at <= observed_at:
+        return _invalid
+    if expires_at <= datetime.now(UTC):
+        return _invalid
+
+    # 9. Clearance field size limit.
+    if len(body["clearance"].encode()) > _CLEARANCE_MAX_BYTES:
+        return _invalid
+
+    # 10. Accept — validation-only, no persistence in CP1.3.
+    return web.Response(status=204)
+
+
 # ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
@@ -190,5 +289,6 @@ def create_app(port_adapter: WorkQueuePort, token: str) -> web.Application:
     app.router.add_get("/health", _health)
     app.router.add_post("/jobs", _post_jobs)
     app.router.add_get("/jobs/{id}", _get_job)
+    app.router.add_post("/api/clearance", _post_clearance)
 
     return app
