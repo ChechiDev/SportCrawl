@@ -129,17 +129,27 @@ def _smoke_clearance_body() -> str:
 
 
 class TestExecuteOptionRegistration:
-    """CP1.6g-RED — --execute must be registered as a CLI option."""
+    """CP1.6g — --execute explicit fake/local seam registration contract."""
 
     def test_execute_option_in_help_text(self) -> None:
-        """--execute must appear in smoke-clearance --help.
+        """--execute must be registered as a Click option on smoke-clearance.
 
-        Expected RED: --execute is not registered → not in help output.
+        Uses direct Click param inspection — avoids Rich/Typer rendering
+        fragility across environments where ANSI codes can split option tokens.
         """
-        result = runner.invoke(app, ["smoke-clearance", "--help"])
-        assert "--execute" in result.output, (
-            "--execute option not found in smoke-clearance --help. "
-            "Implement --execute as the real-smoke gate in cli/main.py."
+        import typer.main as typer_main
+
+        cli = typer_main.get_command(app)
+        sub = getattr(cli, "commands", {}).get("smoke-clearance")
+        assert sub is not None, (
+            "smoke-clearance command not registered in the Typer app."
+        )
+        registered = any(
+            "--execute" in getattr(p, "opts", []) for p in sub.params
+        )
+        assert registered, (
+            "--execute option not registered on smoke-clearance. "
+            "Implement --execute as the explicit execute option in cli/main.py."
         )
 
     def test_execute_exits_zero_by_itself(self) -> None:
