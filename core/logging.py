@@ -19,7 +19,20 @@ _VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 # Substring matching on the lowercased key name: "password" matches "db_password",
 # "clearance" matches "cf_clearance", etc.
 _SENSITIVE_SUBSTRINGS: frozenset[str] = frozenset(
-    {"password", "token", "secret", "clearance"}
+    {
+        "password",
+        "token",
+        "secret",
+        "clearance",
+        "cookie",
+        "auth",
+        "html",
+        "body",
+        "cdp",
+        "profile",
+        "db_url",
+        "database_url",
+    }
 )
 _REDACTED = "[REDACTED]"
 
