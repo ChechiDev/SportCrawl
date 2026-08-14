@@ -314,6 +314,13 @@ _SMOKE_CLEARANCE_EXECUTE = typer.Option(
     "--execute",
     help="Run fake/local clearance harness contract (not real smoke).",
 )
+_SMOKE_CLEARANCE_PREPARE_REAL = typer.Option(
+    False,
+    "--prepare-real",
+    help=(
+        "Print real-smoke harness plan (blocked/not authorized — no execution)."
+    ),
+)
 _SMOKE_CLEARANCE_WORKERS = typer.Option(
     1,
     "--workers",
@@ -326,21 +333,62 @@ _SMOKE_CLEARANCE_WORKERS = typer.Option(
 def smoke_clearance(
     dry_run: bool = _SMOKE_CLEARANCE_DRY_RUN,
     execute: bool = _SMOKE_CLEARANCE_EXECUTE,
+    prepare_real: bool = _SMOKE_CLEARANCE_PREPARE_REAL,
     workers: int = _SMOKE_CLEARANCE_WORKERS,
 ) -> None:
     """Clearance-only smoke. Default: dry-run. --execute runs the fake seam contract."""
-    if execute and dry_run:
-        raise typer.BadParameter(
-            "--execute and --dry-run are mutually exclusive.",
-            param_hint="'--execute'",
-        )
     if workers != 1:
         raise typer.BadParameter(
             "smoke-clearance requires workers=1.",
             param_hint="'--workers'",
         )
+    if execute and dry_run:
+        raise typer.BadParameter(
+            "--execute and --dry-run are mutually exclusive.",
+            param_hint="'--execute'",
+        )
+    if prepare_real and dry_run:
+        raise typer.BadParameter(
+            "--prepare-real and --dry-run are mutually exclusive.",
+            param_hint="'--prepare-real'",
+        )
+    if prepare_real and execute:
+        raise typer.BadParameter(
+            "--prepare-real and --execute are mutually exclusive.",
+            param_hint="'--prepare-real'",
+        )
 
     console = Console()
+
+    if prepare_real:
+        console.print(
+            "[bold]smoke-clearance --prepare-real[/bold]"
+            " — real smoke harness plan"
+        )
+        console.print("  status:               blocked / not authorized")
+        console.print(f"  workers:              {workers}")
+        console.print(
+            "  work server:          future loopback 127.0.0.1"
+        )
+        console.print("  endpoint:             /api/clearance")
+        console.print("  expected response:    204")
+        console.print(
+            "  extension storage:    chrome.storage.local"
+        )
+        console.print("  disable_task_polling: true")
+        console.print(
+            "  profile:              temporary profile — cleanup required"
+        )
+        console.print("  ext-runtime:          not started (prepare-real only)")
+        console.print(
+            "  network:              not started (prepare-real only)"
+        )
+        console.print("  DB:                   not required")
+        console.print("  Docker:               not required")
+        console.print(
+            "[yellow]Real smoke is blocked. No execution was performed.[/yellow]"
+        )
+        return
 
     if not execute:
         console.print("[bold]smoke-clearance[/bold] — clearance-only dry-run")
