@@ -321,6 +321,11 @@ _SMOKE_CLEARANCE_PREPARE_REAL = typer.Option(
         "Print real-smoke harness plan (blocked/not authorized — no execution)."
     ),
 )
+_SMOKE_CLEARANCE_REAL_CLEARANCE = typer.Option(
+    False,
+    "--real-clearance",
+    help="Run the real clearance smoke harness (guarded — all providers must be configured).",
+)
 _SMOKE_CLEARANCE_WORKERS = typer.Option(
     1,
     "--workers",
@@ -334,6 +339,7 @@ def smoke_clearance(
     dry_run: bool = _SMOKE_CLEARANCE_DRY_RUN,
     execute: bool = _SMOKE_CLEARANCE_EXECUTE,
     prepare_real: bool = _SMOKE_CLEARANCE_PREPARE_REAL,
+    real_clearance: bool = _SMOKE_CLEARANCE_REAL_CLEARANCE,
     workers: int = _SMOKE_CLEARANCE_WORKERS,
 ) -> None:
     """Clearance-only smoke. Default: dry-run. --execute runs the fake seam contract."""
@@ -357,8 +363,38 @@ def smoke_clearance(
             "--prepare-real and --execute are mutually exclusive.",
             param_hint="'--prepare-real'",
         )
+    if real_clearance and dry_run:
+        raise typer.BadParameter(
+            "--real-clearance and --dry-run are mutually exclusive.",
+            param_hint="'--real-clearance'",
+        )
+    if real_clearance and execute:
+        raise typer.BadParameter(
+            "--real-clearance and --execute are mutually exclusive.",
+            param_hint="'--real-clearance'",
+        )
+    if real_clearance and prepare_real:
+        raise typer.BadParameter(
+            "--real-clearance and --prepare-real are mutually exclusive.",
+            param_hint="'--real-clearance'",
+        )
 
     console = Console()
+
+    if real_clearance:
+        # BLOCKED: no real provider implementations exist yet.
+        # This path is intentionally blocked until CP-SMOKE-B is authorized.
+        console.print(
+            "[bold]smoke-clearance --real-clearance[/bold] — guarded real mode"
+        )
+        console.print("  status:    BLOCKED")
+        console.print("  reason:    no real provider implementations configured")
+        console.print("  gate:      provider_readiness")
+        console.print(
+            "[yellow]Real clearance smoke is blocked. "
+            "Configure all providers before running.[/yellow]"
+        )
+        raise typer.Exit(code=1)
 
     if prepare_real:
         console.print(
