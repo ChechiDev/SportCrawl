@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-08-25
+
+### Added
+- `RealWorkServerLifecycle` in `cli/work_server_lifecycle.py`: concrete `WorkServerLifecycle` seam for real clearance harness gates 7–9 (work server startup, health check, auth failure probe, shutdown)
+- All external interactions are injectable: `process_starter`, `health_getter`, `clearance_poster`, `clock`, `sleeper` — no real server, ports, or subprocess execution in tests
+- `startup(timeout_s)`: spawns server subprocess via injectable `process_starter`; polls `GET /health` via injectable `health_getter`/`clock`/`sleeper` until status 200 or timeout
+- `health_check()`: returns `True` only for HTTP 200 + `{"status": "ok"}` body; `False` on any other response or exception
+- `auth_failure_probe()`: POSTs to `/api/clearance` with fixed synthetic garbage token (`__smoke_probe__`) — never the real bearer token; returns HTTP status code; exceptions return 0
+- `shutdown()`: terminates subprocess; waits up to 3 s; kills on `TimeoutExpired`; swallows all cleanup exceptions; no-op if no process is running
+- 21 synthetic unit tests in `tests/unit/cli/test_work_server_lifecycle.py` covering startup timeout (deterministic via injected clock/sleeper), startup success, health check edge cases (non-dict body, missing `ok` status, JSON parse failure), auth probe header assertions (garbage token sent, real token NOT sent), and all shutdown paths (no-process, terminate+wait, kill-on-timeout, kill-raises)
+- 3 harness integration tests confirming gates 7 (`work_server_startup`), 8 (`work_server_health`), and 9 (`auth_failure_probe`) block correctly on startup raise, health failure, and non-401 probe result
+
+### Notes
+- Real smoke NOT executed; `--real-clearance` remains blocked pending remaining seam implementations
+- CP-SMOKE-B execution NOT authorized
+- `RealWorkServerLifecycle` is NOT wired into `cli/main.py` yet — wiring deferred until all seams are implemented
+- No real work server started; no ports bound; no subprocess, browser, DB, Docker, or live target used in tests
+- Remaining runtime-sensitive seams NOT included in this release: `BrowserLauncher`, `ClearanceObserver`, `ClearancePostClient`
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.29.0] — 2026-08-25
 
 ### Added
