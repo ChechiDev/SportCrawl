@@ -80,10 +80,10 @@ class GhCICheckProvider:
         if returncode != 0:
             return CICheckResult.BLOCKED
         try:
-            runs: list[dict] = json.loads(stdout)
+            runs: list[dict[str, str | None]] = json.loads(stdout)
         except (json.JSONDecodeError, ValueError):
             return CICheckResult.BLOCKED
-        runs.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+        runs.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
         if not runs:
             return CICheckResult.BLOCKED
         latest = runs[0]
