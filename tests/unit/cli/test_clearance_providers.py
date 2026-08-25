@@ -76,12 +76,12 @@ class TestEnvTokenProvider:
         assert EnvTokenProvider().is_ready() is False
 
     def test_source_class_never_exposes_token_value(self, monkeypatch):
-        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "synthetic-secret-abc123")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "fixture-token-value")
         from cli.clearance_providers import EnvTokenProvider
 
         sc = EnvTokenProvider().source_class()
         assert sc == "env:SCRAPING__WORK_SERVER_TOKEN"
-        assert "synthetic-secret-abc123" not in sc
+        assert "fixture-token-value" not in sc
 
 
 # --- BrowserParameterProvider ---
