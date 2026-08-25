@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-08-25
+
 ### Added
+- `smoke-clearance --real-clearance`: guarded CLI path; blocked at `provider_readiness` gate until all real providers are configured — no smoke execution performed
+- `cli/smoke_clearance_real.py`: 15-gate real clearance harness scaffold — Protocol-only interfaces, injectable providers and seams, always-runs cleanup in `finally` block
+- 71 unit tests covering all 15 gate paths, `check_expires_at` bounds (both exclusive), redaction self-test, and cleanup-on-startup-failure invariant
 - E2E validation of `player_info` buffered dispatch and warm-pool execution paths complete (Phases A0–J3): direct mode, buffered mode, and buffered+warm-pool mode validated against an isolated smoke environment
 - Architecture decision: buffered dispatch model generalized as a shared always-active dispatch runtime; `player_info` is the reference implementation for future workloads
 - `docs/architecture/buffered-dispatch-engine.md`: architecture decision record for the buffered dispatch engine
+
+### Fixed
+- CI lint: ruff E501/E302/I001/UP017, flake8 E301 across harness and test files
+- CI security: `pip` upgraded from `26.1.2` to `26.2.1` (resolves PYSEC-2026-3721)
+
+### Notes
+- Real smoke was NOT executed; `--real-clearance` remains blocked at `provider_readiness`
+- CP-SMOKE-B provider implementations are NOT included in this release
+- CP2/session-clearance-pool is out of scope and untouched
 
 ## [0.26.0] — 2026-07-30
 
@@ -188,7 +202,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.24.1...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.26.0...v0.27.0
 [0.24.1]: https://github.com/ChechiDev/sportcrawl/compare/v0.23.0...v0.24.1
 [0.23.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.20.0...v0.23.0
 [0.20.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.19.0...v0.20.0
