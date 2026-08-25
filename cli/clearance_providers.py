@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+from collections.abc import Callable
 
-from cli.smoke_clearance_real import ValidationResult
+from cli.smoke_clearance_real import CICheckResult, ValidationResult
 
 _VALID_TARGET_SOURCE_CLASSES: frozenset[str] = frozenset(
     {"env:SCRAPING__WORK_SERVER_HOST"}
@@ -46,6 +49,49 @@ class EnvBrowserParameterProvider:
 
     def validate_against_allowlist(self, allowlist: frozenset[str]) -> bool:
         return self._SOURCE_CLASS in allowlist
+
+
+def _default_gh_runner(cmd: list[str]) -> tuple[int, str]:
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return (result.returncode, result.stdout)
+
+
+class GhCICheckProvider:
+    """Checks GitHub CI status via `gh run list`."""
+
+    _GH_CMD = [
+        "gh",
+        "run",
+        "list",
+        "--json",
+        "headBranch,status,conclusion,workflowName,createdAt",
+        "--limit",
+        "20",
+    ]
+
+    def __init__(
+        self,
+        runner: Callable[[list[str]], tuple[int, str]] = _default_gh_runner,
+    ) -> None:
+        self._runner = runner
+
+    def check_once(self) -> CICheckResult:
+        returncode, stdout = self._runner(self._GH_CMD)
+        if returncode != 0:
+            return CICheckResult.BLOCKED
+        try:
+            runs: list[dict] = json.loads(stdout)
+        except (json.JSONDecodeError, ValueError):
+            return CICheckResult.BLOCKED
+        runs.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+        if not runs:
+            return CICheckResult.BLOCKED
+        latest = runs[0]
+        if latest.get("status") != "completed":
+            return CICheckResult.BLOCKED
+        if latest.get("conclusion") == "success":
+            return CICheckResult.ALL_PASS
+        return CICheckResult.BLOCKED
 
 
 class LabelTargetValidator:
