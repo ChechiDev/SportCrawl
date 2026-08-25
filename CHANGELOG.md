@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-08-25
+
+### Added
+- `RealBrowserLauncher` in `cli/browser_launcher.py`: concrete `BrowserLauncher` seam for real clearance harness gates 10–11 (browser startup and CDP readiness poll)
+- All external interactions are injectable: `engine_starter` (async coroutine factory for engine startup), `cdp_probe` (async coroutine factory for CDP readiness check), `loop_runner` (sync-to-async bridge; default: `asyncio.run`), `clock` (monotonic clock; default: `time.monotonic`), `sleeper` (default: `time.sleep`) — no real Chrome, Xvfb, CDP, subprocess, or browser execution in tests
+- `start() -> bool`: calls `loop_runner(engine_starter())`; returns `True` on success, `False` on any exception; sets internal started flag
+- `wait_cdp_ready(timeout_s) -> tuple[bool, int]`: returns `(False, 0)` immediately if `start()` was not called or failed; otherwise polls `loop_runner(cdp_probe())` in a deadline loop; returns `(True, elapsed_s)` on first success; `(False, elapsed_s)` on timeout; elapsed is always non-negative
+- 13 synthetic unit tests in `tests/unit/cli/test_browser_launcher.py` covering `start()` success/failure, `wait_cdp_ready()` early-return-on-not-started, immediate success with elapsed, timeout with one probe failure (deterministic via `_make_advancing_clock`), zero-timeout boundary, non-negative elapsed guarantee, and sleeper call count assertions
+- 3 harness integration tests confirming gates 10 (`browser_startup`) and 11 (`cdp_ready`) block correctly on failed start and CDP timeout
+
+### Notes
+- Real smoke NOT executed; `--real-clearance` remains blocked pending remaining seam implementations
+- CP-SMOKE-B execution NOT authorized
+- `RealBrowserLauncher` is NOT wired into `cli/main.py` yet — wiring deferred until all seams are implemented
+- No real Chrome, Xvfb, CDP, subprocess, browser, work_server, DB, Docker, or live target used in tests
+- Remaining runtime-sensitive seams NOT included in this release: `ClearanceObserver`, `ClearancePostClient`
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.30.0] — 2026-08-25
 
 ### Added
