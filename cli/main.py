@@ -317,14 +317,15 @@ _SMOKE_CLEARANCE_EXECUTE = typer.Option(
 _SMOKE_CLEARANCE_PREPARE_REAL = typer.Option(
     False,
     "--prepare-real",
-    help=(
-        "Print real-smoke harness plan (blocked/not authorized — no execution)."
-    ),
+    help=("Print real-smoke harness plan (blocked/not authorized — no execution)."),
 )
 _SMOKE_CLEARANCE_REAL_CLEARANCE = typer.Option(
     False,
     "--real-clearance",
-    help="Run the real clearance smoke harness (guarded — all providers must be configured).",
+    help=(
+        "Run the real clearance smoke harness"
+        " (guarded — all providers must be configured)."
+    ),
 )
 _SMOKE_CLEARANCE_WORKERS = typer.Option(
     1,
@@ -398,27 +399,18 @@ def smoke_clearance(
 
     if prepare_real:
         console.print(
-            "[bold]smoke-clearance --prepare-real[/bold]"
-            " — real smoke harness plan"
+            "[bold]smoke-clearance --prepare-real[/bold] — real smoke harness plan"
         )
         console.print("  status:               blocked / not authorized")
         console.print(f"  workers:              {workers}")
-        console.print(
-            "  work server:          future loopback 127.0.0.1"
-        )
+        console.print("  work server:          future loopback 127.0.0.1")
         console.print("  endpoint:             /api/clearance")
         console.print("  expected response:    204")
-        console.print(
-            "  extension storage:    chrome.storage.local"
-        )
+        console.print("  extension storage:    chrome.storage.local")
         console.print("  disable_task_polling: true")
-        console.print(
-            "  profile:              temporary profile — cleanup required"
-        )
+        console.print("  profile:              temporary profile — cleanup required")
         console.print("  ext-runtime:          not started (prepare-real only)")
-        console.print(
-            "  network:              not started (prepare-real only)"
-        )
+        console.print("  network:              not started (prepare-real only)")
         console.print("  DB:                   not required")
         console.print("  Docker:               not required")
         console.print(

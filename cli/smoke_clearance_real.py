@@ -3,27 +3,30 @@
 
 No real browser, network, DB, or Docker. All external interactions are injectable.
 """
+
 from __future__ import annotations
 
 import enum
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
-
 
 # ---------------------------------------------------------------------------
 # Provider protocols (contracts only — no real implementations)
 # ---------------------------------------------------------------------------
 
+
 class TargetProvider(Protocol):
     def is_ready(self) -> bool: ...
     def source_class(self) -> str: ...  # label only, never raw value
+
 
 class BrowserParameterProvider(Protocol):
     def is_ready(self) -> bool: ...
     def source_class(self) -> str: ...  # label only
     def validate_against_allowlist(self, allowlist: frozenset[str]) -> bool: ...
+
 
 class TokenProvider(Protocol):
     def is_ready(self) -> bool: ...
@@ -34,19 +37,26 @@ class TokenProvider(Protocol):
 # Gate seam interfaces
 # ---------------------------------------------------------------------------
 
+
 class CICheckResult(enum.Enum):
     ALL_PASS = "ALL_PASS"
     BLOCKED = "BLOCKED"
 
+
 class CICheckProvider(Protocol):
     def check_once(self) -> CICheckResult: ...  # executes exactly once, no retry
+
 
 class ValidationResult(enum.Enum):
     VALID = "VALID"
     BLOCKED = "BLOCKED"
 
+
 class TargetValidator(Protocol):
-    def validate(self, target_class: str) -> ValidationResult: ...  # never prints target value
+    def validate(
+        self, target_class: str
+    ) -> ValidationResult: ...  # never prints target value
+
 
 @dataclass
 class ClearanceResult:
@@ -54,36 +64,49 @@ class ClearanceResult:
     expires_at: datetime | None
     clearance_class: str  # label only, never raw value
 
+
 class WorkServerLifecycle(Protocol):
     def startup(self, timeout_s: int) -> None: ...
     def health_check(self) -> bool: ...
     def auth_failure_probe(self) -> int: ...  # HTTP status of garbage-token probe
     def shutdown(self) -> None: ...
 
+
 class BrowserLauncher(Protocol):
+
     def start(self) -> bool: ...
-    def wait_cdp_ready(self, timeout_s: int) -> tuple[bool, int]: ...  # (ready, elapsed_s)
+
+    def wait_cdp_ready(
+        self, timeout_s: int
+    ) -> tuple[bool, int]: ...  # (ready, elapsed_s)
+
 
 class ClearanceObserver(Protocol):
     def observe(self, timeout_s: int) -> ClearanceResult: ...
 
+
 class ClearancePostClient(Protocol):
-    def post(self, clearance_class: str) -> tuple[int, int]: ...  # (status_code, body_bytes)
+    def post(
+        self, clearance_class: str
+    ) -> tuple[int, int]: ...  # (status_code, body_bytes)
 
 
 # ---------------------------------------------------------------------------
 # Gate result / report types
 # ---------------------------------------------------------------------------
 
+
 class GateStatus(enum.Enum):
     PASS = "PASS"
     BLOCKED = "BLOCKED"
     FAIL = "FAIL"
 
+
 class HarnessStatus(enum.Enum):
     PASS = "PASS"
     BLOCKED = "BLOCKED"
     FAIL = "FAIL"
+
 
 @dataclass
 class HarnessReport:
@@ -99,16 +122,17 @@ class HarnessReport:
 
 _REDACTION_PATTERNS = [
     # HIGH-ENTROPY: 32+ hex chars
-    re.compile(r'[0-9a-fA-F]{32,}'),
+    re.compile(r"[0-9a-fA-F]{32,}"),
     # KEY-NAME: common secret key names
-    re.compile(r'(?i)\b(password|secret|token|api_key|auth_key)\b\s*[=:]\s*\S+'),
+    re.compile(r"(?i)\b(password|secret|token|api_key|auth_key)\b\s*[=:]\s*\S+"),
     # URL-CREDENTIAL: userinfo in URL
-    re.compile(r'[a-zA-Z][a-zA-Z0-9+\-.]*://[^/@\s]+:[^/@\s]+@'),
+    re.compile(r"[a-zA-Z][a-zA-Z0-9+\-.]*://[^/@\s]+:[^/@\s]+@"),
     # COOKIE-FORMAT: cf_clearance= pattern
-    re.compile(r'(?i)cf_clearance\s*='),
+    re.compile(r"(?i)cf_clearance\s*="),
     # DSN: postgresql:// or postgres://
-    re.compile(r'(?i)postgres(?:ql)?://\S+'),
+    re.compile(r"(?i)postgres(?:ql)?://\S+"),
 ]
+
 
 def scan_for_sensitive(value: str) -> bool:
     """Return True if value matches any redaction pattern (sensitive)."""
@@ -122,6 +146,7 @@ def scan_for_sensitive(value: str) -> bool:
 # Loopback assertion
 # ---------------------------------------------------------------------------
 
+
 def assert_loopback(host: str) -> bool:
     """Return True only if host resolves to exactly 127.0.0.1."""
     return host == "127.0.0.1"
@@ -133,12 +158,13 @@ def assert_loopback(host: str) -> bool:
 
 _MAX_CLEARANCE_WINDOW_S = 300  # 5 minutes
 
+
 def check_expires_at(expires_at: datetime | None, now: datetime | None = None) -> bool:
     """Return True if now < expires_at <= now + 5min. Both bounds enforced."""
     if expires_at is None:
         return False
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
     delta = (expires_at - now).total_seconds()
     return 0 < delta <= _MAX_CLEARANCE_WINDOW_S
 
@@ -149,6 +175,7 @@ def check_expires_at(expires_at: datetime | None, now: datetime | None = None) -
 
 _INVALID_SOURCE_CLASSES = frozenset({"", "test", "default", "placeholder"})
 
+
 def validate_token_source_class(source_class: str) -> bool:
     """Return True if token source class is a valid non-placeholder label."""
     return source_class not in _INVALID_SOURCE_CLASSES
@@ -158,11 +185,13 @@ def validate_token_source_class(source_class: str) -> bool:
 # RealClearanceHarness
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RealClearanceProviders:
     target: TargetProvider
     browser_params: BrowserParameterProvider
     token: TokenProvider
+
 
 @dataclass
 class RealClearanceSeams:
@@ -266,12 +295,12 @@ class RealClearanceHarness:
             gate_results[self.GATE_TOKEN_SOURCE] = GateStatus.PASS
             evidence["token_source_class"] = token_src
 
-            # Gate 5: Redaction self-test (5 pattern classes as isolated synthetic strings)
+            # Gate 5: Redaction self-test — 5 pattern classes, synthetic strings
             _SELF_TEST_INPUTS = [
                 "aabbccddeeff00112233445566778899",  # HIGH-ENTROPY (32 hex)
-                "password=supersecret",               # KEY-NAME
-                "http://user:pass@example.com",       # URL-CREDENTIAL
-                "cf_clearance=abc",                   # COOKIE-FORMAT
+                "password=supersecret",  # KEY-NAME
+                "http://user:pass@example.com",  # URL-CREDENTIAL
+                "cf_clearance=abc",  # COOKIE-FORMAT
                 "postgresql://user:pw@localhost/db",  # DSN
             ]
             self_test_passed = all(scan_for_sensitive(s) for s in _SELF_TEST_INPUTS)

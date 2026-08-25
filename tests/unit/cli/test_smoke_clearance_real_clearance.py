@@ -11,7 +11,7 @@ are used for rejection tests.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from typer.testing import CliRunner
@@ -39,8 +39,11 @@ runner = CliRunner()
 # Fake provider implementations
 # ---------------------------------------------------------------------------
 
+
 class FakeTargetProvider:
-    def __init__(self, ready: bool = True, source_class_label: str = "FAKE_RUNTIME_TARGET_CLASS") -> None:
+    def __init__(
+        self, ready: bool = True, source_class_label: str = "FAKE_RUNTIME_TARGET_CLASS"
+    ) -> None:
         self._ready = ready
         self._source_class = source_class_label
 
@@ -52,7 +55,11 @@ class FakeTargetProvider:
 
 
 class FakeBrowserParamProvider:
-    def __init__(self, ready: bool = True, source_class_label: str = "FAKE_RUNTIME_BROWSER_PARAM_CLASS") -> None:
+    def __init__(
+        self,
+        ready: bool = True,
+        source_class_label: str = "FAKE_RUNTIME_BROWSER_PARAM_CLASS",
+    ) -> None:
         self._ready = ready
         self._source_class = source_class_label
 
@@ -62,12 +69,16 @@ class FakeBrowserParamProvider:
     def source_class(self) -> str:
         return self._source_class
 
-    def validate_against_allowlist(self, _allowlist: frozenset[str]) -> bool:  # pyright: ignore[reportUnusedParameter]
+    def validate_against_allowlist(  # pyright: ignore[reportUnusedParameter]
+        self, _allowlist: frozenset[str]
+    ) -> bool:
         return True
 
 
 class FakeTokenProvider:
-    def __init__(self, ready: bool = True, source_class_label: str = "FAKE_RUNTIME_TOKEN_CLASS") -> None:
+    def __init__(
+        self, ready: bool = True, source_class_label: str = "FAKE_RUNTIME_TOKEN_CLASS"
+    ) -> None:
         self._ready = ready
         self._source_class = source_class_label
 
@@ -101,7 +112,9 @@ class FakeWorkServer:
         self.shutdown_called = False
         self.startup_called = False
 
-    def startup(self, timeout_s: int) -> None:  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+    def startup(  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        self, timeout_s: int
+    ) -> None:
         self.startup_called = True
         if self._startup_raises:
             raise RuntimeError("work_server failed to start")
@@ -120,12 +133,16 @@ class FakeTargetValidatorImpl:
     def __init__(self, result: ValidationResult = ValidationResult.VALID) -> None:
         self._result = result
 
-    def validate(self, _target_class: str) -> ValidationResult:  # pyright: ignore[reportUnusedParameter]
+    def validate(  # pyright: ignore[reportUnusedParameter]
+        self, _target_class: str
+    ) -> ValidationResult:
         return self._result
 
 
 class FakeBrowserLauncher:
-    def __init__(self, starts: bool = True, cdp_ready: bool = True, cdp_elapsed: int = 5) -> None:
+    def __init__(
+        self, starts: bool = True, cdp_ready: bool = True, cdp_elapsed: int = 5
+    ) -> None:
         self._starts = starts
         self._cdp_ready = cdp_ready
         self._cdp_elapsed = cdp_elapsed
@@ -133,7 +150,9 @@ class FakeBrowserLauncher:
     def start(self) -> bool:
         return self._starts
 
-    def wait_cdp_ready(self, timeout_s: int) -> tuple[bool, int]:  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+    def wait_cdp_ready(  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        self, timeout_s: int
+    ) -> tuple[bool, int]:
         return self._cdp_ready, self._cdp_elapsed
 
 
@@ -145,10 +164,12 @@ class FakeClearanceObserver:
         clearance_class: str = "FAKE_CLEARANCE_CLASS",
     ) -> None:
         self._obtained = obtained
-        self._expires_at = expires_at or (datetime.now(timezone.utc) + timedelta(minutes=2))
+        self._expires_at = expires_at or (datetime.now(UTC) + timedelta(minutes=2))
         self._clearance_class = clearance_class
 
-    def observe(self, timeout_s: int) -> ClearanceResult:  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+    def observe(  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        self, timeout_s: int
+    ) -> ClearanceResult:
         return ClearanceResult(
             obtained=self._obtained,
             expires_at=self._expires_at,
@@ -161,7 +182,9 @@ class FakeClearancePost:
         self._status = status_code
         self._body_bytes = body_bytes
 
-    def post(self, _clearance_class: str) -> tuple[int, int]:  # pyright: ignore[reportUnusedParameter]
+    def post(  # pyright: ignore[reportUnusedParameter]
+        self, _clearance_class: str
+    ) -> tuple[int, int]:
         return self._status, self._body_bytes
 
 
@@ -189,10 +212,12 @@ def _make_seams(**kwargs: Any) -> RealClearanceSeams:
 # CLI flag registration
 # ---------------------------------------------------------------------------
 
+
 class TestRealClearanceFlagRegistration:
     def test_real_clearance_option_registered(self) -> None:
         """--real-clearance must be registered as a Click option."""
         import typer.main as typer_main
+
         cli = typer_main.get_command(app)
         sub = getattr(cli, "commands", {}).get("smoke-clearance")
         assert sub is not None, "smoke-clearance command not registered."
@@ -217,18 +242,26 @@ class TestRealClearanceFlagRegistration:
 
     def test_real_clearance_and_dry_run_rejected(self) -> None:
         """--real-clearance --dry-run must be rejected."""
-        result = runner.invoke(app, ["smoke-clearance", "--real-clearance", "--dry-run"])
+        result = runner.invoke(
+            app, ["smoke-clearance", "--real-clearance", "--dry-run"]
+        )
         assert result.exit_code != 0, "--real-clearance --dry-run must be rejected."
 
     def test_real_clearance_and_execute_rejected(self) -> None:
         """--real-clearance --execute must be rejected."""
-        result = runner.invoke(app, ["smoke-clearance", "--real-clearance", "--execute"])
+        result = runner.invoke(
+            app, ["smoke-clearance", "--real-clearance", "--execute"]
+        )
         assert result.exit_code != 0, "--real-clearance --execute must be rejected."
 
     def test_real_clearance_and_prepare_real_rejected(self) -> None:
         """--real-clearance --prepare-real must be rejected."""
-        result = runner.invoke(app, ["smoke-clearance", "--real-clearance", "--prepare-real"])
-        assert result.exit_code != 0, "--real-clearance --prepare-real must be rejected."
+        result = runner.invoke(
+            app, ["smoke-clearance", "--real-clearance", "--prepare-real"]
+        )
+        assert result.exit_code != 0, (
+            "--real-clearance --prepare-real must be rejected."
+        )
 
     def test_existing_execute_still_works(self) -> None:
         """--execute must still exit 0 (regression guard)."""
@@ -244,6 +277,7 @@ class TestRealClearanceFlagRegistration:
 # ---------------------------------------------------------------------------
 # Harness unit tests — BLOCKED paths
 # ---------------------------------------------------------------------------
+
 
 class TestHarnessBlockedPaths:
     def test_blocked_if_target_not_ready(self) -> None:
@@ -326,7 +360,7 @@ class TestHarnessBlockedPaths:
     def test_blocked_if_expires_at_lte_now(self) -> None:
         """expires_at <= now → BLOCKED (lower bound violated)."""
         harness = RealClearanceHarness()
-        past = datetime.now(timezone.utc) - timedelta(seconds=1)
+        past = datetime.now(UTC) - timedelta(seconds=1)
         report = harness.run(
             _make_providers(),
             _make_seams(
@@ -339,7 +373,7 @@ class TestHarnessBlockedPaths:
     def test_blocked_if_expires_at_gt_now_plus_5min(self) -> None:
         """expires_at > now + 5min → BLOCKED (upper bound violated)."""
         harness = RealClearanceHarness()
-        far_future = datetime.now(timezone.utc) + timedelta(minutes=10)
+        far_future = datetime.now(UTC) + timedelta(minutes=10)
         report = harness.run(
             _make_providers(),
             _make_seams(
@@ -393,7 +427,9 @@ class TestHarnessBlockedPaths:
         harness = RealClearanceHarness()
         report = harness.run(
             _make_providers(),
-            _make_seams(clearance_post=FakeClearancePost(status_code=204, body_bytes=42)),
+            _make_seams(
+                clearance_post=FakeClearancePost(status_code=204, body_bytes=42)
+            ),
         )
         assert report.status == HarnessStatus.BLOCKED
         assert report.error_gate == RealClearanceHarness.GATE_POST_CLEARANCE
@@ -403,6 +439,7 @@ class TestHarnessBlockedPaths:
 # Cleanup verification — shutdown must run on every path
 # ---------------------------------------------------------------------------
 
+
 class TestCleanupAlwaysRuns:
     def test_cleanup_runs_on_provider_not_ready(self) -> None:
         ws = FakeWorkServer()
@@ -411,18 +448,25 @@ class TestCleanupAlwaysRuns:
             _make_providers(target=FakeTargetProvider(ready=False)),
             _make_seams(work_server=ws),
         )
-        assert ws.shutdown_called, "shutdown must be called even when provider_readiness gate fails"
+        assert ws.shutdown_called, (
+            "shutdown must be called even when provider_readiness gate fails"
+        )
 
     def test_cleanup_runs_on_loopback_fail(self) -> None:
         ws = FakeWorkServer()
         harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws, resolved_host="192.168.1.1"))
+        harness.run(
+            _make_providers(), _make_seams(work_server=ws, resolved_host="192.168.1.1")
+        )
         assert ws.shutdown_called
 
     def test_cleanup_runs_on_ci_check_blocked(self) -> None:
         ws = FakeWorkServer()
         harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws, ci_check=FakeCICheck(CICheckResult.BLOCKED)))
+        harness.run(
+            _make_providers(),
+            _make_seams(work_server=ws, ci_check=FakeCICheck(CICheckResult.BLOCKED)),
+        )
         assert ws.shutdown_called
 
     def test_cleanup_runs_on_work_server_health_fail(self) -> None:
@@ -440,25 +484,46 @@ class TestCleanupAlwaysRuns:
     def test_cleanup_runs_on_browser_start_fail(self) -> None:
         ws = FakeWorkServer()
         harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws, browser_launcher=FakeBrowserLauncher(starts=False)))
+        harness.run(
+            _make_providers(),
+            _make_seams(
+                work_server=ws, browser_launcher=FakeBrowserLauncher(starts=False)
+            ),
+        )
         assert ws.shutdown_called
 
     def test_cleanup_runs_on_cdp_not_ready(self) -> None:
         ws = FakeWorkServer()
         harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws, browser_launcher=FakeBrowserLauncher(cdp_ready=False, cdp_elapsed=31)))
+        harness.run(
+            _make_providers(),
+            _make_seams(
+                work_server=ws,
+                browser_launcher=FakeBrowserLauncher(cdp_ready=False, cdp_elapsed=31),
+            ),
+        )
         assert ws.shutdown_called
 
     def test_cleanup_runs_on_clearance_not_observed(self) -> None:
         ws = FakeWorkServer()
         harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws, clearance_observer=FakeClearanceObserver(obtained=False)))
+        harness.run(
+            _make_providers(),
+            _make_seams(
+                work_server=ws, clearance_observer=FakeClearanceObserver(obtained=False)
+            ),
+        )
         assert ws.shutdown_called
 
     def test_cleanup_runs_on_post_fail(self) -> None:
         ws = FakeWorkServer()
         harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws, clearance_post=FakeClearancePost(status_code=500)))
+        harness.run(
+            _make_providers(),
+            _make_seams(
+                work_server=ws, clearance_post=FakeClearancePost(status_code=500)
+            ),
+        )
         assert ws.shutdown_called
 
     def test_cleanup_runs_on_pass(self) -> None:
@@ -480,28 +545,38 @@ class TestCleanupAlwaysRuns:
 # Provider evidence safety — source_class must be a label, not a raw value
 # ---------------------------------------------------------------------------
 
+
 class TestProviderEvidenceSafety:
     def test_target_source_class_is_synthetic_label(self) -> None:
         """source_class must not contain sensitive substrings."""
         p = FakeTargetProvider(source_class_label="FAKE_RUNTIME_TARGET_CLASS")
         label = p.source_class()
-        assert not scan_for_sensitive(label), f"source_class label is sensitive: {label!r}"
+        assert not scan_for_sensitive(label), (
+            f"source_class label is sensitive: {label!r}"
+        )
 
     def test_token_source_class_is_synthetic_label(self) -> None:
         p = FakeTokenProvider(source_class_label="FAKE_RUNTIME_TOKEN_CLASS")
         label = p.source_class()
-        assert not scan_for_sensitive(label), f"source_class label is sensitive: {label!r}"
+        assert not scan_for_sensitive(label), (
+            f"source_class label is sensitive: {label!r}"
+        )
 
     def test_browser_param_source_class_is_synthetic_label(self) -> None:
-        p = FakeBrowserParamProvider(source_class_label="FAKE_RUNTIME_BROWSER_PARAM_CLASS")
+        p = FakeBrowserParamProvider(
+            source_class_label="FAKE_RUNTIME_BROWSER_PARAM_CLASS"
+        )
         label = p.source_class()
-        assert not scan_for_sensitive(label), f"source_class label is sensitive: {label!r}"
+        assert not scan_for_sensitive(label), (
+            f"source_class label is sensitive: {label!r}"
+        )
 
     def test_clearance_class_label_in_evidence_not_raw_value(self) -> None:
-        """clearance_class in ClearanceResult must be a label, not a raw cookie value."""
+        """clearance_class in ClearanceResult must be a label, not a raw cookie
+        value."""
         result = ClearanceResult(
             obtained=True,
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=2),
+            expires_at=datetime.now(UTC) + timedelta(minutes=2),
             clearance_class="FAKE_CLEARANCE_CLASS",
         )
         assert not scan_for_sensitive(result.clearance_class), (
@@ -513,6 +588,7 @@ class TestProviderEvidenceSafety:
 # Target validation — mocked resolver rejects dangerous hosts
 # ---------------------------------------------------------------------------
 
+
 class TestTargetValidation:
     """Target validator must reject dangerous targets. Uses mocked validator seam."""
 
@@ -520,7 +596,9 @@ class TestTargetValidation:
         harness = RealClearanceHarness()
         report = harness.run(
             _make_providers(target=FakeTargetProvider(source_class_label=target_label)),
-            _make_seams(target_validator=FakeTargetValidatorImpl(ValidationResult.BLOCKED)),
+            _make_seams(
+                target_validator=FakeTargetValidatorImpl(ValidationResult.BLOCKED)
+            ),
         )
         assert report.status == HarnessStatus.BLOCKED
         assert report.error_gate == RealClearanceHarness.GATE_TARGET_VALIDATION
@@ -554,13 +632,16 @@ class TestTargetValidation:
 # Redirect and DNS rebinding via mocked seams
 # ---------------------------------------------------------------------------
 
+
 class TestRedirectAndDNSRebinding:
     def test_redirect_response_blocks(self) -> None:
         """A redirect from target_validator → BLOCKED."""
         harness = RealClearanceHarness()
         report = harness.run(
             _make_providers(),
-            _make_seams(target_validator=FakeTargetValidatorImpl(ValidationResult.BLOCKED)),
+            _make_seams(
+                target_validator=FakeTargetValidatorImpl(ValidationResult.BLOCKED)
+            ),
         )
         assert report.status == HarnessStatus.BLOCKED
 
@@ -573,7 +654,9 @@ class TestRedirectAndDNSRebinding:
         harness = RealClearanceHarness()
         report = harness.run(
             _make_providers(),
-            _make_seams(target_validator=FakeTargetValidatorImpl(ValidationResult.BLOCKED)),
+            _make_seams(
+                target_validator=FakeTargetValidatorImpl(ValidationResult.BLOCKED)
+            ),
         )
         assert report.status == HarnessStatus.BLOCKED
 
@@ -581,6 +664,7 @@ class TestRedirectAndDNSRebinding:
 # ---------------------------------------------------------------------------
 # Redaction scanner unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestRedactionScanner:
     def test_detects_high_entropy_hex(self) -> None:
@@ -618,6 +702,7 @@ class TestRedactionScanner:
 # Final redaction scan catches injected sensitive string
 # ---------------------------------------------------------------------------
 
+
 class TestFinalRedactionScan:
     def test_sensitive_string_in_clearance_class_blocks(self) -> None:
         """If clearance_class contains a sensitive value, final scan must FAIL."""
@@ -641,6 +726,7 @@ class TestFinalRedactionScan:
 # ---------------------------------------------------------------------------
 # Full PASS path
 # ---------------------------------------------------------------------------
+
 
 class TestFullPassPath:
     def test_all_gates_pass(self) -> None:
@@ -689,6 +775,7 @@ class TestFullPassPath:
 # Utility function unit tests
 # ---------------------------------------------------------------------------
 
+
 class TestUtilityFunctions:
     def test_assert_loopback_true_for_127(self) -> None:
         assert assert_loopback("127.0.0.1") is True
@@ -700,23 +787,23 @@ class TestUtilityFunctions:
         assert assert_loopback("example.com") is False
 
     def test_check_expires_at_valid_window(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = now + timedelta(minutes=2)
         assert check_expires_at(expires, now) is True
 
     def test_check_expires_at_expired(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired = now - timedelta(seconds=1)
         assert check_expires_at(expired, now) is False
 
     def test_check_expires_at_too_far_future(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         far = now + timedelta(minutes=10)
         assert check_expires_at(far, now) is False
 
     def test_check_expires_at_exactly_5min_blocked(self) -> None:
         """exactly 5 min → upper bound exclusive (> not >=)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         exactly_5 = now + timedelta(minutes=5)
         # 5 min exactly is NOT in (0, 300] — 300 seconds exactly is boundary
         # Per spec: now < expires_at <= now + 5min → 300s is included
@@ -726,7 +813,7 @@ class TestUtilityFunctions:
         assert check_expires_at(None) is False
 
     def test_expires_at_exactly_now_is_blocked(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         assert check_expires_at(now, now=now) is False
 
     def test_validate_token_source_class_valid(self) -> None:
