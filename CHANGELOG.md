@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-08-26
+
+### Added
+- `RealClearanceObserver` in `cli/clearance_observer.py`: concrete `ClearanceObserver` seam for real clearance harness gates 12–13 (clearance observed, expires_at guard)
+- All external interactions are injectable: `clearance_getter` (callable returning `ClearanceResult | None`; polled until `obtained=True` or timeout), `clock` (default: `time.monotonic`), `sleeper` (default: `time.sleep`) — no real browser, Chrome, Xvfb, CDP, cookies, server, network, or subprocess in tests
+- `POLL_INTERVAL_SECONDS = 1.0` named module-level constant; exported for test assertions
+- `observe(timeout_s)` behavior: polls `clearance_getter` in a deadline loop; treats both `None` and `ClearanceResult(obtained=False, ...)` as misses; `timeout_s=0` returns immediately without calling getter; returns `ClearanceResult(obtained=False, expires_at=None, clearance_class="")` on timeout
+- `clearance_class` is always a label string (e.g. `"cf_clearance@fbref.com"`), never a raw cookie value; `scan_for_sensitive()` guard asserted directly in tests
+- 11 synthetic unit tests in `tests/unit/cli/test_clearance_observer.py` covering timeout with getter always returning None, `timeout_s=0` short-circuit, timeout sentinel fields, first-call success, result pass-through, `expires_at` propagation, None-then-success with sleeper call count, `obtained=False` treated as miss, `POLL_INTERVAL_SECONDS` sleep value, and `scan_for_sensitive` safety on both success and timeout paths
+- 3 harness integration tests confirming gate 12 (`clearance_observed`) blocks when observer returns `obtained=False`, gate 13 (`expires_at_guard`) blocks on expired `expires_at`, and gate 13 blocks on `expires_at` too far in the future
+
+### Notes
+- Real smoke NOT executed; `--real-clearance` remains blocked pending remaining seam implementations
+- CP-SMOKE-B execution NOT authorized
+- `RealClearanceObserver` is NOT wired into `cli/main.py` yet — wiring deferred until all seams are implemented
+- Work-server clearance store bridge NOT included in this release (required before production wire-up; separate slice)
+- No real browser, Chrome, Xvfb, CDP, cookies, server, network, subprocess, DB, Docker, or live target used in tests
+- Remaining work before CLI wire-up: work-server clearance store bridge (`server.py`), `ClearancePostClient`
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.31.0] — 2026-08-25
 
 ### Added
