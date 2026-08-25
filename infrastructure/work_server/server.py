@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 _KEY_PORT = web.AppKey("work_queue_port", WorkQueuePort)
 _KEY_TOKEN = web.AppKey("work_server_token", str)
 _KEY_EXEMPT = web.AppKey("auth_exempt_paths", set)
+_KEY_CLEARANCE_STORE = web.AppKey("clearance_store", dict)
 
 # ---------------------------------------------------------------------------
 # /api/clearance — validation constants (CP1.3)
@@ -259,8 +260,30 @@ async def _post_clearance(request: web.Request) -> web.Response:
     if len(body["clearance"].encode()) > _CLEARANCE_MAX_BYTES:
         return _invalid
 
-    # 10. Accept — validation-only, no persistence in CP1.3.
+    # 10. Accept — store sanitized metadata only (raw clearance never stored).
+    store: dict[str, str] = request.app[_KEY_CLEARANCE_STORE]
+    store.update(
+        {
+            "domain": domain,
+            "expires_at": body["expires_at"],
+            "observed_at": body["observed_at"],
+        }
+    )
     return web.Response(status=204)
+
+
+async def _get_clearance_latest(request: web.Request) -> web.Response:
+    """GET /api/clearance/latest — return sanitized clearance metadata.
+
+    Returns 204 when no validated clearance has been received yet.
+    Returns 200 + JSON with sanitized fields (domain, expires_at, observed_at)
+    after at least one valid POST /api/clearance has been processed.
+    Raw clearance cookie value is never included.
+    """
+    store: dict[str, str] = request.app[_KEY_CLEARANCE_STORE]
+    if not store:
+        return web.Response(status=204)
+    return web.json_response(store)
 
 
 # ---------------------------------------------------------------------------
@@ -284,11 +307,13 @@ def create_app(port_adapter: WorkQueuePort, token: str) -> web.Application:
     app[_KEY_PORT] = port_adapter
     app[_KEY_TOKEN] = token
     app[_KEY_EXEMPT] = {"/health"}
+    app[_KEY_CLEARANCE_STORE] = {}
 
     # Register routes
     app.router.add_get("/health", _health)
     app.router.add_post("/jobs", _post_jobs)
     app.router.add_get("/jobs/{id}", _get_job)
     app.router.add_post("/api/clearance", _post_clearance)
+    app.router.add_get("/api/clearance/latest", _get_clearance_latest)
 
     return app
