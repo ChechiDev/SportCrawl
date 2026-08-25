@@ -1,5 +1,6 @@
 # Baseline file for gitleaks secret scanning.
 # Add SHA256 fingerprints of allowlisted findings here.
-# Format: <fingerprint> #<description>
+# Format: one bare fingerprint per line; comments must be on separate lines.
 # Leave empty when there are no pre-existing findings to ignore.
-128d65e62a0a4d334e44ba8015af9cdc8ff8db32:tests/unit/cli/test_clearance_providers.py:generic-api-key:79 # synthetic test fixture, not a real credential
+# synthetic test fixture in test_source_class_never_exposes_token_value — not a real credential
+128d65e62a0a4d334e44ba8015af9cdc8ff8db32:tests/unit/cli/test_clearance_providers.py:generic-api-key:79
