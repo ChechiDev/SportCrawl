@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-08-26
+
+### Added
+- `smoke-clearance --real-clearance` in `cli/main.py` now wires all concrete generic real-clearance seams into `RealClearanceHarness.run()`:
+  - Constructs `RealClearanceProviders` with `RealClearanceBrowserLauncher`, `RealClearanceObserver`, `RealClearancePostClient`, and the work-server URL resolver
+  - Constructs `RealClearanceSeams` from those providers
+  - Invokes `RealClearanceHarness.run(seams)` and maps the result to exit codes: `0` on PASS, `1` on BLOCKED or FAIL
+  - Resolved host is loopback-only; work-server command is generic (no site-specific literals in `cli/main.py`)
+- 491-line synthetic wire-up test suite in `tests/unit/cli/test_main_real_clearance_wireup.py` covering provider construction, seam wiring, harness invocation, exit-code mapping, loopback-only host resolution, and generic work-server command — no real server, ports, DB, Docker, browser, Chrome, Xvfb, CDP, cookies, network, or live target used
+
+### Notes
+- Architecture guardrail: the buffering/session/clearance system is a generic multi-web engine; FBref is only the first adapter/config/policy validation path; no FBref literal appears in `cli/main.py`; Transfermarkt, Capology, and other future adapters remain fully supported by the design
+- Real smoke NOT executed; CP-SMOKE-B execution NOT authorized
+- No real work_server, ports, DB, Docker, browser, Chrome, Xvfb, CDP, cookies, network, or live target used in tests
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.34.0] — 2026-08-26
 
 ### Added
