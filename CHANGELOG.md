@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-08-26
+
+### Added
+- `RealClearancePostClient` in `cli/clearance_post_client.py`: concrete `ClearancePostClient` seam for real clearance harness gate 14 (post-clearance probe to work server)
+- All external interactions are injectable: `poster` (callable `(url, headers, body) -> (status_code, body_bytes)`; default uses `urllib.request` from stdlib — no third-party HTTP dependency), `clock` (default: `datetime.now(UTC)`) — no real server, network, browser, or cookie values in tests
+- `post(clearance_class) -> tuple[int, int]`: maps label to domain via `_CLEARANCE_CLASS_TO_DOMAIN`; builds synthetic probe payload with fixed `__smoke_probe_clearance__` placeholder (raw cookie never sent); raises `ValueError` for unknown labels; returns `(status_code, body_bytes)` from poster unchanged
+- `clearance_class` is always a label string (e.g. `"cf_clearance@fbref.com"`), never a raw cookie value; `scan_for_sensitive()` guard asserted directly in tests
+- 25 synthetic unit tests in `tests/unit/cli/test_clearance_post_client.py` covering URL forwarding, `Authorization: Bearer` header, token isolation from body, exact six-key payload shape, domain mapping, placeholder clearance field, synthetic profile/worker IDs, all-string payload values, timestamp ordering (`observed_at < expires_at`), 60-second expires offset, injected clock determinism, ISO 8601 UTC format, status/body-bytes passthrough (204/0, 500, 401, non-zero bytes), secret safety via `scan_for_sensitive`, and `ValueError` on unknown/empty labels
+- 3 harness integration tests confirming gate 14 (`post_clearance`) blocks on non-204 status, blocks on non-zero body bytes, and passes on `(204, 0)`
+
+### Notes
+- Real smoke NOT executed; `--real-clearance` remains blocked pending CLI wire-up
+- CP-SMOKE-B execution NOT authorized
+- `RealClearancePostClient` is NOT wired into `cli/main.py` yet — wiring deferred to a separate authorized MASTER TASK
+- No real server, network, browser, Chrome, Xvfb, CDP, cookies, subprocess, DB, Docker, or live target used in tests; `urllib.request` default poster never called in tests (injectable mock only)
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.33.0] — 2026-08-26
 
 ### Added
@@ -308,7 +325,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.30.0...v0.31.0
