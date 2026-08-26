@@ -141,11 +141,14 @@ class FakeTargetValidatorImpl:
 
 class FakeBrowserLauncher:
     def __init__(
-        self, starts: bool = True, cdp_ready: bool = True, cdp_elapsed: int = 5
+        self, starts: bool = True, cdp_ready: bool = True, cdp_elapsed: int = 5,
+        stop_raises: bool = False
     ) -> None:
         self._starts = starts
         self._cdp_ready = cdp_ready
         self._cdp_elapsed = cdp_elapsed
+        self._stop_raises = stop_raises
+        self.stop_called: bool = False
 
     def start(self) -> bool:
         return self._starts
@@ -154,6 +157,11 @@ class FakeBrowserLauncher:
         self, timeout_s: int
     ) -> tuple[bool, int]:
         return self._cdp_ready, self._cdp_elapsed
+
+    def stop(self) -> None:
+        self.stop_called = True
+        if self._stop_raises:
+            raise RuntimeError("stop failed")
 
 
 class FakeClearanceObserver:
@@ -443,102 +451,143 @@ class TestHarnessBlockedPaths:
 class TestCleanupAlwaysRuns:
     def test_cleanup_runs_on_provider_not_ready(self) -> None:
         ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher()
         harness = RealClearanceHarness()
         harness.run(
             _make_providers(target=FakeTargetProvider(ready=False)),
-            _make_seams(work_server=ws),
+            _make_seams(work_server=ws, browser_launcher=launcher),
         )
         assert ws.shutdown_called, (
             "shutdown must be called even when provider_readiness gate fails"
         )
+        assert launcher.stop_called, (
+            "browser stop must be called even when provider_readiness gate fails"
+        )
 
     def test_cleanup_runs_on_loopback_fail(self) -> None:
         ws = FakeWorkServer()
-        harness = RealClearanceHarness()
-        harness.run(
-            _make_providers(), _make_seams(work_server=ws, resolved_host="192.168.1.1")
-        )
-        assert ws.shutdown_called
-
-    def test_cleanup_runs_on_ci_check_blocked(self) -> None:
-        ws = FakeWorkServer()
-        harness = RealClearanceHarness()
-        harness.run(
-            _make_providers(),
-            _make_seams(work_server=ws, ci_check=FakeCICheck(CICheckResult.BLOCKED)),
-        )
-        assert ws.shutdown_called
-
-    def test_cleanup_runs_on_work_server_health_fail(self) -> None:
-        ws = FakeWorkServer(health=False)
-        harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws))
-        assert ws.shutdown_called
-
-    def test_cleanup_runs_on_auth_probe_fail(self) -> None:
-        ws = FakeWorkServer(auth_probe_status=200)
-        harness = RealClearanceHarness()
-        harness.run(_make_providers(), _make_seams(work_server=ws))
-        assert ws.shutdown_called
-
-    def test_cleanup_runs_on_browser_start_fail(self) -> None:
-        ws = FakeWorkServer()
-        harness = RealClearanceHarness()
-        harness.run(
-            _make_providers(),
-            _make_seams(
-                work_server=ws, browser_launcher=FakeBrowserLauncher(starts=False)
-            ),
-        )
-        assert ws.shutdown_called
-
-    def test_cleanup_runs_on_cdp_not_ready(self) -> None:
-        ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher()
         harness = RealClearanceHarness()
         harness.run(
             _make_providers(),
             _make_seams(
                 work_server=ws,
-                browser_launcher=FakeBrowserLauncher(cdp_ready=False, cdp_elapsed=31),
+                browser_launcher=launcher,
+                resolved_host="192.168.1.1",
             ),
         )
         assert ws.shutdown_called
+        assert launcher.stop_called
+
+    def test_cleanup_runs_on_ci_check_blocked(self) -> None:
+        ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher()
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(
+                work_server=ws,
+                browser_launcher=launcher,
+                ci_check=FakeCICheck(CICheckResult.BLOCKED),
+            ),
+        )
+        assert ws.shutdown_called
+        assert launcher.stop_called
+
+    def test_cleanup_runs_on_work_server_health_fail(self) -> None:
+        ws = FakeWorkServer(health=False)
+        launcher = FakeBrowserLauncher()
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(work_server=ws, browser_launcher=launcher),
+        )
+        assert ws.shutdown_called
+        assert launcher.stop_called
+
+    def test_cleanup_runs_on_auth_probe_fail(self) -> None:
+        ws = FakeWorkServer(auth_probe_status=200)
+        launcher = FakeBrowserLauncher()
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(work_server=ws, browser_launcher=launcher),
+        )
+        assert ws.shutdown_called
+        assert launcher.stop_called
+
+    def test_cleanup_runs_on_browser_start_fail(self) -> None:
+        ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher(starts=False)
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(work_server=ws, browser_launcher=launcher),
+        )
+        assert ws.shutdown_called
+        assert launcher.stop_called
+
+    def test_cleanup_runs_on_cdp_not_ready(self) -> None:
+        ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher(cdp_ready=False, cdp_elapsed=31)
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(work_server=ws, browser_launcher=launcher),
+        )
+        assert ws.shutdown_called
+        assert launcher.stop_called
 
     def test_cleanup_runs_on_clearance_not_observed(self) -> None:
         ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher()
         harness = RealClearanceHarness()
         harness.run(
             _make_providers(),
             _make_seams(
-                work_server=ws, clearance_observer=FakeClearanceObserver(obtained=False)
+                work_server=ws,
+                browser_launcher=launcher,
+                clearance_observer=FakeClearanceObserver(obtained=False),
             ),
         )
         assert ws.shutdown_called
+        assert launcher.stop_called
 
     def test_cleanup_runs_on_post_fail(self) -> None:
         ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher()
         harness = RealClearanceHarness()
         harness.run(
             _make_providers(),
             _make_seams(
-                work_server=ws, clearance_post=FakeClearancePost(status_code=500)
+                work_server=ws,
+                browser_launcher=launcher,
+                clearance_post=FakeClearancePost(status_code=500),
             ),
         )
         assert ws.shutdown_called
+        assert launcher.stop_called
 
     def test_cleanup_runs_on_pass(self) -> None:
         ws = FakeWorkServer()
+        launcher = FakeBrowserLauncher()
         harness = RealClearanceHarness()
-        report = harness.run(_make_providers(), _make_seams(work_server=ws))
+        report = harness.run(
+            _make_providers(),
+            _make_seams(work_server=ws, browser_launcher=launcher),
+        )
         assert report.status == HarnessStatus.PASS
         assert ws.shutdown_called
+        assert launcher.stop_called
 
     def test_cleanup_runs_on_work_server_startup_raises(self) -> None:
         ws = FakeWorkServer(startup_raises=True)
-        seams = _make_seams(work_server=ws)
+        launcher = FakeBrowserLauncher()
+        seams = _make_seams(work_server=ws, browser_launcher=launcher)
         providers = _make_providers()
         RealClearanceHarness().run(providers, seams)
         assert ws.shutdown_called
+        assert launcher.stop_called
 
 
 # ---------------------------------------------------------------------------
@@ -830,3 +879,98 @@ class TestUtilityFunctions:
 
     def test_validate_token_source_class_placeholder(self) -> None:
         assert validate_token_source_class("placeholder") is False
+
+
+# ---------------------------------------------------------------------------
+# B3: Gate 14 ValueError containment
+# ---------------------------------------------------------------------------
+
+
+class FakeClearancePostRaises:
+    def post(self, _clearance_class: str) -> tuple[int, int]:
+        raise ValueError("Unknown clearance_class label: 'FAKE_CLEARANCE_CLASS'")
+
+
+class TestGate14ValueErrorContained:
+    def test_post_value_error_yields_fail_at_gate14(self) -> None:
+        harness = RealClearanceHarness()
+        providers = _make_providers()
+        seams = _make_seams(clearance_post=FakeClearancePostRaises())
+        report = harness.run(providers, seams)
+        assert report.status == HarnessStatus.FAIL
+        assert report.error_gate == RealClearanceHarness.GATE_POST_CLEARANCE
+        assert (
+            report.gate_results[RealClearanceHarness.GATE_POST_CLEARANCE]
+            == GateStatus.FAIL
+        )
+
+
+# ---------------------------------------------------------------------------
+# C1: Gate 12 PermissionError yields BLOCKED with auth_failure evidence
+# ---------------------------------------------------------------------------
+
+
+class FakeClearanceObserverRaisesPermission:
+    def observe(self, timeout_s: int) -> ClearanceResult:
+        raise PermissionError("clearance GET auth failure: HTTP 401")
+
+
+class TestGate12PermissionErrorBlocked:
+    def test_observe_raises_permission_error_yields_blocked(self) -> None:
+        harness = RealClearanceHarness()
+        providers = _make_providers()
+        seams = _make_seams(clearance_observer=FakeClearanceObserverRaisesPermission())
+        report = harness.run(providers, seams)
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == RealClearanceHarness.GATE_CLEARANCE_OBSERVED
+        assert report.evidence.get("clearance_getter_error") == "auth_failure"
+
+
+class FakeClearanceObserverRaisesConnection:
+    def observe(self, timeout_s: int) -> ClearanceResult:
+        raise ConnectionError("clearance endpoint unreachable")
+
+
+class TestGate12ConnectionErrorBlocked:
+    def test_observe_raises_connection_error_yields_blocked(self) -> None:
+        harness = RealClearanceHarness()
+        providers = _make_providers()
+        seams = _make_seams(clearance_observer=FakeClearanceObserverRaisesConnection())
+        report = harness.run(providers, seams)
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == RealClearanceHarness.GATE_CLEARANCE_OBSERVED
+        assert report.evidence.get("clearance_getter_error") == "connection_failure"
+
+
+class TestBrowserCleanup:
+    def test_stop_called_when_browser_start_fails(self) -> None:
+        launcher = FakeBrowserLauncher(starts=False)
+        harness = RealClearanceHarness()
+        providers = _make_providers()
+        seams = _make_seams(browser_launcher=launcher)
+        harness.run(providers, seams)
+        assert launcher.stop_called
+
+    def test_stop_called_when_cdp_times_out(self) -> None:
+        launcher = FakeBrowserLauncher(starts=True, cdp_ready=False, cdp_elapsed=31)
+        harness = RealClearanceHarness()
+        providers = _make_providers()
+        seams = _make_seams(browser_launcher=launcher)
+        harness.run(providers, seams)
+        assert launcher.stop_called
+
+    def test_stop_called_on_pass(self) -> None:
+        launcher = FakeBrowserLauncher()
+        harness = RealClearanceHarness()
+        providers = _make_providers()
+        seams = _make_seams(browser_launcher=launcher)
+        harness.run(providers, seams)
+        assert launcher.stop_called
+
+    def test_stop_raises_does_not_mask_report(self) -> None:
+        launcher = FakeBrowserLauncher(stop_raises=True)
+        harness = RealClearanceHarness()
+        providers = _make_providers()
+        seams = _make_seams(browser_launcher=launcher)
+        report = harness.run(providers, seams)
+        assert report.status == HarnessStatus.PASS

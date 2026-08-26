@@ -8,6 +8,11 @@ import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+# Domain mapping for clearance class labels.
+# Key format: "<cookie_name>@<domain>" (label only — never raw cookie value).
+# To add a new scraping target, add an entry here:
+#   "<cookie_name>@<new-domain>": ".<new-domain>"
+# Example: "cf_clearance@transfermarkt.com": ".transfermarkt.com"
 _CLEARANCE_CLASS_TO_DOMAIN: dict[str, str] = {
     "cf_clearance@fbref.com": ".fbref.com",
 }
@@ -50,6 +55,9 @@ class RealClearancePostClient:
         self._token = token
         self._poster = poster
         self._clock = clock
+
+    def __repr__(self) -> str:
+        return f"RealClearancePostClient(url={self._url!r}, token=<redacted>)"
 
     def post(self, clearance_class: str) -> tuple[int, int]:
         """POST a synthetic clearance probe; return (status_code, body_bytes).

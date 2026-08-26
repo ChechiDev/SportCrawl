@@ -80,6 +80,12 @@ class RealWorkServerLifecycle:
         except Exception:
             return 0
 
+    def __repr__(self) -> str:
+        return (
+            f"RealWorkServerLifecycle(host={self._host!r}, port={self._port!r}, "
+            f"token=<redacted>)"
+        )
+
     def shutdown(self) -> None:
         if self._process is None:
             return
@@ -89,6 +95,10 @@ class RealWorkServerLifecycle:
                 self._process.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 self._process.kill()
+                try:
+                    self._process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    pass  # process in uninterruptible state; best-effort only
         except Exception:
             pass
         self._process = None

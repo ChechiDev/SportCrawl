@@ -80,6 +80,10 @@ class BrowserLauncher(Protocol):
         self, timeout_s: int
     ) -> tuple[bool, int]: ...  # (ready, elapsed_s)
 
+    def stop(self) -> None:
+        """Stop the browser engine. Safe to call regardless of started state."""
+        ...
+
 
 class ClearanceObserver(Protocol):
     def observe(self, timeout_s: int) -> ClearanceResult: ...
@@ -148,7 +152,11 @@ def scan_for_sensitive(value: str) -> bool:
 
 
 def assert_loopback(host: str) -> bool:
-    """Return True only if host resolves to exactly 127.0.0.1."""
+    """Return True only if host is the string literal '127.0.0.1'.
+
+    This is a string-equality check, not a DNS resolution.
+    Accepts only the exact IPv4 loopback string — 'localhost' and '::1' are rejected.
+    """
     return host == "127.0.0.1"
 
 
@@ -399,9 +407,31 @@ class RealClearanceHarness:
             gate_results[self.GATE_CDP_READY] = GateStatus.PASS
 
             # Gate 12: Clearance observed within timeout
-            clearance_result = seams.clearance_observer.observe(
-                timeout_s=seams.clearance_timeout_s
-            )
+            try:
+                clearance_result = seams.clearance_observer.observe(
+                    timeout_s=seams.clearance_timeout_s
+                )
+            except PermissionError:
+                gate_results[self.GATE_CLEARANCE_OBSERVED] = GateStatus.BLOCKED
+                error_gate = self.GATE_CLEARANCE_OBSERVED
+                return HarnessReport(
+                    status=HarnessStatus.BLOCKED,
+                    gate_results=gate_results,
+                    evidence={**evidence, "clearance_getter_error": "auth_failure"},
+                    error_gate=error_gate,
+                )
+            except ConnectionError:
+                gate_results[self.GATE_CLEARANCE_OBSERVED] = GateStatus.BLOCKED
+                error_gate = self.GATE_CLEARANCE_OBSERVED
+                return HarnessReport(
+                    status=HarnessStatus.BLOCKED,
+                    gate_results=gate_results,
+                    evidence={
+                        **evidence,
+                        "clearance_getter_error": "connection_failure",
+                    },
+                    error_gate=error_gate,
+                )
             evidence["clearance_class"] = clearance_result.clearance_class
             evidence["clearance_obtained"] = clearance_result.obtained
             if not clearance_result.obtained:
@@ -428,9 +458,19 @@ class RealClearanceHarness:
             gate_results[self.GATE_EXPIRES_AT] = GateStatus.PASS
 
             # Gate 14: POST /api/clearance — expect 204 with zero body
-            post_status, post_body_bytes = seams.clearance_post.post(
-                clearance_result.clearance_class
-            )
+            try:
+                post_status, post_body_bytes = seams.clearance_post.post(
+                    clearance_result.clearance_class
+                )
+            except ValueError:
+                gate_results[self.GATE_POST_CLEARANCE] = GateStatus.FAIL
+                error_gate = self.GATE_POST_CLEARANCE
+                return HarnessReport(
+                    status=HarnessStatus.FAIL,
+                    gate_results=gate_results,
+                    evidence=evidence,
+                    error_gate=error_gate,
+                )
             evidence["post_status_code"] = post_status
             evidence["post_body_bytes"] = post_body_bytes
             if post_status != 204:
@@ -475,6 +515,10 @@ class RealClearanceHarness:
 
         finally:
             # Cleanup always runs — on PASS, BLOCKED, and FAIL paths
+            try:
+                seams.browser_launcher.stop()
+            except Exception:
+                pass
             try:
                 seams.work_server.shutdown()
             except Exception:

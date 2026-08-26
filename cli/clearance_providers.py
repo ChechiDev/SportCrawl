@@ -72,8 +72,10 @@ class GhCICheckProvider:
     def __init__(
         self,
         runner: Callable[[list[str]], tuple[int, str]] = _default_gh_runner,
+        workflow_name: str | None = None,
     ) -> None:
         self._runner = runner
+        self._workflow_name = workflow_name
 
     def check_once(self) -> CICheckResult:
         returncode, stdout = self._runner(self._GH_CMD)
@@ -83,6 +85,8 @@ class GhCICheckProvider:
             runs: list[dict[str, str | None]] = json.loads(stdout)
         except (json.JSONDecodeError, ValueError):
             return CICheckResult.BLOCKED
+        if self._workflow_name is not None:
+            runs = [r for r in runs if r.get("workflowName") == self._workflow_name]
         runs.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
         if not runs:
             return CICheckResult.BLOCKED

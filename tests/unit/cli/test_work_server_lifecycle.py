@@ -395,3 +395,70 @@ class TestHarnessWorkServerGates:
         assert report.gate_results.get(gate) == GateStatus.BLOCKED
         assert report.status == HarnessStatus.BLOCKED
         assert report.error_gate == gate
+
+
+# ---------------------------------------------------------------------------
+# C4: Shutdown waits after kill
+# ---------------------------------------------------------------------------
+
+
+def _make_lifecycle_simple(**kwargs):
+    return RealWorkServerLifecycle(
+        host="127.0.0.1",
+        port=9731,
+        token="secret-token",
+        cmd=[],
+        **kwargs,
+    )
+
+
+class TestShutdownWaitsAfterKill:
+    def test_both_waits_timeout_completes_without_raising(self):
+        """Both wait() calls raise TimeoutExpired; shutdown() must not raise."""
+        proc = MagicMock(spec=subprocess.Popen)
+        proc.wait.side_effect = subprocess.TimeoutExpired(cmd=[], timeout=3)
+        lc = _make_lifecycle_simple()
+        lc._process = proc
+        lc.shutdown()  # Must not raise
+        assert lc._process is None
+
+    def test_terminate_wait_succeeds_kill_not_called(self):
+        """When terminate+wait succeeds, kill() must NOT be called."""
+        proc = MagicMock(spec=subprocess.Popen)
+        proc.wait.return_value = None  # succeeds
+        lc = _make_lifecycle_simple()
+        lc._process = proc
+        lc.shutdown()
+        proc.kill.assert_not_called()
+        assert lc._process is None
+
+    def test_kill_wait_succeeds_process_none(self):
+        """First wait raises TimeoutExpired, kill() is called, second wait succeeds."""
+        proc = MagicMock(spec=subprocess.Popen)
+        proc.wait.side_effect = [subprocess.TimeoutExpired(cmd=[], timeout=3), None]
+        lc = _make_lifecycle_simple()
+        lc._process = proc
+        lc.shutdown()
+        proc.kill.assert_called_once()
+        assert lc._process is None
+
+
+# ---------------------------------------------------------------------------
+# C5: Repr suppression for token
+# ---------------------------------------------------------------------------
+
+
+class TestReprSuppressesToken:
+    def test_work_server_lifecycle_repr_hides_token(self):
+        lc = RealWorkServerLifecycle(
+            host="127.0.0.1", port=9731, token="secret-token", cmd=[]
+        )
+        assert "secret-token" not in repr(lc)
+
+    def test_clearance_post_client_repr_hides_token(self):
+        from cli.clearance_post_client import RealClearancePostClient
+        client = RealClearancePostClient(
+            url="http://127.0.0.1:9731/api/clearance",
+            token="secret-token",
+        )
+        assert "secret-token" not in repr(client)

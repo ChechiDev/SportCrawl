@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from cli.smoke_clearance_real import (
     CICheckResult,
     GateStatus,
@@ -233,6 +235,9 @@ class TestProvidersComposeWithHarnessGate1:
             def wait_cdp_ready(self, timeout_s):
                 return (False, 0)
 
+            def stop(self) -> None:
+                pass
+
         class _FakeClearanceObserver:
             def observe(self, timeout_s):
                 from cli.smoke_clearance_real import ClearanceResult
@@ -302,6 +307,9 @@ class TestProvidersComposeWithHarnessGate1:
             def wait_cdp_ready(self, timeout_s):
                 return (True, 1)
 
+            def stop(self) -> None:
+                pass
+
         class _StubClearanceObserver:
             def observe(self, timeout_s):
                 from cli.smoke_clearance_real import ClearanceResult
@@ -330,3 +338,58 @@ class TestProvidersComposeWithHarnessGate1:
         report = RealClearanceHarness().run(providers, seams)
         assert report.gate_results.get("provider_readiness") == GateStatus.BLOCKED
         assert report.status == HarnessStatus.BLOCKED
+
+
+# ---------------------------------------------------------------------------
+# B2: GhCICheckProvider workflow filter
+# ---------------------------------------------------------------------------
+
+
+def _fake_runner_with(
+    workflow_name: str,
+    status: str = "completed",
+    conclusion: str = "success",
+):
+    def _runner(cmd):
+        runs = [{"headBranch": "main", "status": status, "conclusion": conclusion,
+                 "workflowName": workflow_name, "createdAt": "2026-08-26T10:00:00Z"}]
+        return (0, json.dumps(runs))
+    return _runner
+
+
+class TestGhCICheckProviderWorkflowFilter:
+    def test_non_ci_workflow_run_blocked(self):
+        from cli.clearance_providers import GhCICheckProvider
+        from cli.smoke_clearance_real import CICheckResult
+        provider = GhCICheckProvider(
+            runner=_fake_runner_with("Release"),
+            workflow_name="CI",
+        )
+        assert provider.check_once() == CICheckResult.BLOCKED
+
+    def test_ci_workflow_run_passes(self):
+        from cli.clearance_providers import GhCICheckProvider
+        from cli.smoke_clearance_real import CICheckResult
+        provider = GhCICheckProvider(
+            runner=_fake_runner_with("CI"),
+            workflow_name="CI",
+        )
+        assert provider.check_once() == CICheckResult.ALL_PASS
+
+    def test_ci_workflow_in_progress_blocked(self):
+        from cli.clearance_providers import GhCICheckProvider
+        from cli.smoke_clearance_real import CICheckResult
+        provider = GhCICheckProvider(
+            runner=_fake_runner_with("CI", status="in_progress"),
+            workflow_name="CI",
+        )
+        assert provider.check_once() == CICheckResult.BLOCKED
+
+    def test_workflow_name_none_not_filtered(self):
+        from cli.clearance_providers import GhCICheckProvider
+        from cli.smoke_clearance_real import CICheckResult
+        provider = GhCICheckProvider(
+            runner=_fake_runner_with("Release"),
+            workflow_name=None,
+        )
+        assert provider.check_once() == CICheckResult.ALL_PASS
