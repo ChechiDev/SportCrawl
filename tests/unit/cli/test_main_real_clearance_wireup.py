@@ -10,6 +10,10 @@ No real browser, network, DB, or Docker is started.
 
 from __future__ import annotations
 
+import http.client
+import io
+import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -322,8 +326,6 @@ class TestRealClearanceConstructorArgs:
 
         Verifies URL and Authorization header — no network involved.
         """
-        import urllib.request
-
         from cli.main import _make_clearance_getter
 
         _URL = "http://127.0.0.1:9731/api/clearance/latest"
@@ -334,7 +336,10 @@ class TestRealClearanceConstructorArgs:
             raise ConnectionRefusedError("mock — no network")
 
         getter = _make_clearance_getter(_URL, "test-token", getter=_recorder)
-        getter()
+        try:
+            getter()
+        except ConnectionError:
+            pass
 
         assert len(captured) == 1, "getter() must call the recorder exactly once"
         req = captured[0]
@@ -351,8 +356,6 @@ class TestRealClearanceConstructorArgs:
 
     def test_clearance_getter_token_reaches_closure(self) -> None:
         """Behavioral: token must be captured in closure and sent as Bearer auth."""
-        import urllib.request
-
         from cli.main import _make_clearance_getter
 
         _URL = "http://127.0.0.1:9731/api/clearance/latest"
@@ -363,7 +366,10 @@ class TestRealClearanceConstructorArgs:
             raise ConnectionRefusedError("mock — no network")
 
         getter = _make_clearance_getter(_URL, "secret-token-abc", getter=_recorder)
-        getter()
+        try:
+            getter()
+        except ConnectionError:
+            pass
 
         assert len(captured) == 1
         req = captured[0]
@@ -412,7 +418,9 @@ class TestMakeClearanceGetter:
         assert isinstance(result, ClearanceResult)
         assert result.obtained is True
 
-    def test_returns_none_on_exception(self) -> None:
+    def test_raises_connection_error_on_transport_failure(self) -> None:
+        import pytest
+
         from cli.main import _make_clearance_getter
 
         _URL = "http://127.0.0.1:9731/api/clearance/latest"
@@ -421,8 +429,8 @@ class TestMakeClearanceGetter:
             raise ConnectionRefusedError("no server")
 
         getter = _make_clearance_getter(_URL, "tok", getter=_raise)
-        result = getter()
-        assert result is None
+        with pytest.raises(ConnectionError):
+            getter()
 
     def test_no_network_call_in_tests(self) -> None:
         """Verify getter is injectable — passing a mock never hits real network."""
@@ -434,23 +442,84 @@ class TestMakeClearanceGetter:
         def _recorder(req: object) -> object:
             calls.append(req)
             raise ConnectionRefusedError("mock")
-
         getter = _make_clearance_getter(_URL, "tok", getter=_recorder)
-        getter()
+        try:
+            getter()
+        except ConnectionError:
+            pass
         assert len(calls) == 1
 
-    def test_returns_none_on_401(self) -> None:
-        """Non-200/non-204 response (401) must return None, not parse JSON."""
+    def test_raises_connection_error_on_oserror(self) -> None:
+        import pytest
+
         from cli.main import _make_clearance_getter
 
         _URL = "http://127.0.0.1:9731/api/clearance/latest"
-        mock_resp = MagicMock()
-        mock_resp.__enter__ = lambda s: mock_resp
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_resp.status = 401
-        getter = _make_clearance_getter(_URL, "tok", getter=lambda req: mock_resp)
-        result = getter()
-        assert result is None, f"Expected None on 401, got {result!r}"
+
+        def _raise(req: object) -> object:
+            raise OSError("network failure")
+
+        getter = _make_clearance_getter(_URL, "tok", getter=_raise)
+        with pytest.raises(ConnectionError):
+            getter()
+
+    def test_raises_connection_error_on_urlerror(self) -> None:
+        import urllib.error
+
+        import pytest
+
+        from cli.main import _make_clearance_getter
+
+        _URL = "http://127.0.0.1:9731/api/clearance/latest"
+
+        def _raise(req: object) -> object:
+            raise urllib.error.URLError("network error")
+
+        getter = _make_clearance_getter(_URL, "tok", getter=_raise)
+        with pytest.raises(ConnectionError):
+            getter()
+
+    def test_raises_connection_error_when_enter_raises_oserror(self) -> None:
+        import pytest
+
+        from cli.main import _make_clearance_getter
+
+        _URL = "http://127.0.0.1:9731/api/clearance/latest"
+
+        class _RaisesOnEnter:
+            def __enter__(self) -> object:
+                raise OSError("socket error on enter")
+
+            def __exit__(self, *args: object) -> bool:
+                return False
+
+        getter = _make_clearance_getter(
+            _URL, "tok", getter=lambda req: _RaisesOnEnter()  # noqa: ARG005
+        )
+        with pytest.raises(ConnectionError):
+            getter()
+
+    def test_raises_connection_error_when_enter_raises_urlerror(self) -> None:
+        import urllib.error
+
+        import pytest
+
+        from cli.main import _make_clearance_getter
+
+        _URL = "http://127.0.0.1:9731/api/clearance/latest"
+
+        class _RaisesOnEnter:
+            def __enter__(self) -> object:
+                raise urllib.error.URLError("network error on enter")
+
+            def __exit__(self, *args: object) -> bool:
+                return False
+
+        getter = _make_clearance_getter(
+            _URL, "tok", getter=lambda req: _RaisesOnEnter()  # noqa: ARG005
+        )
+        with pytest.raises(ConnectionError):
+            getter()
 
     def test_returns_none_on_500_with_json_body(self) -> None:
         """A 500 response with a valid JSON body must still return None."""
@@ -489,3 +558,97 @@ class TestMakeClearanceGetter:
         getter = _make_clearance_getter(_URL, "tok", getter=lambda req: mock_resp)
         result = getter()
         assert result is None, f"Expected None on 503, got {result!r}"
+
+
+# ---------------------------------------------------------------------------
+# B2: GhCICheckProvider workflow_name wireup
+# ---------------------------------------------------------------------------
+
+
+class TestGhCICheckProviderWorkflowNameWireup:
+    def test_gh_ci_check_provider_workflow_name_is_ci(self) -> None:
+        _, mocks, _ = _invoke_patched()
+        call_kwargs = mocks["ci"].call_args
+        assert call_kwargs is not None, "GhCICheckProvider was not called"
+        # Accept both positional and keyword argument
+        kwargs = call_kwargs.kwargs
+        msg = (
+            f"GhCICheckProvider must be called with workflow_name='CI',"
+            f" got: {call_kwargs!r}"
+        )
+        assert kwargs.get("workflow_name") == "CI", msg
+
+
+# ---------------------------------------------------------------------------
+# C1: _make_clearance_getter auth error handling
+# ---------------------------------------------------------------------------
+
+
+class TestMakeClearanceGetterAuthErrors:
+    _URL = "http://127.0.0.1:9731/api/clearance/latest"
+
+    def _http_error(self, code: int):
+        return urllib.error.HTTPError(
+            self._URL, code, "Error", http.client.HTTPMessage(), io.BytesIO(b"")
+        )
+
+    def test_401_raises_permission_error(self) -> None:
+        import pytest
+
+        from cli.main import _make_clearance_getter
+
+        err = self._http_error(401)
+        _throw = lambda req: (_ for _ in ()).throw(err)  # noqa: E731
+        getter = _make_clearance_getter(self._URL, "secret-token", getter=_throw)
+        with pytest.raises(PermissionError):
+            getter()
+
+    def test_403_raises_permission_error(self) -> None:
+        import pytest
+
+        from cli.main import _make_clearance_getter
+
+        err = self._http_error(403)
+        _throw = lambda req: (_ for _ in ()).throw(err)  # noqa: E731
+        getter = _make_clearance_getter(self._URL, "secret-token", getter=_throw)
+        with pytest.raises(PermissionError):
+            getter()
+
+    def test_500_returns_none(self) -> None:
+        from cli.main import _make_clearance_getter
+
+        err = self._http_error(500)
+        _throw = lambda req: (_ for _ in ()).throw(err)  # noqa: E731
+        getter = _make_clearance_getter(self._URL, "secret-token", getter=_throw)
+        result = getter()
+        assert result is None
+
+    def test_missing_expires_at_returns_none(self) -> None:
+        from cli.main import _make_clearance_getter
+
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: mock_resp
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.status = 200
+        mock_resp.read.return_value = b"{}"
+        getter = _make_clearance_getter(
+            self._URL, "secret-token", getter=lambda req: mock_resp  # noqa: ARG005
+        )
+        result = getter()
+        assert result is None
+
+    def test_malformed_date_returns_none(self) -> None:
+        import json as _json
+
+        from cli.main import _make_clearance_getter
+
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: mock_resp
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.status = 200
+        mock_resp.read.return_value = _json.dumps({"expires_at": "not-a-date"}).encode()
+        getter = _make_clearance_getter(
+            self._URL, "secret-token", getter=lambda req: mock_resp
+        )
+        result = getter()
+        assert result is None

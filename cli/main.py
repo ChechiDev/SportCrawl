@@ -50,7 +50,9 @@ def _make_clearance_getter(
     """Return a callable that fetches the latest clearance from the work-server.
 
     Injectable via `getter` so unit tests never touch the real network.
+    Raises PermissionError on HTTP 401/403 (auth failures must not be silenced).
     """
+    import urllib.error as _ue
 
     def _get() -> ClearanceResult | None:
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
@@ -60,16 +62,26 @@ def _make_clearance_getter(
                     return None
                 if resp.status != 200:
                     return None
-                body = json.loads(resp.read())
-                return ClearanceResult(
-                    obtained=True,
-                    expires_at=datetime.fromisoformat(
-                        body["expires_at"].replace("Z", "+00:00")
-                    ),
-                    clearance_class=body.get("clearance_class", ""),
-                )
-        except Exception:
+                raw = resp.read()
+                try:
+                    body = json.loads(raw)
+                    return ClearanceResult(
+                        obtained=True,
+                        expires_at=datetime.fromisoformat(
+                            body["expires_at"].replace("Z", "+00:00")
+                        ),
+                        clearance_class=body.get("clearance_class", ""),
+                    )
+                except (KeyError, ValueError, AttributeError):
+                    return None  # malformed body — treat as not-yet-available
+        except _ue.HTTPError as exc:
+            if exc.code in (401, 403):
+                raise PermissionError(
+                    f"clearance GET auth failure: HTTP {exc.code}"
+                ) from exc
             return None
+        except (_ue.URLError, OSError):
+            raise ConnectionError("clearance endpoint unreachable") from None
 
     return _get
 
@@ -465,7 +477,7 @@ def smoke_clearance(
             token=EnvTokenProvider(),
         )
         seams = RealClearanceSeams(
-            ci_check=GhCICheckProvider(),
+            ci_check=GhCICheckProvider(workflow_name="CI"),
             work_server=RealWorkServerLifecycle(
                 host=_RESOLVED_HOST,
                 port=_WORK_SERVER_PORT,

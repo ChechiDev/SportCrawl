@@ -96,6 +96,9 @@ class _PassBrowserLauncher:
     def wait_cdp_ready(self, timeout_s: int) -> tuple[bool, int]:
         return (True, 1)
 
+    def stop(self) -> None:
+        pass
+
 
 class _PassClearanceObserver:
     def observe(self, timeout_s: int) -> ClearanceResult:

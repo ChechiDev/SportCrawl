@@ -19,12 +19,14 @@ class RealBrowserLauncher:
         self,
         engine_starter: Callable[[], Coroutine[Any, Any, None]],
         cdp_probe: Callable[[], Coroutine[Any, Any, None]],
+        engine_stopper: Callable[[], Coroutine[Any, Any, None]] | None = None,
         loop_runner: Callable[[Coroutine[Any, Any, Any]], Any] = asyncio.run,
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self._engine_starter = engine_starter
         self._cdp_probe = cdp_probe
+        self._engine_stopper = engine_stopper
         self._loop_runner = loop_runner
         self._clock = clock
         self._sleeper = sleeper
@@ -60,3 +62,16 @@ class RealBrowserLauncher:
 
         elapsed = max(0, int(self._clock() - t0))
         return False, elapsed
+
+    def stop(self) -> None:
+        """Stop the browser engine.
+
+        Invokes engine_stopper if configured; no-op otherwise.
+        Resets _started to False regardless of stopper outcome.
+        """
+        if self._engine_stopper is not None:
+            try:
+                self._loop_runner(self._engine_stopper())
+            except Exception:
+                pass
+        self._started = False

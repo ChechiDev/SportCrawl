@@ -253,6 +253,73 @@ class TestWaitCdpReady:
 
 
 # ---------------------------------------------------------------------------
+# TestStop
+# ---------------------------------------------------------------------------
+
+
+class TestStop:
+    def test_stop_resets_started_when_no_stopper(self) -> None:
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+        )
+        launcher.start()
+        assert launcher._started is True  # noqa: SLF001
+        launcher.stop()
+        assert launcher._started is False  # noqa: SLF001
+
+    def test_stop_is_safe_when_never_started(self) -> None:
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+        )
+        launcher.stop()  # must not raise
+        assert launcher._started is False  # noqa: SLF001
+
+    def test_stop_invokes_engine_stopper(self) -> None:
+        called: list[bool] = []
+
+        async def _stopper() -> None:
+            called.append(True)
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: _stopper(),
+        )
+        launcher.start()
+        launcher.stop()
+        assert called == [True], "engine_stopper coroutine must be invoked by stop()"
+
+    def test_stop_suppresses_stopper_exception(self) -> None:
+        async def _raising_stopper() -> None:
+            raise RuntimeError("teardown failed")
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: _raising_stopper(),
+        )
+        launcher.start()
+        launcher.stop()  # must not propagate the RuntimeError
+        assert launcher._started is False  # noqa: SLF001
+
+    def test_stop_resets_started_even_when_stopper_raises(self) -> None:
+        async def _raising_stopper() -> None:
+            raise RuntimeError("teardown exploded")
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: _raising_stopper(),
+        )
+        launcher.start()
+        assert launcher._started is True  # noqa: SLF001
+        launcher.stop()
+        assert launcher._started is False  # noqa: SLF001
+
+
+# ---------------------------------------------------------------------------
 # Stubs for harness integration tests
 # ---------------------------------------------------------------------------
 
@@ -270,6 +337,9 @@ class _BrowserLauncherStub:
 
     def wait_cdp_ready(self, timeout_s: int) -> tuple[bool, int]:  # noqa: ARG002
         return self._cdp_ready, self._cdp_elapsed
+
+    def stop(self) -> None:
+        pass
 
 
 class _FakeTargetProvider:
