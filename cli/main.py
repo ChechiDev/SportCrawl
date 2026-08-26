@@ -8,15 +8,71 @@ Commands:
 from __future__ import annotations
 
 import asyncio
+import json
+import urllib.request
 import warnings
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
 
 warnings.filterwarnings("ignore")
 
 import typer  # noqa: E402
 from rich.console import Console  # noqa: E402
 
+from cli.browser_launcher import RealBrowserLauncher  # noqa: E402
+from cli.clearance_observer import RealClearanceObserver  # noqa: E402
+from cli.clearance_post_client import RealClearancePostClient  # noqa: E402
+from cli.clearance_providers import (  # noqa: E402
+    EnvBrowserParameterProvider,
+    EnvTargetProvider,
+    EnvTokenProvider,
+    GhCICheckProvider,
+    LabelTargetValidator,
+)
+from cli.smoke_clearance_real import (  # noqa: E402
+    ClearanceResult,
+    HarnessStatus,
+    RealClearanceHarness,
+    RealClearanceProviders,
+    RealClearanceSeams,
+)
+from cli.work_server_lifecycle import RealWorkServerLifecycle  # noqa: E402
 from config.settings import Settings  # noqa: E402
 from infrastructure.work_server.runtime import serve  # noqa: E402
+
+
+def _make_clearance_getter(
+    url: str,
+    token: str,
+    getter: Callable[[urllib.request.Request], Any] = urllib.request.urlopen,
+) -> Callable[[], ClearanceResult | None]:
+    """Return a callable that fetches the latest clearance from the work-server.
+
+    Injectable via `getter` so unit tests never touch the real network.
+    """
+
+    def _get() -> ClearanceResult | None:
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        try:
+            with getter(req) as resp:
+                if resp.status == 204:
+                    return None
+                if resp.status != 200:
+                    return None
+                body = json.loads(resp.read())
+                return ClearanceResult(
+                    obtained=True,
+                    expires_at=datetime.fromisoformat(
+                        body["expires_at"].replace("Z", "+00:00")
+                    ),
+                    clearance_class=body.get("clearance_class", ""),
+                )
+        except Exception:
+            return None
+
+    return _get
+
 
 app = typer.Typer(
     name="sportcrawl",
@@ -383,19 +439,70 @@ def smoke_clearance(
     console = Console()
 
     if real_clearance:
-        # BLOCKED: no real provider implementations exist yet.
-        # This path is intentionally blocked until CP-SMOKE-B is authorized.
-        console.print(
-            "[bold]smoke-clearance --real-clearance[/bold] — guarded real mode"
+        import os
+
+        _RESOLVED_HOST = "127.0.0.1"
+        _WORK_SERVER_PORT = 9731
+        _WORK_SERVER_CMD = ["uv", "run", "sportcrawl", "work-server"]
+        _token = os.environ.get("SCRAPING__WORK_SERVER_TOKEN", "")
+        _clearance_url = (
+            f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}/api/clearance"
         )
-        console.print("  status:    BLOCKED")
-        console.print("  reason:    no real provider implementations configured")
-        console.print("  gate:      provider_readiness")
-        console.print(
-            "[yellow]Real clearance smoke is blocked. "
-            "Configure all providers before running.[/yellow]"
+
+        # Deferred stubs for gates 10 (browser_startup) and 11 (cdp_ready).
+        # Real engine wiring requires an authorized real-smoke execution context.
+        # These no-ops ensure the seam is constructed; the harness gates will
+        # BLOCK before these are invoked in a real run without a live browser.
+        async def _noop_engine_starter() -> None:
+            pass
+
+        async def _noop_cdp_probe() -> None:
+            pass
+
+        providers = RealClearanceProviders(
+            target=EnvTargetProvider(),
+            browser_params=EnvBrowserParameterProvider(),
+            token=EnvTokenProvider(),
         )
-        raise typer.Exit(code=1)
+        seams = RealClearanceSeams(
+            ci_check=GhCICheckProvider(),
+            work_server=RealWorkServerLifecycle(
+                host=_RESOLVED_HOST,
+                port=_WORK_SERVER_PORT,
+                token=_token,
+                cmd=_WORK_SERVER_CMD,
+            ),
+            target_validator=LabelTargetValidator(),
+            browser_launcher=RealBrowserLauncher(
+                engine_starter=_noop_engine_starter,
+                cdp_probe=_noop_cdp_probe,
+            ),
+            clearance_observer=RealClearanceObserver(
+                clearance_getter=_make_clearance_getter(
+                    f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}/api/clearance/latest",
+                    _token,
+                ),
+            ),
+            clearance_post=RealClearancePostClient(
+                url=_clearance_url,
+                token=_token,
+            ),
+            resolved_host=_RESOLVED_HOST,
+        )
+
+        harness = RealClearanceHarness()
+        report = harness.run(providers, seams)
+
+        console.print(
+            "[bold]smoke-clearance --real-clearance[/bold] — real clearance harness"
+        )
+        console.print(f"  status:    {report.status.value}")
+        if report.error_gate is not None:
+            console.print(f"  blocked_at: {report.error_gate}")
+
+        if report.status != HarnessStatus.PASS:
+            raise typer.Exit(code=1)
+        return
 
     if prepare_real:
         console.print(
