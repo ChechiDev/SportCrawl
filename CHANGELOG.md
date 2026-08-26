@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-08-26
+
+### Added
+- In-memory sanitized clearance store in `infrastructure/work_server/server.py`: `POST /api/clearance` (existing) now persists sanitized metadata (`domain`, `expires_at`, `observed_at`) to an in-memory dict via `store.update()` after all validation passes — raw `clearance` cookie value is **never** stored, returned, or logged
+- `GET /api/clearance/latest` handler: returns 204 when no validated clearance has been received; returns 200 + JSON with sanitized metadata (`domain`, `expires_at`, `observed_at`) after at least one valid POST has been processed; protected by existing `bearer_auth_middleware` (not in auth-exempt set)
+- Typed `web.AppKey("clearance_store", dict)` initialized as `{}` in `create_app`; mutated in-place via `store.update()` to avoid aiohttp app-state deprecation warning on post-startup key reassignment
+- 16 synthetic unit tests in `tests/unit/infrastructure/test_clearance_store_bridge.py` covering: GET auth (401 without/wrong token, 200/204 with valid token), GET 204 on empty store with empty body, GET 200+JSON after valid POST, GET response excludes `clearance`/`profile_id`/`worker_id` fields, invalid POST (missing field, invalid domain) leaves store unchanged, invalid POST after valid POST does not overwrite, second valid POST overwrites `domain` and `expires_at`
+
+### Notes
+- Real smoke NOT executed; `--real-clearance` remains blocked pending remaining seam implementations
+- CP-SMOKE-B execution NOT authorized
+- `ClearancePostClient` NOT included in this release — next seam to implement
+- CLI wire-up (`cli/main.py`) NOT included — deferred until all seams complete
+- No real work_server, ports, DB, Docker, browser, Chrome, Xvfb, CDP, cookies, or live target used in tests; aiohttp in-process `TestClient` only
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.32.0] — 2026-08-26
 
 ### Added
@@ -292,7 +308,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.32.0...v0.33.0
+[0.32.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.31.0...v0.32.0
+[0.31.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.30.0...v0.31.0
+[0.30.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.26.0...v0.27.0
