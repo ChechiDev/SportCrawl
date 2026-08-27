@@ -186,13 +186,19 @@ class FakeClearanceObserver:
 
 
 class FakeClearancePost:
-    def __init__(self, status_code: int = 204, body_bytes: int = 0) -> None:
+    def __init__(
+        self,
+        status_code: int = 204,
+        body_bytes: int = 0,
+        raises_value_error: bool = False,
+    ) -> None:
         self._status = status_code
         self._body_bytes = body_bytes
+        self._raises = raises_value_error
 
-    def post(  # pyright: ignore[reportUnusedParameter]
-        self, _clearance_class: str
-    ) -> tuple[int, int]:
+    def post(self, clearance_class: str) -> tuple[int, int]:
+        if self._raises:
+            raise ValueError(f"unknown clearance label: {clearance_class}")
         return self._status, self._body_bytes
 
 
@@ -441,6 +447,133 @@ class TestHarnessBlockedPaths:
         )
         assert report.status == HarnessStatus.BLOCKED
         assert report.error_gate == RealClearanceHarness.GATE_POST_CLEARANCE
+
+    # NB-2: GATE_TOKEN_SOURCE harness-level BLOCKED path
+
+    def test_blocked_if_token_source_class_is_placeholder(self) -> None:
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(token=FakeTokenProvider(source_class_label="placeholder")),
+            _make_seams(),
+        )
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == RealClearanceHarness.GATE_TOKEN_SOURCE
+        assert (
+            report.gate_results.get(RealClearanceHarness.GATE_TOKEN_SOURCE)
+            == GateStatus.BLOCKED
+        )
+
+    def test_token_source_blocked_does_not_execute_later_gates(self) -> None:
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(token=FakeTokenProvider(source_class_label="placeholder")),
+            _make_seams(),
+        )
+        assert report.status == HarnessStatus.BLOCKED
+        assert RealClearanceHarness.GATE_WORK_SERVER_STARTUP not in report.gate_results
+        assert RealClearanceHarness.GATE_BROWSER_START not in report.gate_results
+
+    # NB-3: Gate 7 startup exception evidence
+
+    def test_gate7_blocked_evidence_includes_startup_error_type(self) -> None:
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(work_server=FakeWorkServer(startup_raises=True)),
+        )
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == RealClearanceHarness.GATE_WORK_SERVER_STARTUP
+        assert "startup_error_type" in report.evidence
+        assert report.evidence["startup_error_type"] == "RuntimeError"
+        assert "token_source_class" in report.evidence
+
+    def test_gate7_blocked_evidence_includes_startup_error_message(self) -> None:
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(work_server=FakeWorkServer(startup_raises=True)),
+        )
+        assert "startup_error" in report.evidence
+        assert isinstance(report.evidence["startup_error"], str)
+        assert len(report.evidence["startup_error"]) > 0
+        assert "work_server failed to start" in report.evidence["startup_error"]
+
+    def test_gate7_startup_error_truncated_to_200_chars(self) -> None:
+        """startup_error must be truncated to 200 chars max."""
+
+        class _LongMessageWorkServer:
+            def startup(self, timeout_s: int) -> None:  # noqa: ARG002
+                raise RuntimeError("x" * 300)
+
+            def health_check(self) -> bool:
+                return True
+
+            def auth_failure_probe(self) -> int:
+                return 401
+
+            def shutdown(self) -> None:
+                pass
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(work_server=_LongMessageWorkServer()),
+        )
+        assert "startup_error" in report.evidence
+        startup_error = report.evidence["startup_error"]
+        assert isinstance(startup_error, str)
+        assert len(startup_error) <= 200
+
+    # NB-4: Gate 14 ValueError evidence
+
+
+class TestGate14ValueErrorEvidence:
+    def test_gate14_fail_evidence_includes_clearance_class(self) -> None:
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(clearance_post=FakeClearancePost(raises_value_error=True)),
+        )
+        assert report.status == HarnessStatus.FAIL
+        assert report.error_gate == RealClearanceHarness.GATE_POST_CLEARANCE
+        assert "clearance_class" in report.evidence
+        assert report.evidence["clearance_class"] == "FAKE_CLEARANCE_CLASS"
+
+    def test_gate14_fail_evidence_includes_post_error_type(self) -> None:
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(clearance_post=FakeClearancePost(raises_value_error=True)),
+        )
+        assert "post_error_type" in report.evidence
+        assert report.evidence["post_error_type"] == "ValueError"
+
+    def test_gate14_fail_evidence_includes_post_error_message(self) -> None:
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(clearance_post=FakeClearancePost(raises_value_error=True)),
+        )
+        assert "post_error" in report.evidence
+        assert isinstance(report.evidence["post_error"], str)
+        assert "unknown clearance label" in report.evidence["post_error"]
+
+    def test_gate14_post_error_truncated_to_200_chars(self) -> None:
+        """post_error must be truncated to 200 chars max."""
+
+        class _LongMessageClearancePost:
+            def post(self, _clearance_class: str) -> tuple[int, int]:
+                raise ValueError("y" * 300)
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(clearance_post=_LongMessageClearancePost()),
+        )
+        assert "post_error" in report.evidence
+        post_error = report.evidence["post_error"]
+        assert isinstance(post_error, str)
+        assert len(post_error) <= 200
 
 
 # ---------------------------------------------------------------------------
@@ -924,6 +1057,7 @@ class TestGate12PermissionErrorBlocked:
         assert report.status == HarnessStatus.BLOCKED
         assert report.error_gate == RealClearanceHarness.GATE_CLEARANCE_OBSERVED
         assert report.evidence.get("clearance_getter_error") == "auth_failure"
+        assert report.evidence.get("clearance_getter_error_type") == "PermissionError"
 
 
 class FakeClearanceObserverRaisesConnection:
@@ -940,6 +1074,7 @@ class TestGate12ConnectionErrorBlocked:
         assert report.status == HarnessStatus.BLOCKED
         assert report.error_gate == RealClearanceHarness.GATE_CLEARANCE_OBSERVED
         assert report.evidence.get("clearance_getter_error") == "connection_failure"
+        assert report.evidence.get("clearance_getter_error_type") == "ConnectionError"
 
 
 class TestBrowserCleanup:
