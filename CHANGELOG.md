@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-08-27
+
+### Fixed
+
+- **`RealBrowserLauncher.stop()` — error observability**: stopper exceptions are now forwarded to an optional `stop_error_handler: Callable[[Exception], None] | None = None` callback before being suppressed — previously failures were silently discarded with no diagnostic signal
+- **`RealBrowserLauncher.stop()` — `_started` reset guarantee**: `_started = False` moved into a `finally` block wrapping both the stopper call and the handler call — previously a raising handler could exit `stop()` before the reset, leaving launcher state inconsistent
+- **Stopper exception suppression preserved**: exceptions are always suppressed so cleanup cannot mask harness results; the handler is invoked solely for observability
+
+### Added
+
+- **`stop_error_handler` parameter**: injectable `Callable[[Exception], None] | None = None` on `RealBrowserLauncher.__init__` — production composition root passes no handler (silent suppression); callers needing observability inject their own logger
+- **`loop_runner` inline documentation**: comment on the `loop_runner` parameter documenting the sync-CLI-only `asyncio.run` assumption and the requirement to override when embedding in an async host
+- **Gate 1 token re-check documentation**: comment above `_token` capture in `cli/main.py` explaining that `EnvTokenProvider.is_ready()` re-reads the env var live before any resource-committing gate — an empty/missing token is caught at Gate 1, before `work_server` starts
+- **10 new `TestStop` tests**: RED → GREEN TDD cycle covering handler invoked on error, handler not invoked on clean stop, suppression preserved with handler, handler-None default, and `_started` reset when handler itself raises
+
+### Notes
+
+- Architecture guardrail: the buffering/session/clearance system remains a **generic multi-web engine**; FBref is only the first adapter/config/policy validation path; no FBref literal appears in core CLI/harness code; Transfermarkt, Capology, and other future adapters remain fully supported
+- Real smoke NOT executed; CP-SMOKE-B execution NOT authorized
+- No real work_server, ports, DB, Docker, browser, Chrome, Xvfb, CDP, cookies, network, or live target used in tests
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.38.0] — 2026-08-27
 
 ### Fixed
@@ -423,7 +445,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.35.0...v0.36.0
