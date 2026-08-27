@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] — 2026-08-27
+
+### Fixed
+
+- **Gate 7 startup diagnostic evidence**: when `work_server.startup()` raises, the BLOCKED report now includes `startup_error_type` (exception class name) and `startup_error` (truncated, redacted exception message) — previously the exception was swallowed with no diagnostic context
+- **Gate 14 ValueError diagnostic evidence**: when `clearance_post.post()` raises `ValueError`, the FAIL report now includes `post_error_type`, `post_error` (truncated, redacted), and `clearance_class` (label only, never raw cookie) — previously the ValueError path returned no diagnostic evidence
+- **Gate 12 error evidence companion key**: `clearance_getter_error_type` added alongside the existing `clearance_getter_error` label for both exception paths (`PermissionError` → `"PermissionError"`, `ConnectionError` → `"ConnectionError"`) — establishes consistent pair convention across all error-emitting gates
+- **Early-exit redaction bypass**: Gate 7 and Gate 14 early-return paths now apply the same `scan_for_sensitive` redaction + 200-char truncation via `_redact_str()` before placing exception strings in evidence — previously these paths bypassed the final gate scan
+
+### Added
+
+- **`_redact_str()` helper**: private method on `RealClearanceHarness` applying `scan_for_sensitive` redaction and 200-char truncation to exception strings before they land in evidence
+- **Harness-level token-source BLOCKED path tests**: contract tests asserting `GATE_TOKEN_SOURCE` returns BLOCKED for sentinel labels and that later gates are not executed
+- **Gate 7/12/14 evidence assertions**: value assertions, `str[:200]` truncation boundary tests, and evidence spread-preservation assertions for all three gate error paths
+- **Consistent gate error evidence convention**: all error-emitting gates (7, 12, 14) now use `<component>_error_type` + `<component>_error` key pair — canonical pattern for harness diagnostics
+- **4R review suite**: 3 rounds of `review-risk`, `review-resilience`, `review-reliability`, `review-readability` — all four lenses APPROVED before commit
+
+### Notes
+
+- Architecture guardrail: the buffering/session/clearance system remains a **generic multi-web engine**; FBref is only the first adapter/config/policy validation path; no FBref literal appears in core CLI/harness code; Transfermarkt, Capology, and other future adapters remain fully supported
+- Real smoke NOT executed; CP-SMOKE-B execution NOT authorized
+- B1: real browser/CDP wiring (`cli/main.py:468-469`) remains unresolved and not implemented
+- No real work_server, ports, DB, Docker, browser, Chrome, Xvfb, CDP, cookies, network, or live target used in tests
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.36.0] — 2026-08-27
 
 ### Fixed
@@ -371,7 +396,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.35.0...v0.36.0
+[0.35.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.31.0...v0.32.0
