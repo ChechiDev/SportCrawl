@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] — 2026-08-27
+
+### Fixed
+
+- **Real browser/CDP wiring — `_engine_starter`**: replaced `_noop_engine_starter` stub with a generic async closure that delegates to `engine.start()` on a `PydollEngine` instance constructed at the real-clearance composition root
+- **Real browser/CDP wiring — `_cdp_probe`**: replaced `_noop_cdp_probe` stub with a generic async closure that calls `engine.execute_script("1")` — the minimal `Runtime.evaluate` round-trip confirming the CDP WebSocket is alive without navigating to any page
+- **Real browser/CDP wiring — `_engine_stopper`**: added a generic async closure delegating to `engine.close()` and wired into `RealBrowserLauncher(engine_stopper=...)` — previously the stopper seam was accepted by the constructor but never provided
+- **`PydollEngine` composition root construction**: `PydollEngine(profile_dir=settings.scraping.chrome_profile_dir, name="smoke-clearance")` constructed at the real-clearance composition root; `Settings()` construction annotated as composition-root config (no settings object exists upstream in command scope)
+- **Constructor failure handling**: `PydollEngine(...)` construction wrapped in `try/except Exception`; failure emits a sanitized stderr diagnostic via `typer.echo(..., err=True)` (exception class + 100-char truncated message) and terminates with `sys.exit(1)` — previously a constructor exception would surface as an unhandled traceback
+
+### Added
+
+- **`_FakeEngine`**: minimal fake `PydollEngine` recording async `start()`, `execute_script()`, and `close()` calls without touching Chrome, Xvfb, or CDP
+- **`_invoke_patched_with_engine`**: test helper patching `cli.main.PydollEngine` to return a `_FakeEngine` instance; all harness/seam constructors patched; no real browser or network involved
+- **`TestBrowserEngineWiring` (8 tests)**: profile_dir from settings, name="smoke-clearance" wiring, closure delegation for start/probe/stop, no-noop source-inspection guards, FBref guardrail in real_clearance block
+- **`TestBrowserEngineInitFailure` (1 test)**: patches `PydollEngine` with `side_effect=RuntimeError`; asserts exit_code==1 and that `typer.echo` is called with the diagnostic message and `err=True` — verifies the handled exit path, not an unhandled crash
+- **Guard test rename**: `test_no_pydoll_in_handler` → `test_no_pydoll_in_prepare_real_branch` for precise scope
+- **Focused 4R review suite**: `review-risk` APPROVED, `review-resilience` APPROVED for B1 diff, `review-reliability` findings refuted by triage (no genuine B1 blocker), `review-readability` APPROVED (focused re-run on actual diff files)
+
+### Notes
+
+- Architecture guardrail: the buffering/session/clearance system remains a **generic multi-web engine**; FBref is only the first adapter/config/policy validation path; no FBref literal appears in the `real_clearance` block of `cli/main.py`; Transfermarkt, Capology, and other future adapters remain fully supported
+- Real smoke NOT executed; CP-SMOKE-B execution NOT authorized
+- No real work_server, ports, DB, Docker, browser, Chrome, Xvfb, CDP, cookies, network, or live target used in tests
+- CP2/session-clearance-pool out of scope and untouched
+- Pre-existing out-of-scope harness concerns (empty token pre-gate before resource commitment; async/sync bridge guard for embedded event-loop environments) require separate future tasks
+
 ## [0.37.0] — 2026-08-27
 
 ### Fixed
@@ -396,7 +423,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.34.0...v0.35.0
