@@ -458,6 +458,10 @@ def smoke_clearance(
         _RESOLVED_HOST = "127.0.0.1"
         _WORK_SERVER_PORT = 9731
         _WORK_SERVER_CMD = ["uv", "run", "sportcrawl", "work-server"]
+        # Captured here for seam constructors. Gate 1 (GATE_PROVIDER_READINESS)
+        # re-reads this env var live via EnvTokenProvider.is_ready() before any
+        # resource-committing gate — empty/missing token caught there, before
+        # work_server starts.
         _token = os.environ.get("SCRAPING__WORK_SERVER_TOKEN", "")
         _clearance_url = (
             f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}/api/clearance"

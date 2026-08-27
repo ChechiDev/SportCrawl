@@ -318,6 +318,89 @@ class TestStop:
         launcher.stop()
         assert launcher._started is False  # noqa: SLF001
 
+    def test_stop_calls_error_handler_when_stopper_raises(self) -> None:
+        """stop_error_handler must be called with the exception when stopper raises."""
+        received: list[Exception] = []
+
+        async def _raising_stopper() -> None:
+            raise RuntimeError("cdp teardown failed")
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: _raising_stopper(),
+            stop_error_handler=received.append,
+        )
+        launcher.start()
+        launcher.stop()
+        assert len(received) == 1
+        assert isinstance(received[0], RuntimeError)
+        assert "cdp teardown failed" in str(received[0])
+
+    def test_stop_does_not_call_error_handler_when_stopper_succeeds(self) -> None:
+        """stop_error_handler must NOT be called when stopper succeeds."""
+        called: list[Exception] = []
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=_success_factory,
+            stop_error_handler=called.append,
+        )
+        launcher.start()
+        launcher.stop()
+        assert called == [], "error handler must not be called on clean stop"
+
+    def test_stop_still_suppresses_stopper_exception_even_with_handler(self) -> None:
+        """stop() must not propagate stopper exceptions even when handler is set."""
+        async def _raising_stopper() -> None:
+            raise ValueError("engine already closed")
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: _raising_stopper(),
+            stop_error_handler=lambda exc: None,
+        )
+        launcher.start()
+        launcher.stop()  # must not raise
+        assert launcher._started is False  # noqa: SLF001
+
+    def test_stop_resets_started_even_when_handler_itself_raises(self) -> None:
+        """_started must be False even if the error handler raises."""
+        async def _raising_stopper() -> None:
+            raise RuntimeError("stopper failed")
+
+        def _bad_handler(exc: Exception) -> None:  # noqa: ARG001
+            raise ValueError("handler also failed")
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: _raising_stopper(),
+            stop_error_handler=_bad_handler,
+        )
+        launcher.start()
+        try:
+            launcher.stop()
+        except ValueError:
+            pass
+        assert launcher._started is False  # noqa: SLF001
+
+    def test_stop_error_handler_none_by_default(self) -> None:
+        """Without a handler, raising stopper is silently suppressed as before."""
+        async def _raising_stopper() -> None:
+            raise RuntimeError("silent teardown")
+
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: _raising_stopper(),
+        )
+        launcher.start()
+        launcher.stop()  # must not raise
+        assert launcher._started is False  # noqa: SLF001
+
 
 # ---------------------------------------------------------------------------
 # Stubs for harness integration tests

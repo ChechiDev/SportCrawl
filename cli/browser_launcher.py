@@ -20,9 +20,15 @@ class RealBrowserLauncher:
         engine_starter: Callable[[], Coroutine[Any, Any, None]],
         cdp_probe: Callable[[], Coroutine[Any, Any, None]],
         engine_stopper: Callable[[], Coroutine[Any, Any, None]] | None = None,
+        # Default is asyncio.run — safe only when called from a synchronous CLI context
+        # with no running event loop. Override with a compatible runner (e.g.
+        # asyncio.get_event_loop().run_until_complete) when embedding in an async host.
         loop_runner: Callable[[Coroutine[Any, Any, Any]], Any] = asyncio.run,
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
+        # Optional callback invoked when engine_stopper raises. Receives the exception;
+        # stop() still suppresses the exception so cleanup never masks harness results.
+        stop_error_handler: Callable[[Exception], None] | None = None,
     ) -> None:
         self._engine_starter = engine_starter
         self._cdp_probe = cdp_probe
@@ -30,6 +36,7 @@ class RealBrowserLauncher:
         self._loop_runner = loop_runner
         self._clock = clock
         self._sleeper = sleeper
+        self._stop_error_handler = stop_error_handler
         self._started: bool = False
 
     def start(self) -> bool:
@@ -68,10 +75,15 @@ class RealBrowserLauncher:
 
         Invokes engine_stopper if configured; no-op otherwise.
         Resets _started to False regardless of stopper outcome.
+        Stopper exceptions are always suppressed so cleanup cannot mask harness results;
+        if stop_error_handler is set it is called with the exception for observability.
         """
-        if self._engine_stopper is not None:
-            try:
-                self._loop_runner(self._engine_stopper())
-            except Exception:
-                pass
-        self._started = False
+        try:
+            if self._engine_stopper is not None:
+                try:
+                    self._loop_runner(self._engine_stopper())
+                except Exception as exc:
+                    if self._stop_error_handler is not None:
+                        self._stop_error_handler(exc)
+        finally:
+            self._started = False
