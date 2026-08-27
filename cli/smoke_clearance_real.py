@@ -238,6 +238,17 @@ class RealClearanceHarness:
     GATE_POST_CLEARANCE = "post_clearance"
     GATE_FINAL_REDACTION = "final_redaction_scan"
 
+    def _redact_str(self, value: str) -> str:
+        """Redact sensitive patterns from a string before storing in evidence.
+
+        Applies the same patterns as the final redaction scan gate.
+        Returns '[REDACTED]' if any pattern matches, otherwise returns value[:200].
+        """
+        truncated = value[:200]
+        if scan_for_sensitive(truncated):
+            return "[REDACTED]"
+        return truncated
+
     def run(
         self,
         providers: RealClearanceProviders,
@@ -341,13 +352,18 @@ class RealClearanceHarness:
             # Gate 7: work_server startup
             try:
                 seams.work_server.startup(timeout_s=seams.work_server_timeout_s)
-            except Exception:
+            except Exception as exc:
                 gate_results[self.GATE_WORK_SERVER_STARTUP] = GateStatus.BLOCKED
                 error_gate = self.GATE_WORK_SERVER_STARTUP
+                # Exception diagnostics: _type + message pair convention.
                 return HarnessReport(
                     status=HarnessStatus.BLOCKED,
                     gate_results=gate_results,
-                    evidence=evidence,
+                    evidence={
+                        **evidence,
+                        "startup_error_type": type(exc).__name__,
+                        "startup_error": self._redact_str(str(exc)),
+                    },
                     error_gate=error_gate,
                 )
             gate_results[self.GATE_WORK_SERVER_STARTUP] = GateStatus.PASS
@@ -417,7 +433,11 @@ class RealClearanceHarness:
                 return HarnessReport(
                     status=HarnessStatus.BLOCKED,
                     gate_results=gate_results,
-                    evidence={**evidence, "clearance_getter_error": "auth_failure"},
+                    evidence={
+                        **evidence,
+                        "clearance_getter_error_type": "PermissionError",
+                        "clearance_getter_error": "auth_failure",
+                    },
                     error_gate=error_gate,
                 )
             except ConnectionError:
@@ -428,6 +448,7 @@ class RealClearanceHarness:
                     gate_results=gate_results,
                     evidence={
                         **evidence,
+                        "clearance_getter_error_type": "ConnectionError",
                         "clearance_getter_error": "connection_failure",
                     },
                     error_gate=error_gate,
@@ -462,13 +483,18 @@ class RealClearanceHarness:
                 post_status, post_body_bytes = seams.clearance_post.post(
                     clearance_result.clearance_class
                 )
-            except ValueError:
+            except ValueError as exc:
                 gate_results[self.GATE_POST_CLEARANCE] = GateStatus.FAIL
                 error_gate = self.GATE_POST_CLEARANCE
+                # Exception diagnostics: _type + message pair convention.
                 return HarnessReport(
                     status=HarnessStatus.FAIL,
                     gate_results=gate_results,
-                    evidence=evidence,
+                    evidence={
+                        **evidence,
+                        "post_error_type": type(exc).__name__,
+                        "post_error": self._redact_str(str(exc)),
+                    },
                     error_gate=error_gate,
                 )
             evidence["post_status_code"] = post_status
