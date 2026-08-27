@@ -652,3 +652,216 @@ class TestMakeClearanceGetterAuthErrors:
         )
         result = getter()
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Browser engine wiring tests
+# ---------------------------------------------------------------------------
+
+
+class _FakeEngine:
+    """Minimal fake PydollEngine — records async calls without touching Chrome."""
+
+    def __init__(self, **kwargs: object) -> None:
+        self.init_kwargs = kwargs
+        self.start_calls: int = 0
+        self.execute_script_args: list[str] = []
+        self.close_calls: int = 0
+
+    async def start(self) -> None:
+        self.start_calls += 1
+
+    async def execute_script(self, script: str) -> None:
+        self.execute_script_args.append(script)
+
+    async def close(self) -> None:
+        self.close_calls += 1
+
+
+def _invoke_patched_with_engine(
+    fake_engine: _FakeEngine,
+    harness_status: HarnessStatus = HarnessStatus.PASS,
+) -> tuple[object, MagicMock, MagicMock]:
+    """Invoke --real-clearance patching PydollEngine to return *fake_engine*.
+
+    Returns (result, launcher_mock, harness_inst).
+    """
+    mock_report = HarnessReport(status=harness_status)
+
+    with (
+        patch("cli.main.PydollEngine", return_value=fake_engine) as m_engine_cls,
+        patch("cli.main.EnvTargetProvider"),
+        patch("cli.main.EnvBrowserParameterProvider"),
+        patch("cli.main.EnvTokenProvider"),
+        patch("cli.main.GhCICheckProvider"),
+        patch("cli.main.RealWorkServerLifecycle"),
+        patch("cli.main.LabelTargetValidator"),
+        patch("cli.main.RealBrowserLauncher") as m_launcher,
+        patch("cli.main.RealClearanceObserver"),
+        patch("cli.main.RealClearancePostClient"),
+        patch("cli.main.RealClearanceProviders"),
+        patch("cli.main.RealClearanceSeams"),
+        patch("cli.main.RealClearanceHarness") as m_harness_cls,
+    ):
+        mock_harness_inst = MagicMock()
+        mock_harness_inst.run.return_value = mock_report
+        m_harness_cls.return_value = mock_harness_inst
+
+        runner.invoke(app, ["smoke-clearance", "--real-clearance"])
+        return m_engine_cls, m_launcher, mock_harness_inst
+
+
+class TestBrowserEngineWiring:
+    """PydollEngine must be constructed and wired into RealBrowserLauncher."""
+
+    def test_pydoll_engine_constructed_with_profile_dir_from_settings(self) -> None:
+        """PydollEngine must receive profile_dir from settings.scraping."""
+        from config.settings import Settings
+
+        _s = Settings()  # type: ignore[call-arg]
+        expected_profile = _s.scraping.chrome_profile_dir
+        fake_engine = _FakeEngine()
+        m_engine_cls, _, _ = _invoke_patched_with_engine(fake_engine)
+        call_kwargs = m_engine_cls.call_args  # type: ignore[union-attr]
+        assert call_kwargs is not None, "PydollEngine was not constructed"
+        profile_dir = call_kwargs.kwargs.get("profile_dir")
+        assert profile_dir == expected_profile, (
+            f"PydollEngine must receive profile_dir={expected_profile!r},"
+            f" got {profile_dir!r}"
+        )
+
+    def test_pydoll_engine_constructed_with_name_smoke_clearance(self) -> None:
+        """PydollEngine must receive name='smoke-clearance'."""
+        fake_engine = _FakeEngine()
+        m_engine_cls, _, _ = _invoke_patched_with_engine(fake_engine)
+        call_kwargs = m_engine_cls.call_args  # type: ignore[union-attr]
+        assert call_kwargs is not None, "PydollEngine was not constructed"
+        name = call_kwargs.kwargs.get("name")
+        assert name == "smoke-clearance", (
+            f"PydollEngine must receive name='smoke-clearance', got {name!r}"
+        )
+
+    def test_engine_starter_closure_delegates_to_engine_start(self) -> None:
+        """engine_starter coroutine must call engine.start() exactly once."""
+        import asyncio
+
+        fake_engine = _FakeEngine()
+        _, m_launcher, _ = _invoke_patched_with_engine(fake_engine)
+        call_kwargs = m_launcher.call_args
+        assert call_kwargs is not None, "RealBrowserLauncher was not constructed"
+        engine_starter = call_kwargs.kwargs.get("engine_starter")
+        assert engine_starter is not None, "engine_starter must be provided"
+        assert asyncio.iscoroutinefunction(engine_starter), (
+            "engine_starter must be an async callable"
+        )
+        asyncio.run(engine_starter())
+        assert fake_engine.start_calls == 1, (
+            f"engine.start() must be called once via engine_starter, "
+            f"got {fake_engine.start_calls}"
+        )
+
+    def test_cdp_probe_closure_delegates_to_engine_execute_script_1(self) -> None:
+        """cdp_probe coroutine must call engine.execute_script('1') exactly once."""
+        import asyncio
+
+        fake_engine = _FakeEngine()
+        _, m_launcher, _ = _invoke_patched_with_engine(fake_engine)
+        call_kwargs = m_launcher.call_args
+        assert call_kwargs is not None
+        cdp_probe = call_kwargs.kwargs.get("cdp_probe")
+        assert cdp_probe is not None, "cdp_probe must be provided"
+        assert asyncio.iscoroutinefunction(cdp_probe), (
+            "cdp_probe must be an async callable"
+        )
+        asyncio.run(cdp_probe())
+        assert fake_engine.execute_script_args == ["1"], (
+            f"cdp_probe must call engine.execute_script('1'), "
+            f"got {fake_engine.execute_script_args!r}"
+        )
+
+    def test_engine_stopper_closure_delegates_to_engine_close(self) -> None:
+        """engine_stopper coroutine must call engine.close() exactly once."""
+        import asyncio
+
+        fake_engine = _FakeEngine()
+        _, m_launcher, _ = _invoke_patched_with_engine(fake_engine)
+        call_kwargs = m_launcher.call_args
+        assert call_kwargs is not None
+        engine_stopper = call_kwargs.kwargs.get("engine_stopper")
+        assert engine_stopper is not None, "engine_stopper must be provided"
+        assert asyncio.iscoroutinefunction(engine_stopper), (
+            "engine_stopper must be an async callable"
+        )
+        asyncio.run(engine_stopper())
+        assert fake_engine.close_calls == 1, (
+            f"engine.close() must be called once via engine_stopper, "
+            f"got {fake_engine.close_calls}"
+        )
+
+    def test_no_noop_engine_starter_in_source(self) -> None:
+        """_noop_engine_starter must not appear in cli/main.py source."""
+        src = _src()
+        assert "_noop_engine_starter" not in src, (
+            "_noop_engine_starter stub must be removed from cli/main.py"
+        )
+
+    def test_no_noop_cdp_probe_in_source(self) -> None:
+        """_noop_cdp_probe must not appear in cli/main.py source."""
+        src = _src()
+        assert "_noop_cdp_probe" not in src, (
+            "_noop_cdp_probe stub must be removed from cli/main.py"
+        )
+
+    def test_no_fbref_literal_in_real_clearance_block(self) -> None:
+        """'fbref' must not appear in the real_clearance branch of cli/main.py.
+
+        The scrape-players command legitimately contains FBRef literals.
+        This test ensures the real-clearance composition block stays generic.
+        """
+        src = _src()
+        marker = "if real_clearance:"
+        idx = src.find(marker)
+        assert idx != -1, f"Could not find '{marker}' in cli/main.py"
+        # Find the next top-level terminator at 4-space indent after the block.
+        terminators = [
+            src.find(t, idx + len(marker))
+            for t in ("\n    if ", "\n    return", "\n    raise")
+        ]
+        end = min(pos for pos in terminators if pos != -1)
+        block = src[idx:end]
+        assert len(block) > 0, (
+            "real_clearance block extraction returned empty — terminator logic is wrong"
+        )
+        assert "fbref" not in block.lower(), (
+            "'fbref' literal must not appear in the real_clearance block of cli/main.py"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Browser engine init failure
+# ---------------------------------------------------------------------------
+
+
+class TestBrowserEngineInitFailure:
+    def test_engine_init_failure_exits_1(self) -> None:
+        """If PydollEngine.__init__ raises, exit code must be 1 — not unhandled."""
+        echo_mock = MagicMock()
+        with (
+            patch("cli.main.PydollEngine", side_effect=RuntimeError("bad profile")),
+            patch("cli.main.Settings"),
+            patch("cli.main.typer.echo", echo_mock),
+        ):
+            result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
+        assert result.exit_code == 1, (
+            f"Expected exit 1 when PydollEngine init fails, got {result.exit_code}"
+        )
+        diagnostic_calls = [
+            c
+            for c in echo_mock.call_args_list
+            if c.kwargs.get("err") is True
+            and "browser engine init failed" in str(c.args[0] if c.args else "")
+        ]
+        assert diagnostic_calls, (
+            f"Expected typer.echo with 'browser engine init failed' and err=True, "
+            f"got calls: {echo_mock.call_args_list!r}"
+        )
