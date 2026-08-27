@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import urllib.request
 import warnings
 from collections.abc import Callable
@@ -39,6 +40,7 @@ from cli.smoke_clearance_real import (  # noqa: E402
 )
 from cli.work_server_lifecycle import RealWorkServerLifecycle  # noqa: E402
 from config.settings import Settings  # noqa: E402
+from infrastructure.browser.pydoll_engine import PydollEngine  # noqa: E402
 from infrastructure.work_server.runtime import serve  # noqa: E402
 
 
@@ -461,15 +463,33 @@ def smoke_clearance(
             f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}/api/clearance"
         )
 
-        # Deferred stubs for gates 10 (browser_startup) and 11 (cdp_ready).
-        # Real engine wiring requires an authorized real-smoke execution context.
-        # These no-ops ensure the seam is constructed; the harness gates will
-        # BLOCK before these are invoked in a real run without a live browser.
-        async def _noop_engine_starter() -> None:
-            pass
+        # Composition-root config for real-clearance seams — no settings object
+        # exists upstream in this command scope; constructed here to resolve
+        # chrome_profile_dir before the closures are defined.
+        settings = Settings()  # type: ignore[call-arg]
+        try:
+            engine = PydollEngine(
+                profile_dir=settings.scraping.chrome_profile_dir,
+                name="smoke-clearance",
+            )
+        except Exception as exc:
+            typer.echo(
+                f"[smoke-clearance] browser engine init failed: "
+                f"{type(exc).__name__}: {str(exc)[:100]}",
+                err=True,
+            )
+            sys.exit(1)
 
-        async def _noop_cdp_probe() -> None:
-            pass
+        async def _engine_starter() -> None:
+            await engine.start()
+
+        async def _cdp_probe() -> None:
+            # "1" is the minimal CDP Runtime.evaluate round-trip probe — confirms
+            # the WebSocket is alive without navigating to any page.
+            await engine.execute_script("1")
+
+        async def _engine_stopper() -> None:
+            await engine.close()
 
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
@@ -486,8 +506,9 @@ def smoke_clearance(
             ),
             target_validator=LabelTargetValidator(),
             browser_launcher=RealBrowserLauncher(
-                engine_starter=_noop_engine_starter,
-                cdp_probe=_noop_cdp_probe,
+                engine_starter=_engine_starter,
+                cdp_probe=_cdp_probe,
+                engine_stopper=_engine_stopper,
             ),
             clearance_observer=RealClearanceObserver(
                 clearance_getter=_make_clearance_getter(

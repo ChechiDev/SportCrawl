@@ -292,8 +292,19 @@ def _prepare_real_branch() -> str:
     Falls back to the full body if the branch is not yet present.
     """
     body = _smoke_clearance_body()
-    m = re.search(r"if prepare_real:(.*?)(?=\n\s*(?:if |#|return|\Z))", body, re.DOTALL)
-    return m.group(0) if m else body
+    marker = "if prepare_real:"
+    idx = body.find(marker)
+    if idx == -1:
+        return body
+    # Find the next top-level statement at 4-space indent (same level as the if).
+    terminators = [
+        body.find(t, idx + len(marker))
+        for t in ("\n    if ", "\n    elif ", "\n    else:", "\n    return")
+    ]
+    positions = [pos for pos in terminators if pos != -1]
+    if not positions:
+        return body[idx:]
+    return body[idx : min(positions)]
 
 
 class TestPrepareRealSourceInspection:
@@ -303,13 +314,19 @@ class TestPrepareRealSourceInspection:
     is not yet present) does not introduce live-state imports or calls.
     """
 
-    def test_no_pydoll_in_handler(self) -> None:
-        """smoke_clearance body must not reference pydoll."""
+    def test_no_pydoll_in_prepare_real_branch(self) -> None:
+        """prepare_real branch must not reference pydoll directly.
+
+        PydollEngine is legitimately wired in the real_clearance branch via
+        closures passed to RealBrowserLauncher. The prepare_real branch (which
+        is a plan-only path that never executes a browser) must stay clean.
+        """
         body = _smoke_clearance_body()
         assert body, "smoke_clearance not found in cli/main.py."
-        assert "pydoll" not in body.lower(), (
-            "smoke_clearance handler body references pydoll. "
-            "No Pydoll/CDP must be used in the handler."
+        prepare_real_block = _prepare_real_branch()
+        assert "pydoll" not in prepare_real_block.lower(), (
+            "prepare_real branch must not reference pydoll — "
+            "it is a plan-only path with no browser execution."
         )
 
     def test_no_fbref_in_handler(self) -> None:
