@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-08-27
+
+### Fixed
+
+- **Gate 14 ValueError containment**: `ValueError` raised by `RealClearancePostClient.post()` for unknown clearance-class labels is now caught at gate 14 and returned as a FAIL report — previously it escaped the harness uncontained
+- **Scoped CI workflow checking**: `GhCICheckProvider` now accepts an optional `workflow_name` filter; wired with `workflow_name="CI"` in `cli/main.py` to prevent non-CI workflow runs (e.g. Release, Deploy) from producing a false `ALL_PASS` result
+- **In-progress CI blocking**: the CI gate now returns `BLOCKED` for any run in `in_progress` or `queued` status, even when an older successful run exists in the list
+- **Clearance getter auth/transport diagnostics**: `_make_clearance_getter` in `cli/main.py` now raises `PermissionError` on HTTP 401/403, raises `ConnectionError` on transport failure (`URLError`/`OSError`), and propagates unexpected exceptions — previously all errors were silently swallowed with `return None`; gate 12 catches `ConnectionError` and returns a `BLOCKED` report with `clearance_getter_error: "connection_failure"` evidence
+- **Malformed clearance GET body handling**: `_make_clearance_getter` wraps JSON parsing in `try/except (KeyError, ValueError, AttributeError)` and returns `None` for malformed 200 responses — previously an unhandled parse error could escape the getter
+- **Work-server shutdown waiting after kill**: `RealWorkServerLifecycle.shutdown()` now calls `self._process.wait(timeout=3)` after `kill()` to avoid leaving zombie processes on timeout
+- **Token-safe `__repr__`**: `RealWorkServerLifecycle` and `RealClearancePostClient` now implement `__repr__` that renders `token=<redacted>`, preventing accidental token exposure in logs and tracebacks
+- **Browser cleanup protocol**: `BrowserLauncher` Protocol gains a `stop() -> None` method; the harness `finally` block now calls `browser_launcher.stop()` before `work_server.shutdown()`, both wrapped in independent `try/except` guards — previously the browser had no cleanup seam
+- **`RealBrowserLauncher` teardown seam**: `engine_stopper: Callable[[], Coroutine[Any, Any, None]] | None = None` injectable added to `RealBrowserLauncher`; `stop()` invokes it via `_loop_runner` when present, suppresses all exceptions, and resets `_started = False` unconditionally
+
+### Added
+
+- **Extension convention for clearance-class/domain mapping**: multi-line comment added to `_CLEARANCE_CLASS_TO_DOMAIN` in `cli/clearance_post_client.py` documenting key format (`<cookie_name>@<domain>`) and how to add a new scraping target (Transfermarkt, Capology, etc.)
+- **`TestStop` (5 tests)**: unit tests for all `RealBrowserLauncher.stop()` branches — stopper invoked, stopper exception suppressed, `_started` reset regardless of outcome, no-op when stopper absent, safe when never started
+- **`TestCleanupAlwaysRuns` full coverage**: all 11 cleanup tests now assert `launcher.stop_called` alongside `ws.shutdown_called` across every gate-failure path including pre-gate-10 BLOCKED paths
+- **Context-manager transport tests**: two new tests for `URLError`/`OSError` raised from `__enter__` of the URL open context manager, exercising the distinct branch from exceptions raised at the `getter(req)` call boundary
+- **4R review suite**: 3 rounds of `review-risk`, `review-resilience`, `review-reliability`, `review-readability` — all four lenses APPROVED before commit
+
+### Notes
+
+- Architecture guardrail: the buffering/session/clearance system remains a **generic multi-web engine**; FBref is only the first adapter/config/policy validation path; no FBref literal appears in core CLI/harness code; Transfermarkt, Capology, and other future adapters remain fully supported
+- Real smoke NOT executed; CP-SMOKE-B execution NOT authorized
+- Real browser/CDP start still not implemented or authorized (B1 deferred)
+- No real work_server, ports, DB, Docker, browser, Chrome, Xvfb, CDP, cookies, network, or live target used in tests
+- CP2/session-clearance-pool out of scope and untouched
+
 ## [0.35.0] — 2026-08-26
 
 ### Added
