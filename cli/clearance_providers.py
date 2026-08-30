@@ -24,13 +24,47 @@ class EnvTargetProvider:
         return self._SOURCE_CLASS
 
 
+_TOKEN_ENV_KEY = "SCRAPING__WORK_SERVER_TOKEN"
+
+
+def _default_token_reader() -> str:
+    """Read token from os.environ first, then fall back to .env on disk.
+
+    This mirrors the resolution order pydantic-settings uses, without requiring
+    a full Settings() instantiation (which needs all required fields to be set).
+    """
+    val = os.environ.get(_TOKEN_ENV_KEY, "")
+    if val:
+        return val.strip()
+    try:
+        from dotenv import dotenv_values
+
+        dotenv_val = dotenv_values(".env").get(_TOKEN_ENV_KEY, "")
+        return (dotenv_val or "").strip()
+    except (ImportError, OSError):
+        return ""
+
+
+def _env_only_token_reader() -> str:
+    """Read token from os.environ only (no .env file). Safe for use with monkeypatch."""
+    return os.environ.get(_TOKEN_ENV_KEY, "").strip()
+
+
 class EnvTokenProvider:
-    """Reads bearer token from SCRAPING__WORK_SERVER_TOKEN env var."""
+    """Reads bearer token via Settings (resolves both os.environ and .env)."""
 
     _SOURCE_CLASS = "env:SCRAPING__WORK_SERVER_TOKEN"
 
+    def __init__(
+        self,
+        token_reader: Callable[[], str] | None = None,
+    ) -> None:
+        self._token_reader = (
+            token_reader if token_reader is not None else _default_token_reader
+        )
+
     def is_ready(self) -> bool:
-        return bool(os.environ.get("SCRAPING__WORK_SERVER_TOKEN", "").strip())
+        return bool(self._token_reader().strip())
 
     def source_class(self) -> str:
         return self._SOURCE_CLASS

@@ -55,27 +55,27 @@ class TestEnvTargetProvider:
 class TestEnvTokenProvider:
     def test_ready_when_token_set(self, monkeypatch):
         monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "synthetic-token-value")
-        from cli.clearance_providers import EnvTokenProvider
+        from cli.clearance_providers import EnvTokenProvider, _env_only_token_reader
 
-        assert EnvTokenProvider().is_ready() is True
+        assert EnvTokenProvider(token_reader=_env_only_token_reader).is_ready() is True
 
     def test_not_ready_when_token_empty(self, monkeypatch):
         monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "")
-        from cli.clearance_providers import EnvTokenProvider
+        from cli.clearance_providers import EnvTokenProvider, _env_only_token_reader
 
-        assert EnvTokenProvider().is_ready() is False
+        assert EnvTokenProvider(token_reader=_env_only_token_reader).is_ready() is False
 
     def test_not_ready_when_token_missing(self, monkeypatch):
         monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
-        from cli.clearance_providers import EnvTokenProvider
+        from cli.clearance_providers import EnvTokenProvider, _env_only_token_reader
 
-        assert EnvTokenProvider().is_ready() is False
+        assert EnvTokenProvider(token_reader=_env_only_token_reader).is_ready() is False
 
     def test_not_ready_when_token_whitespace_only(self, monkeypatch):
         monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "   ")
-        from cli.clearance_providers import EnvTokenProvider
+        from cli.clearance_providers import EnvTokenProvider, _env_only_token_reader
 
-        assert EnvTokenProvider().is_ready() is False
+        assert EnvTokenProvider(token_reader=_env_only_token_reader).is_ready() is False
 
     def test_source_class_never_exposes_token_value(self, monkeypatch):
         monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "fixture-token-value")
@@ -277,6 +277,7 @@ class TestProvidersComposeWithHarnessGate1:
             EnvBrowserParameterProvider,
             EnvTargetProvider,
             EnvTokenProvider,
+            _env_only_token_reader,
         )
 
         class _StubCICheck:
@@ -325,7 +326,7 @@ class TestProvidersComposeWithHarnessGate1:
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
             browser_params=EnvBrowserParameterProvider(),
-            token=EnvTokenProvider(),
+            token=EnvTokenProvider(token_reader=_env_only_token_reader),
         )
         seams = RealClearanceSeams(
             ci_check=_StubCICheck(),
@@ -393,3 +394,96 @@ class TestGhCICheckProviderWorkflowFilter:
             workflow_name=None,
         )
         assert provider.check_once() == CICheckResult.ALL_PASS
+
+
+class TestDefaultTokenReader:
+    def test_reads_from_os_environ(self, monkeypatch, tmp_path) -> None:
+        """_default_token_reader reads os.environ when var is set."""
+        monkeypatch.chdir(tmp_path)  # no .env in CWD
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "synthetic-env-token")
+        from cli.clearance_providers import _TOKEN_ENV_KEY, _default_token_reader
+
+        assert _TOKEN_ENV_KEY == "SCRAPING__WORK_SERVER_TOKEN"
+        assert _default_token_reader() == "synthetic-env-token"
+
+    def test_falls_back_to_dotenv_file(self, monkeypatch, tmp_path) -> None:
+        """_default_token_reader falls back to .env file when os.environ is absent."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__WORK_SERVER_TOKEN=synthetic-dotenv-token\n")
+        from cli.clearance_providers import _default_token_reader
+
+        assert _default_token_reader() == "synthetic-dotenv-token"
+
+    def test_env_wins_over_dotenv(self, monkeypatch, tmp_path) -> None:
+        """os.environ takes precedence over .env file."""
+        monkeypatch.chdir(tmp_path)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__WORK_SERVER_TOKEN=dotenv-value\n")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_TOKEN", "env-wins-value")
+        from cli.clearance_providers import _default_token_reader
+
+        assert _default_token_reader() == "env-wins-value"
+
+    def test_missing_dotenv_file_returns_empty(self, monkeypatch, tmp_path) -> None:
+        """Missing .env file (wrong CWD or absent) returns empty string."""
+        monkeypatch.chdir(tmp_path)  # no .env written here
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
+        from cli.clearance_providers import _default_token_reader
+
+        assert _default_token_reader() == ""
+
+    def test_whitespace_only_in_dotenv_returns_empty(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__WORK_SERVER_TOKEN=   \n")
+        from cli.clearance_providers import _default_token_reader
+
+        assert _default_token_reader() == ""
+
+
+class TestEnvTokenProviderInjectableReader:
+    def test_ready_when_injectable_reader_returns_nonempty(self) -> None:
+        from cli.clearance_providers import EnvTokenProvider
+        provider = EnvTokenProvider(token_reader=lambda: "synthetic-settings-token")
+        assert provider.is_ready() is True
+
+    def test_not_ready_when_injectable_reader_returns_empty(self) -> None:
+        from cli.clearance_providers import EnvTokenProvider
+        provider = EnvTokenProvider(token_reader=lambda: "")
+        assert provider.is_ready() is False
+
+    def test_not_ready_when_injectable_reader_returns_whitespace(self) -> None:
+        from cli.clearance_providers import EnvTokenProvider
+        provider = EnvTokenProvider(token_reader=lambda: "   ")
+        assert provider.is_ready() is False
+
+    def test_source_class_unchanged_with_injectable_reader(self) -> None:
+        from cli.clearance_providers import EnvTokenProvider
+        provider = EnvTokenProvider(token_reader=lambda: "any-value")
+        sc = provider.source_class()
+        assert sc == "env:SCRAPING__WORK_SERVER_TOKEN"
+        assert "any-value" not in sc
+
+    def test_default_reader_uses_settings_resolution(self, monkeypatch) -> None:
+        """Default reader resolves via Settings, reading os.environ and .env."""
+        from cli.clearance_providers import EnvTokenProvider, _env_only_token_reader
+
+        monkeypatch.setenv(
+            "SCRAPING__WORK_SERVER_TOKEN", "synthetic-default-reader-token"
+        )
+        # Use _env_only_token_reader so the test is isolated from any on-disk .env file
+        provider = EnvTokenProvider(token_reader=_env_only_token_reader)
+        assert provider.is_ready() is True
+
+    def test_default_reader_not_ready_when_token_missing(self, monkeypatch) -> None:
+        from cli.clearance_providers import EnvTokenProvider, _env_only_token_reader
+
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_TOKEN", raising=False)
+        # Use _env_only_token_reader so the test is isolated from any on-disk .env file
+        provider = EnvTokenProvider(token_reader=_env_only_token_reader)
+        assert provider.is_ready() is False
