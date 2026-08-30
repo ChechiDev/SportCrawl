@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-08-31
+
+### Fixed
+
+- **`EnvTokenProvider` token resolution**: provider now reads `SCRAPING__WORK_SERVER_TOKEN` from `os.environ` first and falls back to the `.env` file on disk via `dotenv_values`, mirroring the resolution order pydantic-settings applies — previously only `os.environ` was checked, causing Gate 1 `provider_readiness` to fail when the token was present only in `.env`
+- **`EnvTokenProvider` — injectable `token_reader`**: accepts `token_reader: Callable[[], str] | None = None` for test isolation — tests inject `_env_only_token_reader` (env-only) so `monkeypatch.setenv` is not polluted by an on-disk `.env` file
+- **`_default_token_reader` exception narrowing**: exception scope narrowed from bare `except Exception` to `except (ImportError, OSError)` — ensures only library-absent or disk I/O failures are silently swallowed; unexpected errors propagate normally
+- **5 new `TestDefaultTokenReader` tests**: cover env-wins-over-dotenv, dotenv-fallback, missing-file, whitespace-only, env-only paths using `monkeypatch.chdir(tmp_path)` for CWD isolation
+
 ## [0.39.0] — 2026-08-27
 
 ### Fixed
@@ -445,7 +454,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.36.0...v0.37.0
