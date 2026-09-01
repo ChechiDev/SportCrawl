@@ -11,14 +11,43 @@ _VALID_TARGET_SOURCE_CLASSES: frozenset[str] = frozenset(
     {"env:SCRAPING__WORK_SERVER_HOST"}
 )
 
+_HOST_ENV_KEY = "SCRAPING__WORK_SERVER_HOST"
+
+
+def _default_host_reader() -> str:
+    """Read host from os.environ first, then fall back to .env on disk."""
+    val = os.environ.get(_HOST_ENV_KEY, "")
+    if val:
+        return val.strip()
+    try:
+        from dotenv import dotenv_values
+
+        dotenv_val = dotenv_values(".env").get(_HOST_ENV_KEY, "")
+        return (dotenv_val or "").strip()
+    except (ImportError, OSError):
+        return ""
+
+
+def _env_only_host_reader() -> str:
+    """Read host from os.environ only (no .env file). Safe for use with monkeypatch."""
+    return os.environ.get(_HOST_ENV_KEY, "").strip()
+
 
 class EnvTargetProvider:
     """Reads target host from SCRAPING__WORK_SERVER_HOST env var."""
 
     _SOURCE_CLASS = "env:SCRAPING__WORK_SERVER_HOST"
 
+    def __init__(
+        self,
+        host_reader: Callable[[], str] | None = None,
+    ) -> None:
+        self._host_reader = (
+            host_reader if host_reader is not None else _default_host_reader
+        )
+
     def is_ready(self) -> bool:
-        return bool(os.environ.get("SCRAPING__WORK_SERVER_HOST", "").strip())
+        return bool(self._host_reader().strip())
 
     def source_class(self) -> str:
         return self._SOURCE_CLASS
@@ -70,13 +99,45 @@ class EnvTokenProvider:
         return self._SOURCE_CLASS
 
 
+_BROWSER_PARAMS_ENV_KEY = "SCRAPING__CHROME_PROFILE_DIR"
+
+
+def _default_browser_params_reader() -> str:
+    """Read Chrome profile dir from os.environ first, then fall back to .env on disk."""
+    val = os.environ.get(_BROWSER_PARAMS_ENV_KEY, "")
+    if val:
+        return val.strip()
+    try:
+        from dotenv import dotenv_values
+
+        dotenv_val = dotenv_values(".env").get(_BROWSER_PARAMS_ENV_KEY, "")
+        return (dotenv_val or "").strip()
+    except (ImportError, OSError):
+        return ""
+
+
+def _env_only_browser_params_reader() -> str:
+    """Read Chrome profile dir from os.environ only. Safe for use with monkeypatch."""
+    return os.environ.get(_BROWSER_PARAMS_ENV_KEY, "").strip()
+
+
 class EnvBrowserParameterProvider:
     """Reads Chrome profile path from SCRAPING__CHROME_PROFILE_DIR env var."""
 
     _SOURCE_CLASS = "env:SCRAPING__CHROME_PROFILE_DIR"
 
+    def __init__(
+        self,
+        profile_dir_reader: Callable[[], str] | None = None,
+    ) -> None:
+        self._profile_dir_reader = (
+            profile_dir_reader
+            if profile_dir_reader is not None
+            else _default_browser_params_reader
+        )
+
     def is_ready(self) -> bool:
-        return bool(os.environ.get("SCRAPING__CHROME_PROFILE_DIR", "").strip())
+        return bool(self._profile_dir_reader().strip())
 
     def source_class(self) -> str:
         return self._SOURCE_CLASS
