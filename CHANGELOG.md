@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-09-01
+
+### Fixed
+
+- **Chrome extension runtime config injection**: `smoke-clearance --real-clearance` now injects generic extension config (`work_server_url`, `work_server_token`, `profile_id`, `worker_id`, `disable_task_polling`) into `chrome.storage.local` via CDP `Runtime.callFunctionOn` after browser start and before clearance observation — previously the extension had no runtime config, its listener returned early, and cf_clearance was never posted to the work_server
+- **Token never embedded in JS function body**: config values are passed as a structured CDP argument (`arguments[0].value`), not interpolated into the JavaScript function body string — pydoll logs only the method name, not the argument payload; bearer token cannot appear in any loggable script string
+- **CDP injection timeout-bounded**: `asyncio.wait_for(timeout=15.0)` wraps the `_execute_command` call — a hung CDP pipe no longer blocks `run_until_complete` indefinitely; the named constant `_INJECT_STORAGE_TIMEOUT_S = 15.0` makes the bound explicit
+- **Private API failures wrapped into sanitized `PageLoadError`**: `TimeoutError`, `AttributeError` (pydoll private API rename), `PydollException`, `OSError`, and `ConnectionError` are all caught and re-raised as controlled `PageLoadError` with a fixed-string message — no exception message content is forwarded
+- **Gate `extension_config_inject` — type-only diagnostic**: on injection failure, `logger.error("extension_config_inject failed: %s", type(exc).__name__)` emits the exception type name only; no message content, values, or token fragments are logged
+- **Loop state guard**: `_extension_config_injector` checks `_loop.is_closed()` and `_loop.is_running()` before calling `run_until_complete` — raises `RuntimeError` if the loop is in an unusable state, which gate-11b catches and converts to `BLOCKED`
+- **Pending tasks cancelled before loop close**: the `finally` block in `cli/main.py` cancels all asyncio tasks on `_loop`, awaits `asyncio.gather(*pending, return_exceptions=True)`, then closes the loop — prevents resource leaks on harness exit
+
 ## [0.42.0] — 2026-09-01
 
 ### Fixed
@@ -471,7 +483,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.39.0...v0.40.0
