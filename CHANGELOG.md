@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-09-01
+
+### Fixed
+
+- **`EnvTargetProvider` — env-first + `.env` fallback**: `SCRAPING__WORK_SERVER_HOST` is now resolved from `os.environ` first, then falls back to `dotenv_values(".env")` — previously only `os.environ` was checked, causing Gate 1 `provider_readiness` to report NOT_READY when the host was present only in `.env`
+- **`EnvBrowserParameterProvider` — env-first + `.env` fallback**: `SCRAPING__CHROME_PROFILE_DIR` is now resolved from `os.environ` first, then falls back to `dotenv_values(".env")` — same gap as the host provider
+- **Gate 1 compound AND fully unblocked**: Gate 1 (`provider_readiness`) is a compound AND across target, browser params, and token; all three providers now share the same env-first + `.env` fallback resolution order — `EnvTokenProvider` was fixed in v0.40.0; the two remaining providers are fixed here
+- **Injectable reader seams for test isolation**: `_default_host_reader`/`_env_only_host_reader` and `_default_browser_params_reader`/`_env_only_browser_params_reader` added; providers accept injectable `host_reader`/`profile_dir_reader` so tests can use `monkeypatch.setenv` without `.env` file pollution
+
 ## [0.40.0] — 2026-08-31
 
 ### Fixed
@@ -454,7 +463,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.41.0...HEAD
+[0.41.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.37.0...v0.38.0
