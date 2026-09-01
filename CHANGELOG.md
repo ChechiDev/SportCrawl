@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-09-01
+
+### Fixed
+
+- **`RealBrowserLauncher` — single owned event loop for browser lifecycle**: launcher now creates one `asyncio.new_event_loop()` on construction and shares it across `start()` and `stop()` — previously both called `asyncio.run()` independently, creating two separate event loops; pydoll's internal queue and tasks bind to the first loop, so calling `stop()` from a second loop raised `RuntimeError: Queue ... bound to a different event loop`
+- **Teardown no longer masks harness results**: with the loop ownership fix, `stop()` completes cleanly — CP-SMOKE-B previously reached `clearance_observed` gate successfully but teardown emitted the queue-loop error; that error is now eliminated
+- **Injected loop runner seam preserved**: passing an explicit `loop_runner` callable still works as before — tests inject an external runner via this seam without triggering the owned-loop path; the parameter default changed from `= asyncio.run` to `| None = None` to make the intent unambiguous
+
 ## [0.41.0] — 2026-09-01
 
 ### Fixed
@@ -463,7 +471,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.41.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.38.0...v0.39.0
