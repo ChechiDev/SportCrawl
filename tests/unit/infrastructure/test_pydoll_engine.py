@@ -675,3 +675,170 @@ class TestPydollEngineWarmup:
             await engine.warmup("https://fbref.com")
 
         assert engine._browser is mock_browser
+
+
+# ---------------------------------------------------------------------------
+# inject_storage_config(): structured CDP callFunctionOn injection
+# ---------------------------------------------------------------------------
+
+
+class TestPydollEngineInjectStorageConfig:
+    async def test_raises_page_load_error_when_tab_is_none(self) -> None:
+        """inject_storage_config() must raise PageLoadError if the tab is not ready."""
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        engine = PydollEngine()
+        assert engine._tab is None
+
+        with pytest.raises(PageLoadError, match="inject_storage_config"):
+            await engine.inject_storage_config({"key": "value"})
+
+    async def test_calls_execute_command_with_call_function_on(self) -> None:
+        """inject_storage_config() must use callFunctionOn so config values are
+        structured CDP arguments, never embedded in the JS function body string."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(return_value={"result": {"value": True}})
+        mock_tab.go_to = AsyncMock()
+        mock_tab.page_source = _html_coroutine("<html></html>")
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+
+        sentinel_token = "SENTINEL_SECRET_TOKEN_VALUE"
+        config = {
+            "work_server_url": "http://127.0.0.1:9731",
+            "work_server_token": sentinel_token,
+            "profile_id": "smoke",
+            "worker_id": "smoke",
+            "disable_task_polling": True,
+        }
+
+        with patch(
+            "infrastructure.browser.pydoll_engine.Chrome",
+            return_value=mock_browser,
+        ):
+            engine = PydollEngine()
+            await engine.start()
+            await engine.inject_storage_config(config)
+
+        mock_tab._execute_command.assert_awaited_once()
+        cmd = mock_tab._execute_command.call_args[0][0]
+        # The CDP command method must be Runtime.callFunctionOn
+        assert cmd.get("method") == "Runtime.callFunctionOn"
+        # The function declaration (JS string) must NOT contain the secret token
+        fn_decl = cmd.get("params", {}).get("functionDeclaration", "")
+        assert sentinel_token not in fn_decl, (
+            "Token must not appear in the JS function declaration string"
+        )
+
+    async def test_raises_page_load_error_on_cdp_failure(self) -> None:
+        """inject_storage_config() must raise PageLoadError on CDP exceptions."""
+        from pydoll.exceptions import PydollException
+
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=PydollException("CDP error"))
+        mock_tab.go_to = AsyncMock()
+        mock_tab.page_source = _html_coroutine("<html></html>")
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+
+        with patch(
+            "infrastructure.browser.pydoll_engine.Chrome",
+            return_value=mock_browser,
+        ):
+            engine = PydollEngine()
+            await engine.start()
+
+            with pytest.raises(PageLoadError, match="inject_storage_config"):
+                await engine.inject_storage_config({"key": "value"})
+
+    async def test_times_out_and_raises_page_load_error_when_cdp_hangs(self) -> None:
+        """inject_storage_config() must call asyncio.wait_for with timeout=15.0.
+
+        Verified by mocking asyncio.wait_for so the internal 15s timeout
+        contract is enforced regardless of the outer test guard.
+        """
+        import asyncio as _asyncio
+
+        from infrastructure.browser import pydoll_engine as _engine_mod
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(return_value={"result": {"value": True}})
+        mock_tab.go_to = AsyncMock()
+        mock_tab.page_source = _html_coroutine("<html></html>")
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+
+        captured_timeout: list[float] = []
+        _real_wait_for = _asyncio.wait_for
+
+        async def _spy_wait_for(
+            coro: object, *, timeout: float, **kw: object
+        ) -> object:
+            captured_timeout.append(timeout)
+            return await _real_wait_for(  # type: ignore[arg-type]
+                coro, timeout=timeout, **kw
+            )
+
+        with patch(
+            "infrastructure.browser.pydoll_engine.Chrome",
+            return_value=mock_browser,
+        ), patch.object(_engine_mod.asyncio, "wait_for", side_effect=_spy_wait_for):
+            engine = PydollEngine()
+            await engine.start()
+            await engine.inject_storage_config({"key": "value"})
+
+        assert captured_timeout == [15.0], (
+            f"inject_storage_config must use timeout=15.0, got {captured_timeout}"
+        )
+
+    async def test_times_out_and_raises_page_load_error_via_timeout_error(self) -> None:
+        """inject_storage_config() wraps asyncio.TimeoutError as PageLoadError."""
+
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=TimeoutError())
+        mock_tab.go_to = AsyncMock()
+        mock_tab.page_source = _html_coroutine("<html></html>")
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+
+        with patch(
+            "infrastructure.browser.pydoll_engine.Chrome",
+            return_value=mock_browser,
+        ):
+            engine = PydollEngine()
+            await engine.start()
+
+            with pytest.raises(PageLoadError, match="inject_storage_config"):
+                await engine.inject_storage_config({"key": "value"})
+
+    async def test_wraps_attribute_error_as_page_load_error(self) -> None:
+        """AttributeError from pydoll API change must not escape as unhandled."""
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=AttributeError("renamed"))
+        mock_tab.go_to = AsyncMock()
+        mock_tab.page_source = _html_coroutine("<html></html>")
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+
+        with patch(
+            "infrastructure.browser.pydoll_engine.Chrome",
+            return_value=mock_browser,
+        ):
+            engine = PydollEngine()
+            await engine.start()
+
+            with pytest.raises(PageLoadError, match="inject_storage_config"):
+                await engine.inject_storage_config({"key": "value"})

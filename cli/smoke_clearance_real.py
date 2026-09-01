@@ -7,10 +7,14 @@ No real browser, network, DB, or Docker. All external interactions are injectabl
 from __future__ import annotations
 
 import enum
+import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Provider protocols (contracts only — no real implementations)
@@ -233,6 +237,7 @@ class RealClearanceHarness:
     GATE_TARGET_VALIDATION = "target_validation"
     GATE_BROWSER_START = "browser_start"
     GATE_CDP_READY = "cdp_ready"
+    GATE_EXTENSION_CONFIG_INJECT = "extension_config_inject"
     GATE_CLEARANCE_OBSERVED = "clearance_observed"
     GATE_EXPIRES_AT = "expires_at_guard"
     GATE_POST_CLEARANCE = "post_clearance"
@@ -253,6 +258,7 @@ class RealClearanceHarness:
         self,
         providers: RealClearanceProviders,
         seams: RealClearanceSeams,
+        extension_config_injector: Callable[[], None] | None = None,
     ) -> HarnessReport:
         gate_results: dict[str, GateStatus] = {}
         evidence: dict[str, object] = {}
@@ -421,6 +427,32 @@ class RealClearanceHarness:
                     error_gate=error_gate,
                 )
             gate_results[self.GATE_CDP_READY] = GateStatus.PASS
+
+            # Gate 11b: Extension config injection (optional seam)
+            # Injects work_server_url, work_server_token, profile_id, worker_id,
+            # and disable_task_polling into chrome.storage.local via CDP so the
+            # extension's cookie listener can POST clearance. Skipped when None.
+            if extension_config_injector is not None:
+                try:
+                    extension_config_injector()
+                except Exception as exc:
+                    logger.error(
+                        "extension_config_inject failed: %s",
+                        type(exc).__name__,
+                    )
+                    gate_results[self.GATE_EXTENSION_CONFIG_INJECT] = GateStatus.BLOCKED
+                    error_gate = self.GATE_EXTENSION_CONFIG_INJECT
+                    return HarnessReport(
+                        status=HarnessStatus.BLOCKED,
+                        gate_results=gate_results,
+                        evidence={
+                            **evidence,
+                            "extension_inject_error_type": type(exc).__name__,
+                            "extension_inject_error": self._redact_str(str(exc)),
+                        },
+                        error_gate=error_gate,
+                    )
+                gate_results[self.GATE_EXTENSION_CONFIG_INJECT] = GateStatus.PASS
 
             # Gate 12: Clearance observed within timeout
             try:
