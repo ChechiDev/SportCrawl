@@ -33,11 +33,18 @@ class RealBrowserLauncher:
         self._engine_starter = engine_starter
         self._cdp_probe = cdp_probe
         self._engine_stopper = engine_stopper
-        self._loop_runner = loop_runner
         self._clock = clock
         self._sleeper = sleeper
         self._stop_error_handler = stop_error_handler
         self._started: bool = False
+        if loop_runner is not asyncio.run:
+            self._loop: asyncio.AbstractEventLoop | None = None
+            self._owns_loop = False
+            self._loop_runner = loop_runner
+        else:
+            self._loop = asyncio.new_event_loop()
+            self._owns_loop = True
+            self._loop_runner = self._loop.run_until_complete
 
     def start(self) -> bool:
         """Start the browser engine. Returns True on success, False on any exception."""
@@ -87,3 +94,6 @@ class RealBrowserLauncher:
                         self._stop_error_handler(exc)
         finally:
             self._started = False
+            if self._owns_loop and self._loop is not None:
+                if not self._loop.is_closed():
+                    self._loop.close()
