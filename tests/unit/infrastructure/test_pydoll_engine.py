@@ -782,7 +782,9 @@ class TestPydollEngineInjectStorageConfig:
             coro: object, *, timeout: float, **kw: object
         ) -> object:
             captured_timeout.append(timeout)
-            return await _real_wait_for(coro, timeout=timeout, **kw)  # type: ignore[arg-type]
+            return await _real_wait_for(  # type: ignore[arg-type]
+                coro, timeout=timeout, **kw
+            )
 
         with patch(
             "infrastructure.browser.pydoll_engine.Chrome",
