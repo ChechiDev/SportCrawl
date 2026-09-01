@@ -487,3 +487,176 @@ class TestEnvTokenProviderInjectableReader:
         # Use _env_only_token_reader so the test is isolated from any on-disk .env file
         provider = EnvTokenProvider(token_reader=_env_only_token_reader)
         assert provider.is_ready() is False
+
+
+# ---------------------------------------------------------------------------
+# TestDefaultHostReader
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultHostReader:
+    def test_reads_from_os_environ(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_HOST", "synthetic-env-host")
+        from cli.clearance_providers import _HOST_ENV_KEY, _default_host_reader
+
+        assert _HOST_ENV_KEY == "SCRAPING__WORK_SERVER_HOST"
+        assert _default_host_reader() == "synthetic-env-host"
+
+    def test_falls_back_to_dotenv_file(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_HOST", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__WORK_SERVER_HOST=synthetic-dotenv-host\n")
+        from cli.clearance_providers import _default_host_reader
+
+        assert _default_host_reader() == "synthetic-dotenv-host"
+
+    def test_env_wins_over_dotenv(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__WORK_SERVER_HOST=dotenv-host\n")
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_HOST", "env-wins-host")
+        from cli.clearance_providers import _default_host_reader
+
+        assert _default_host_reader() == "env-wins-host"
+
+    def test_missing_dotenv_file_returns_empty(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_HOST", raising=False)
+        from cli.clearance_providers import _default_host_reader
+
+        assert _default_host_reader() == ""
+
+    def test_whitespace_only_in_dotenv_returns_empty(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__WORK_SERVER_HOST", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__WORK_SERVER_HOST=   \n")
+        from cli.clearance_providers import _default_host_reader
+
+        assert _default_host_reader() == ""
+
+
+# ---------------------------------------------------------------------------
+# TestEnvTargetProviderInjectableReader
+# ---------------------------------------------------------------------------
+
+
+class TestEnvTargetProviderInjectableReader:
+    def test_ready_when_host_set(self, monkeypatch) -> None:
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_HOST", "127.0.0.1")
+        from cli.clearance_providers import EnvTargetProvider, _env_only_host_reader
+
+        assert EnvTargetProvider(host_reader=_env_only_host_reader).is_ready() is True
+
+    def test_not_ready_when_host_empty(self, monkeypatch) -> None:
+        monkeypatch.setenv("SCRAPING__WORK_SERVER_HOST", "")
+        from cli.clearance_providers import EnvTargetProvider, _env_only_host_reader
+
+        assert EnvTargetProvider(host_reader=_env_only_host_reader).is_ready() is False
+
+    def test_uses_injected_reader(self) -> None:
+        from cli.clearance_providers import EnvTargetProvider
+
+        provider = EnvTargetProvider(host_reader=lambda: "injected-host")
+        assert provider.is_ready() is True
+
+
+# ---------------------------------------------------------------------------
+# TestDefaultBrowserParamsReader
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultBrowserParamsReader:
+    def test_reads_from_os_environ(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SCRAPING__CHROME_PROFILE_DIR", "/tmp/synthetic-profile")
+        from cli.clearance_providers import (
+            _BROWSER_PARAMS_ENV_KEY,
+            _default_browser_params_reader,
+        )
+
+        assert _BROWSER_PARAMS_ENV_KEY == "SCRAPING__CHROME_PROFILE_DIR"
+        assert _default_browser_params_reader() == "/tmp/synthetic-profile"
+
+    def test_falls_back_to_dotenv_file(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__CHROME_PROFILE_DIR", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__CHROME_PROFILE_DIR=/tmp/dotenv-profile\n")
+        from cli.clearance_providers import _default_browser_params_reader
+
+        assert _default_browser_params_reader() == "/tmp/dotenv-profile"
+
+    def test_env_wins_over_dotenv(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__CHROME_PROFILE_DIR=/tmp/dotenv-profile\n")
+        monkeypatch.setenv("SCRAPING__CHROME_PROFILE_DIR", "/tmp/env-wins-profile")
+        from cli.clearance_providers import _default_browser_params_reader
+
+        assert _default_browser_params_reader() == "/tmp/env-wins-profile"
+
+    def test_missing_dotenv_file_returns_empty(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__CHROME_PROFILE_DIR", raising=False)
+        from cli.clearance_providers import _default_browser_params_reader
+
+        assert _default_browser_params_reader() == ""
+
+    def test_whitespace_only_in_dotenv_returns_empty(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SCRAPING__CHROME_PROFILE_DIR", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SCRAPING__CHROME_PROFILE_DIR=   \n")
+        from cli.clearance_providers import _default_browser_params_reader
+
+        assert _default_browser_params_reader() == ""
+
+
+# ---------------------------------------------------------------------------
+# TestEnvBrowserParameterProviderInjectableReader
+# ---------------------------------------------------------------------------
+
+
+class TestEnvBrowserParameterProviderInjectableReader:
+    def test_ready_when_profile_set(self, monkeypatch) -> None:
+        monkeypatch.setenv("SCRAPING__CHROME_PROFILE_DIR", "/tmp/synthetic-profile")
+        from cli.clearance_providers import (
+            EnvBrowserParameterProvider,
+            _env_only_browser_params_reader,
+        )
+
+        assert (
+            EnvBrowserParameterProvider(
+                profile_dir_reader=_env_only_browser_params_reader
+            ).is_ready()
+            is True
+        )
+
+    def test_not_ready_when_profile_empty(self, monkeypatch) -> None:
+        monkeypatch.setenv("SCRAPING__CHROME_PROFILE_DIR", "")
+        from cli.clearance_providers import (
+            EnvBrowserParameterProvider,
+            _env_only_browser_params_reader,
+        )
+
+        assert (
+            EnvBrowserParameterProvider(
+                profile_dir_reader=_env_only_browser_params_reader
+            ).is_ready()
+            is False
+        )
+
+    def test_uses_injected_reader(self) -> None:
+        from cli.clearance_providers import EnvBrowserParameterProvider
+
+        provider = EnvBrowserParameterProvider(
+            profile_dir_reader=lambda: "/tmp/injected-profile"
+        )
+        assert provider.is_ready() is True
