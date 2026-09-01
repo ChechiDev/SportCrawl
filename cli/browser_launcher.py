@@ -20,10 +20,11 @@ class RealBrowserLauncher:
         engine_starter: Callable[[], Coroutine[Any, Any, None]],
         cdp_probe: Callable[[], Coroutine[Any, Any, None]],
         engine_stopper: Callable[[], Coroutine[Any, Any, None]] | None = None,
-        # Default is asyncio.run — safe only when called from a synchronous CLI context
-        # with no running event loop. Override with a compatible runner (e.g.
-        # asyncio.get_event_loop().run_until_complete) when embedding in an async host.
-        loop_runner: Callable[[Coroutine[Any, Any, Any]], Any] = asyncio.run,
+        # Pass None (default) to let the launcher own a persistent event loop shared
+        # across start() and stop() — prevents pydoll's async objects from being
+        # accessed across two different event loops. Pass an explicit callable to
+        # override (e.g. an existing loop's run_until_complete in tests).
+        loop_runner: Callable[[Coroutine[Any, Any, Any]], Any] | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
         # Optional callback invoked when engine_stopper raises. Receives the exception;
@@ -33,11 +34,18 @@ class RealBrowserLauncher:
         self._engine_starter = engine_starter
         self._cdp_probe = cdp_probe
         self._engine_stopper = engine_stopper
-        self._loop_runner = loop_runner
         self._clock = clock
         self._sleeper = sleeper
         self._stop_error_handler = stop_error_handler
         self._started: bool = False
+        if loop_runner is not None:
+            self._loop: asyncio.AbstractEventLoop | None = None
+            self._owns_loop = False
+            self._loop_runner: Callable[[Coroutine[Any, Any, Any]], Any] = loop_runner
+        else:
+            self._loop = asyncio.new_event_loop()
+            self._owns_loop = True
+            self._loop_runner = self._loop.run_until_complete
 
     def start(self) -> bool:
         """Start the browser engine. Returns True on success, False on any exception."""
@@ -87,3 +95,6 @@ class RealBrowserLauncher:
                         self._stop_error_handler(exc)
         finally:
             self._started = False
+            if self._owns_loop and self._loop is not None:
+                if not self._loop.is_closed():
+                    self._loop.close()

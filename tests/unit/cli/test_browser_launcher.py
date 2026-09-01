@@ -403,6 +403,102 @@ class TestStop:
 
 
 # ---------------------------------------------------------------------------
+# TestLoopOwnership
+# ---------------------------------------------------------------------------
+
+
+class TestLoopOwnership:
+    def test_default_path_uses_same_loop_for_start_and_stop(self) -> None:
+        """Starter and stopper coroutines must run on the same event loop."""
+        loop_ids: list[int] = []
+
+        async def starter() -> None:
+            import asyncio as _asyncio
+
+            loop_ids.append(id(_asyncio.get_running_loop()))
+
+        async def stopper() -> None:
+            import asyncio as _asyncio
+
+            loop_ids.append(id(_asyncio.get_running_loop()))
+
+        launcher = RealBrowserLauncher(
+            engine_starter=lambda: starter(),
+            cdp_probe=_success_factory,
+            engine_stopper=lambda: stopper(),
+            # No loop_runner injected — default path uses persistent loop
+        )
+        launcher.start()
+        launcher.stop()
+        assert len(loop_ids) == 2, "both starter and stopper must run"
+        assert loop_ids[0] == loop_ids[1], (
+            "starter and stopper must execute on the SAME event loop object"
+        )
+
+    def test_loop_is_closed_after_stop(self) -> None:
+        """After stop(), the internally-owned loop must be closed."""
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            # No loop_runner injected — launcher owns the loop
+        )
+        launcher.start()
+        launcher.stop()
+        assert launcher._loop is not None  # noqa: SLF001
+        assert launcher._loop.is_closed(), "owned loop must be closed after stop()"  # noqa: SLF001, E501
+
+    def test_injected_runner_still_works(self) -> None:
+        """When a custom loop_runner is injected, start/stop still work correctly."""
+        import asyncio
+
+        custom_loop = asyncio.new_event_loop()
+        try:
+            called: list[str] = []
+
+            async def starter() -> None:
+                called.append("start")
+
+            async def stopper() -> None:
+                called.append("stop")
+
+            launcher = RealBrowserLauncher(
+                engine_starter=lambda: starter(),
+                cdp_probe=_success_factory,
+                engine_stopper=lambda: stopper(),
+                loop_runner=custom_loop.run_until_complete,
+            )
+            assert launcher.start() is True
+            launcher.stop()
+            assert called == ["start", "stop"]
+        finally:
+            custom_loop.close()
+
+    def test_wait_cdp_ready_works_on_owned_loop_path(self) -> None:
+        """wait_cdp_ready must succeed on the default owned-loop path."""
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            # No loop_runner — owned loop path
+        )
+        assert launcher.start() is True
+        ready, elapsed = launcher.wait_cdp_ready(timeout_s=5)
+        assert ready is True
+        launcher.stop()
+
+    def test_start_after_stop_returns_false_gracefully(self) -> None:
+        """start() after stop() (closed loop) must not raise — returns False."""
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+        )
+        launcher.start()
+        launcher.stop()
+        # Loop is now closed; start() must catch the RuntimeError and return False.
+        result = launcher.start()
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
 # Stubs for harness integration tests
 # ---------------------------------------------------------------------------
 
