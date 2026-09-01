@@ -758,17 +758,52 @@ class TestPydollEngineInjectStorageConfig:
                 await engine.inject_storage_config({"key": "value"})
 
     async def test_times_out_and_raises_page_load_error_when_cdp_hangs(self) -> None:
-        """inject_storage_config() must raise PageLoadError when CDP hangs."""
+        """inject_storage_config() must call asyncio.wait_for with timeout=15.0.
+
+        Verified by mocking asyncio.wait_for so the internal 15s timeout
+        contract is enforced regardless of the outer test guard.
+        """
         import asyncio as _asyncio
+
+        from infrastructure.browser import pydoll_engine as _engine_mod
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(return_value={"result": {"value": True}})
+        mock_tab.go_to = AsyncMock()
+        mock_tab.page_source = _html_coroutine("<html></html>")
+        mock_browser = AsyncMock()
+        mock_browser.start = AsyncMock(return_value=mock_tab)
+
+        captured_timeout: list[float] = []
+        _real_wait_for = _asyncio.wait_for
+
+        async def _spy_wait_for(
+            coro: object, *, timeout: float, **kw: object
+        ) -> object:
+            captured_timeout.append(timeout)
+            return await _real_wait_for(coro, timeout=timeout, **kw)  # type: ignore[arg-type]
+
+        with patch(
+            "infrastructure.browser.pydoll_engine.Chrome",
+            return_value=mock_browser,
+        ), patch.object(_engine_mod.asyncio, "wait_for", side_effect=_spy_wait_for):
+            engine = PydollEngine()
+            await engine.start()
+            await engine.inject_storage_config({"key": "value"})
+
+        assert captured_timeout == [15.0], (
+            f"inject_storage_config must use timeout=15.0, got {captured_timeout}"
+        )
+
+    async def test_times_out_and_raises_page_load_error_via_timeout_error(self) -> None:
+        """inject_storage_config() wraps asyncio.TimeoutError as PageLoadError."""
 
         from core.exceptions.scraper import PageLoadError
         from infrastructure.browser.pydoll_engine import PydollEngine
 
-        async def _hang(_cmd: object = None) -> None:
-            await _asyncio.sleep(9999)
-
         mock_tab = AsyncMock()
-        mock_tab._execute_command = _hang
+        mock_tab._execute_command = AsyncMock(side_effect=TimeoutError())
         mock_tab.go_to = AsyncMock()
         mock_tab.page_source = _html_coroutine("<html></html>")
         mock_browser = AsyncMock()
@@ -782,10 +817,7 @@ class TestPydollEngineInjectStorageConfig:
             await engine.start()
 
             with pytest.raises(PageLoadError, match="inject_storage_config"):
-                await _asyncio.wait_for(
-                    engine.inject_storage_config({"key": "value"}),
-                    timeout=30,
-                )
+                await engine.inject_storage_config({"key": "value"})
 
     async def test_wraps_attribute_error_as_page_load_error(self) -> None:
         """AttributeError from pydoll API change must not escape as unhandled."""

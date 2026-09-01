@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 
 _CHALLENGE_MARKERS = ("just a moment", "checking your browser")
+
+# Maximum seconds to wait for a single CDP command during storage injection.
+# Chosen to exceed realistic CDP round-trip latency (< 1 s) while keeping the
+# browser-start gate bounded when the pipe is unresponsive.
+_INJECT_STORAGE_TIMEOUT_S: float = 15.0
 _EXTENSION_PATH = Path(__file__).parents[2] / "extensions" / "sportcrawl-chrome"
 _CHALLENGE_TIMEOUT = 120  # seconds — Turnstile managed challenge can take 30–90s
 
@@ -332,11 +337,18 @@ class PydollEngine(ScriptableEngine):
         )
         try:
             await asyncio.wait_for(
-                self._tab._execute_command(cmd), timeout=15.0
+                self._tab._execute_command(cmd),
+                timeout=_INJECT_STORAGE_TIMEOUT_S,
             )
-        except Exception as exc:
+        except (
+            TimeoutError,
+            PydollException,
+            OSError,
+            ConnectionError,
+            AttributeError,
+        ) as exc:
             raise PageLoadError(
-                f"inject_storage_config failed: {exc}", url=""
+                "inject_storage_config failed", url=""
             ) from exc
 
     async def get_page_source(self) -> str:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 import urllib.request
 import warnings
@@ -517,16 +518,16 @@ def smoke_clearance(
             Runs on the same event loop as the browser launcher so all pydoll async
             objects remain on one loop throughout the session.
             """
-            if _loop.is_closed() or _loop.is_running():
+            _is_closed = _loop.is_closed()
+            _is_running = _loop.is_running()
+            if _is_closed or _is_running:
                 raise RuntimeError(
                     "extension config loop is not usable "
-                    f"(closed={_loop.is_closed()}, running={_loop.is_running()})"
+                    f"(closed={_is_closed}, running={_is_running})"
                 )
-            import logging as _logging
-
-            _pydoll_logger = _logging.getLogger("pydoll")
+            _pydoll_logger = logging.getLogger("pydoll")
             _orig_level = _pydoll_logger.level
-            _pydoll_logger.setLevel(_logging.WARNING)
+            _pydoll_logger.setLevel(logging.WARNING)
             try:
                 _loop.run_until_complete(
                     engine.inject_storage_config(

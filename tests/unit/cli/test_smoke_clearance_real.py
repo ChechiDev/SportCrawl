@@ -306,5 +306,8 @@ class TestExtensionConfigInjectorSeam:
             )
             mock_logger.error.assert_called_once()
             call_args = mock_logger.error.call_args
-            # Must log with only the exception type name — no message content
-            assert "ValueError" in str(call_args)
+            # The second positional arg must be the type name string, NOT embedded
+            # in the format string — enforces that no exception message content leaks.
+            assert call_args.args[1] == "ValueError", (
+                f"Expected type name as positional arg, got call_args={call_args}"
+            )
