@@ -445,7 +445,7 @@ class TestLoopOwnership:
         launcher.start()
         launcher.stop()
         assert launcher._loop is not None  # noqa: SLF001
-        assert launcher._loop.is_closed(), "owned loop must be closed after stop()"  # noqa: SLF001
+        assert launcher._loop.is_closed(), "owned loop must be closed after stop()"  # noqa: SLF001, E501
 
     def test_injected_runner_still_works(self) -> None:
         """When a custom loop_runner is injected, start/stop still work correctly."""
@@ -472,6 +472,30 @@ class TestLoopOwnership:
             assert called == ["start", "stop"]
         finally:
             custom_loop.close()
+
+    def test_wait_cdp_ready_works_on_owned_loop_path(self) -> None:
+        """wait_cdp_ready must succeed on the default owned-loop path."""
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+            # No loop_runner — owned loop path
+        )
+        assert launcher.start() is True
+        ready, elapsed = launcher.wait_cdp_ready(timeout_s=5)
+        assert ready is True
+        launcher.stop()
+
+    def test_start_after_stop_returns_false_gracefully(self) -> None:
+        """start() after stop() (closed loop) must not raise — returns False."""
+        launcher = RealBrowserLauncher(
+            engine_starter=_success_factory,
+            cdp_probe=_success_factory,
+        )
+        launcher.start()
+        launcher.stop()
+        # Loop is now closed; start() must catch the RuntimeError and return False.
+        result = launcher.start()
+        assert result is False
 
 
 # ---------------------------------------------------------------------------
