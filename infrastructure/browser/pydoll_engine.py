@@ -301,6 +301,44 @@ class PydollEngine(ScriptableEngine):
         except (PydollException, OSError, ConnectionError) as exc:
             raise PageLoadError(f"execute_script failed: {exc}", url="") from exc
 
+    async def inject_storage_config(self, config: dict[str, object]) -> None:
+        """Inject *config* into chrome.storage.local via CDP Runtime.callFunctionOn.
+
+        The config dict is passed as a structured CDP argument — no values are
+        serialized into the JavaScript function body string, so bearer tokens and
+        other secret values never appear in any script string that could be logged.
+
+        Do NOT use dataclasses.asdict() to build *config* — it bypasses any custom
+        __repr__ redaction. Build the dict explicitly from non-secret and secret
+        fields with awareness of which values are sensitive.
+        """
+        from pydoll.commands.runtime_commands import RuntimeCommands
+
+        if self._tab is None:
+            raise PageLoadError(
+                "No active tab — call start() before inject_storage_config()", url=""
+            )
+        cmd = RuntimeCommands.call_function_on(
+            function_declaration=(
+                "function(cfg) {"
+                " return new Promise(function(resolve) {"
+                " chrome.storage.local.set(cfg, function() { resolve(true); });"
+                " });"
+                "}"
+            ),
+            arguments=[{"value": config}],
+            await_promise=True,
+            return_by_value=True,
+        )
+        try:
+            await asyncio.wait_for(
+                self._tab._execute_command(cmd), timeout=15.0
+            )
+        except Exception as exc:
+            raise PageLoadError(
+                f"inject_storage_config failed: {exc}", url=""
+            ) from exc
+
     async def get_page_source(self) -> str:
         """Return the current page's outer HTML without navigating."""
         if self._tab is None:

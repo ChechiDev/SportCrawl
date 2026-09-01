@@ -31,6 +31,7 @@ from cli.clearance_providers import (  # noqa: E402
     GhCICheckProvider,
     LabelTargetValidator,
 )
+from cli.extension_config import smoke_extension_config  # noqa: E402
 from cli.smoke_clearance_real import (  # noqa: E402
     ClearanceResult,
     HarnessStatus,
@@ -495,6 +496,52 @@ def smoke_clearance(
         async def _engine_stopper() -> None:
             await engine.close()
 
+        _ext_cfg = smoke_extension_config(
+            url=f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}",
+            token=_token,
+        )
+
+        # One event loop shared across browser start, CDP probe, engine stop, and
+        # extension config injection — pydoll's async objects bind to the loop on
+        # creation; using separate loops raises RuntimeError on the second access.
+        _loop = asyncio.new_event_loop()
+
+        def _extension_config_injector() -> None:
+            """Inject extension runtime config via CDP Runtime.callFunctionOn.
+
+            Config values are passed as a structured CDP argument dict — no values
+            are serialised into the JavaScript function body string. The bearer
+            token therefore never appears in any script string that could be logged
+            by pydoll or a future debug wrapper.
+
+            Runs on the same event loop as the browser launcher so all pydoll async
+            objects remain on one loop throughout the session.
+            """
+            if _loop.is_closed() or _loop.is_running():
+                raise RuntimeError(
+                    "extension config loop is not usable "
+                    f"(closed={_loop.is_closed()}, running={_loop.is_running()})"
+                )
+            import logging as _logging
+
+            _pydoll_logger = _logging.getLogger("pydoll")
+            _orig_level = _pydoll_logger.level
+            _pydoll_logger.setLevel(_logging.WARNING)
+            try:
+                _loop.run_until_complete(
+                    engine.inject_storage_config(
+                        {
+                            "work_server_url": _ext_cfg.work_server_url,
+                            "work_server_token": _ext_cfg.work_server_token,
+                            "profile_id": _ext_cfg.profile_id,
+                            "worker_id": _ext_cfg.worker_id,
+                            "disable_task_polling": _ext_cfg.disable_task_polling,
+                        }
+                    )
+                )
+            finally:
+                _pydoll_logger.setLevel(_orig_level)
+
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
             browser_params=EnvBrowserParameterProvider(),
@@ -513,6 +560,8 @@ def smoke_clearance(
                 engine_starter=_engine_starter,
                 cdp_probe=_cdp_probe,
                 engine_stopper=_engine_stopper,
+                # Share the explicit loop so browser and injector use the same one.
+                loop_runner=_loop.run_until_complete,
             ),
             clearance_observer=RealClearanceObserver(
                 clearance_getter=_make_clearance_getter(
@@ -528,7 +577,22 @@ def smoke_clearance(
         )
 
         harness = RealClearanceHarness()
-        report = harness.run(providers, seams)
+        try:
+            report = harness.run(
+                providers,
+                seams,
+                extension_config_injector=_extension_config_injector,
+            )
+        finally:
+            if not _loop.is_closed():
+                pending = asyncio.all_tasks(_loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    _loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+                _loop.close()
 
         console.print(
             "[bold]smoke-clearance --real-clearance[/bold] — real clearance harness"
