@@ -42,6 +42,7 @@ from cli.smoke_clearance_real import (  # noqa: E402
 )
 from cli.work_server_lifecycle import RealWorkServerLifecycle  # noqa: E402
 from config.settings import Settings  # noqa: E402
+from core.exceptions.scraper import PageLoadError  # noqa: E402
 from infrastructure.browser.pydoll_engine import PydollEngine  # noqa: E402
 from infrastructure.work_server.runtime import serve  # noqa: E402
 
@@ -559,10 +560,26 @@ def smoke_clearance(
                     "target navigation loop is not usable "
                     f"(closed={_is_closed}, running={_is_running})"
                 )
-            # Navigate to the work server root — loopback-only (asserted by gate 2).
-            # The URL is the same base used by every other real-clearance request.
-            _nav_url = f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}"
-            _loop.run_until_complete(engine.navigate(_nav_url))
+            # Navigate to the generic scraping target URL so the Cloudflare
+            # challenge fires and a cf_clearance cookie is issued.
+            # Read from SCRAPING__TARGET_URL (env-first, .env fallback) —
+            # no domain is hardcoded here.
+            from dotenv import dotenv_values as _dotenv_values
+
+            _env_overlay = {**_dotenv_values(".env"), **os.environ}
+            _nav_url = (_env_overlay.get("SCRAPING__TARGET_URL") or "").strip()
+            if not _nav_url:
+                raise RuntimeError(
+                    "SCRAPING__TARGET_URL is not set — "
+                    "cannot navigate to clearance target"
+                )
+            try:
+                _loop.run_until_complete(engine.navigate(_nav_url))
+            except PageLoadError as _nav_exc:
+                # Re-raise without the raw URL so it never reaches logs or
+                # exception messages.  The harness maps PageLoadError to BLOCKED
+                # at the target_navigation gate.
+                raise PageLoadError("target navigation failed") from _nav_exc
 
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
