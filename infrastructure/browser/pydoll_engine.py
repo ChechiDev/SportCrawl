@@ -351,6 +351,103 @@ class PydollEngine(ScriptableEngine):
                 "inject_storage_config failed", url=""
             ) from exc
 
+    async def inject_storage_config_to_extension(
+        self, config: dict[str, object]
+    ) -> None:
+        """Inject config into chrome.storage.local via the extension SW context.
+
+        Uses Target.getTargets → Target.attachToTarget → Runtime.callFunctionOn
+        on the SW session, NOT on the main tab. Config values are passed as
+        structured CDP arguments — never serialized into the JS function body.
+        """
+        if self._tab is None:
+            raise PageLoadError(
+                "No active tab — call start() before"
+                " inject_storage_config_to_extension()",
+                url="",
+            )
+        try:
+            # Step 1: find the extension service worker target
+            get_targets_cmd: dict[str, Any] = {
+                "method": "Target.getTargets",
+                "params": {},
+            }
+            targets_result = await asyncio.wait_for(
+                self._tab._execute_command(get_targets_cmd),
+                timeout=_INJECT_STORAGE_TIMEOUT_S,
+            )
+            target_infos = targets_result.get("result", {}).get("targetInfos", [])
+            sw_target = next(
+                (
+                    t
+                    for t in target_infos
+                    if t.get("type") == "service_worker"
+                    and t.get("url", "").startswith("chrome-extension://")
+                ),
+                None,
+            )
+            if sw_target is None:
+                raise PageLoadError(
+                    "inject_storage_config_to_extension:"
+                    " no extension service-worker target found",
+                    url="",
+                )
+
+            # Step 2: attach to SW target
+            target_id: str = sw_target["targetId"]
+            attach_cmd: dict[str, Any] = {
+                "method": "Target.attachToTarget",
+                "params": {"targetId": target_id, "flatten": True},
+            }
+            attach_result = await asyncio.wait_for(
+                self._tab._execute_command(attach_cmd),
+                timeout=_INJECT_STORAGE_TIMEOUT_S,
+            )
+            session_id: str = attach_result.get("result", {}).get("sessionId", "")
+
+            # Step 3: get global object in SW context
+            eval_cmd: dict[str, Any] = {
+                "method": "Runtime.evaluate",
+                "params": {"expression": "this", "returnByValue": False},
+                "sessionId": session_id,
+            }
+            eval_result = await asyncio.wait_for(
+                self._tab._execute_command(eval_cmd),
+                timeout=_INJECT_STORAGE_TIMEOUT_S,
+            )
+            object_id: str = (
+                eval_result.get("result", {}).get("result", {}).get("objectId", "")
+            )
+
+            # Step 4: call function on SW global — config as structured arg, not in body
+            _fn = "function(cfg) { chrome.storage.local.set(cfg); }"
+            call_cmd: dict[str, Any] = {
+                "method": "Runtime.callFunctionOn",
+                "params": {
+                    "functionDeclaration": _fn,
+                    "objectId": object_id,
+                    "arguments": [{"value": config}],
+                },
+                "sessionId": session_id,
+            }
+            await asyncio.wait_for(
+                self._tab._execute_command(call_cmd),
+                timeout=_INJECT_STORAGE_TIMEOUT_S,
+            )
+        except PageLoadError:
+            raise
+        except (
+            TimeoutError,
+            PydollException,
+            OSError,
+            ConnectionError,
+            AttributeError,
+            KeyError,
+        ) as exc:
+            raise PageLoadError(
+                "inject_storage_config_to_extension failed", url=""
+            ) from exc
+
     async def get_page_source(self) -> str:
         """Return the current page's outer HTML without navigating."""
         if self._tab is None:
