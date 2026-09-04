@@ -992,7 +992,7 @@ class TestPydollEngineInjectStorageConfigToExtension:
         from infrastructure.browser.pydoll_engine import PydollEngine
 
         sentinel = "SENTINEL_SECRET_TOKEN_ABC123"
-        config = {
+        config: dict[str, object] = {
             "work_server_url": "http://127.0.0.1:9731",
             "work_server_token": sentinel,
             "profile_id": "smoke",
