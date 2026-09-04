@@ -311,3 +311,100 @@ class TestExtensionConfigInjectorSeam:
             assert call_args.args[1] == "ValueError", (
                 f"Expected type name as positional arg, got call_args={call_args}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Tests — target_navigator seam
+# ---------------------------------------------------------------------------
+
+
+class TestTargetNavigatorSeam:
+    def test_navigator_called_after_inject_and_before_observe(self) -> None:
+        """target_navigator is called after extension_config_injector and before observe."""  # noqa: E501
+        call_log: list[str] = []
+
+        class _TrackingObserver(_FakeClearanceObserver):
+            def observe(self, timeout_s: int) -> ClearanceResult:
+                call_log.append("observe")
+                return super().observe(timeout_s)
+
+        def _injector() -> None:
+            call_log.append("inject")
+
+        def _navigator() -> None:
+            call_log.append("navigator")
+
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(clearance_observer=_TrackingObserver()),
+            extension_config_injector=_injector,
+            target_navigator=_navigator,
+        )
+
+        assert call_log == ["inject", "navigator", "observe"], (
+            f"Expected ['inject', 'navigator', 'observe'], got {call_log}"
+        )
+
+    def test_navigator_raises_returns_blocked_at_target_navigation(self) -> None:
+        """When target_navigator raises, status is BLOCKED at target_navigation gate."""
+
+        def _raising_navigator() -> None:
+            raise RuntimeError("navigation failed")
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            target_navigator=_raising_navigator,
+        )
+
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == "target_navigation"
+
+    def test_navigator_raises_clearance_observer_not_called(self) -> None:
+        """When target_navigator raises, clearance observer must not be called."""
+        observer = _FakeClearanceObserver()
+
+        def _raising_navigator() -> None:
+            raise RuntimeError("nav error")
+
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(clearance_observer=observer),
+            target_navigator=_raising_navigator,
+        )
+
+        assert observer.call_count == 0, (
+            "observer must not be called when navigator raises"
+        )
+
+    def test_navigator_none_skips_gate_and_harness_passes(self) -> None:
+        """When target_navigator is None (default), gate is skipped and harness passes."""  # noqa: E501
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+        )
+
+        assert report.status == HarnessStatus.PASS
+        assert "target_navigation" not in report.gate_results
+
+    def test_navigator_called_when_provided_harness_passes(self) -> None:
+        """A non-raising target_navigator results in PASS with gate recorded."""
+        navigator_called = [False]
+
+        def _navigator() -> None:
+            navigator_called[0] = True
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            target_navigator=_navigator,
+        )
+
+        assert navigator_called[0] is True
+        assert report.status == HarnessStatus.PASS
+        assert report.gate_results.get("target_navigation") == GateStatus.PASS

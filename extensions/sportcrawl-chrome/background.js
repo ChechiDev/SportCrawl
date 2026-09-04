@@ -86,7 +86,8 @@ function persistStatus(status) {
 // CF clearance capture
 // ---------------------------------------------------------------------------
 
-chrome.cookies.onChanged.addListener((details) => {
+chrome.cookies.onChanged.addListener(async (details) => {
+  await loadConfig(); // reload config in case SW was terminated and restarted
   const cookie = details.cookie;
   // removed covers all removal causes; explicit set fires with removed=false
   const isSet = !details.removed;

@@ -238,6 +238,7 @@ class RealClearanceHarness:
     GATE_BROWSER_START = "browser_start"
     GATE_CDP_READY = "cdp_ready"
     GATE_EXTENSION_CONFIG_INJECT = "extension_config_inject"
+    GATE_TARGET_NAVIGATION = "target_navigation"
     GATE_CLEARANCE_OBSERVED = "clearance_observed"
     GATE_EXPIRES_AT = "expires_at_guard"
     GATE_POST_CLEARANCE = "post_clearance"
@@ -259,6 +260,7 @@ class RealClearanceHarness:
         providers: RealClearanceProviders,
         seams: RealClearanceSeams,
         extension_config_injector: Callable[[], None] | None = None,
+        target_navigator: Callable[[], None] | None = None,
     ) -> HarnessReport:
         gate_results: dict[str, GateStatus] = {}
         evidence: dict[str, object] = {}
@@ -453,6 +455,28 @@ class RealClearanceHarness:
                         error_gate=error_gate,
                     )
                 gate_results[self.GATE_EXTENSION_CONFIG_INJECT] = GateStatus.PASS
+
+            # Gate 11c: Target navigation (optional seam)
+            if target_navigator is not None:
+                try:
+                    target_navigator()
+                except Exception as exc:
+                    logger.error(
+                        "target_navigation failed: %s",
+                        type(exc).__name__,
+                    )
+                    gate_results[self.GATE_TARGET_NAVIGATION] = GateStatus.BLOCKED
+                    error_gate = self.GATE_TARGET_NAVIGATION
+                    return HarnessReport(
+                        status=HarnessStatus.BLOCKED,
+                        gate_results=gate_results,
+                        evidence={
+                            **evidence,
+                            "target_navigate_error_type": type(exc).__name__,
+                        },
+                        error_gate=error_gate,
+                    )
+                gate_results[self.GATE_TARGET_NAVIGATION] = GateStatus.PASS
 
             # Gate 12: Clearance observed within timeout
             try:

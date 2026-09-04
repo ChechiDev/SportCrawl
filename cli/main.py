@@ -543,6 +543,27 @@ def smoke_clearance(
             finally:
                 _pydoll_logger.setLevel(_orig_level)
 
+        def _target_navigator() -> None:
+            """Navigate to the configured target URL after extension config injection.
+
+            The target URL is read generically from the environment — no domain
+            is hardcoded here. Navigation failure raises PageLoadError, which the
+            harness maps to BLOCKED at the target_navigation gate.
+
+            Runs on the same event loop as browser start and extension injection.
+            """
+            _is_closed = _loop.is_closed()
+            _is_running = _loop.is_running()
+            if _is_closed or _is_running:
+                raise RuntimeError(
+                    "target navigation loop is not usable "
+                    f"(closed={_is_closed}, running={_is_running})"
+                )
+            # Navigate to the work server root — loopback-only (asserted by gate 2).
+            # The URL is the same base used by every other real-clearance request.
+            _nav_url = f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}"
+            _loop.run_until_complete(engine.navigate(_nav_url))
+
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
             browser_params=EnvBrowserParameterProvider(),
@@ -583,6 +604,7 @@ def smoke_clearance(
                 providers,
                 seams,
                 extension_config_injector=_extension_config_injector,
+                target_navigator=_target_navigator,
             )
         finally:
             if not _loop.is_closed():

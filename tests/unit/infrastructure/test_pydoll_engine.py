@@ -842,3 +842,255 @@ class TestPydollEngineInjectStorageConfig:
 
             with pytest.raises(PageLoadError, match="inject_storage_config"):
                 await engine.inject_storage_config({"key": "value"})
+
+
+# ---------------------------------------------------------------------------
+# inject_storage_config_to_extension() — SW target CDP injection
+# ---------------------------------------------------------------------------
+
+
+class TestPydollEngineInjectStorageConfigToExtension:
+    """Tests for inject_storage_config_to_extension() — injects via the
+    extension's service-worker CDP session, not the main tab context.
+    """
+
+    @staticmethod
+    def _make_sw_fake_execute(
+        sw_target_id: str = "sw-target-1",
+        sw_url: str = "chrome-extension://abc123/background.js",
+        session_id: str = "session-abc",
+        object_id: str = "obj-1",
+    ):
+        """Return an async side_effect that fakes SW CDP round-trips."""
+
+        async def _fake(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": sw_target_id,
+                                "type": "service_worker",
+                                "url": sw_url,
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": session_id}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": object_id}}}
+            if method == "Runtime.callFunctionOn":
+                return {"result": {"result": {"value": True}}}
+            return {}
+
+        return _fake
+
+    async def test_raises_page_load_error_when_tab_is_none(self) -> None:
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        engine = PydollEngine()
+        assert engine._tab is None
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+    async def test_raises_page_load_error_when_no_extension_sw_target_found(
+        self,
+    ) -> None:
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _fake_execute(cmd: dict) -> dict:
+            if cmd.get("method") == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "page-1",
+                                "type": "page",
+                                "url": "https://example.com",
+                            }
+                        ]
+                    }
+                }
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_execute)
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+    async def test_sends_get_targets_command(self) -> None:
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_sw_fake_execute()
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension({"key": "value"})
+
+        calls = mock_tab._execute_command.call_args_list
+        methods = [c[0][0].get("method") for c in calls]
+        assert "Target.getTargets" in methods
+
+    async def test_attaches_to_extension_sw_target(self) -> None:
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_sw_fake_execute(sw_target_id="sw-target-1")
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension({"key": "value"})
+
+        calls = mock_tab._execute_command.call_args_list
+        attach_calls = [
+            c for c in calls if c[0][0].get("method") == "Target.attachToTarget"
+        ]
+        assert len(attach_calls) == 1
+        params = attach_calls[0][0][0].get("params", {})
+        assert params.get("targetId") == "sw-target-1"
+
+    async def test_calls_function_on_sw_context_not_tab_context(self) -> None:
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_sw_fake_execute(session_id="session-abc")
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension({"key": "value"})
+
+        calls = mock_tab._execute_command.call_args_list
+        call_fn_calls = [
+            c for c in calls if c[0][0].get("method") == "Runtime.callFunctionOn"
+        ]
+        assert len(call_fn_calls) == 1
+        cmd = call_fn_calls[0][0][0]
+        assert cmd.get("sessionId") == "session-abc", (
+            f"callFunctionOn must carry the SW session ID, got cmd={cmd}"
+        )
+
+    async def test_token_not_in_js_function_body(self) -> None:
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        sentinel = "SENTINEL_SECRET_TOKEN_ABC123"
+        config: dict[str, object] = {
+            "work_server_url": "http://127.0.0.1:9731",
+            "work_server_token": sentinel,
+            "profile_id": "smoke",
+            "worker_id": "smoke",
+        }
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_sw_fake_execute()
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension(config)
+
+        for call in mock_tab._execute_command.call_args_list:
+            cmd = call[0][0]
+            fn_decl = cmd.get("params", {}).get("functionDeclaration", "")
+            assert sentinel not in fn_decl, (
+                f"Token sentinel must not appear in functionDeclaration. cmd={cmd}"
+            )
+
+    async def test_raises_page_load_error_when_attach_returns_no_session_id(
+        self,
+    ) -> None:
+        """If Target.attachToTarget returns no sessionId, PageLoadError is raised.
+
+        An empty sessionId would silently route CDP commands to the wrong context
+        (main session or nowhere), causing config injection to appear to succeed
+        when the SW was never configured. The guard must prevent this.
+        """
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _fake_no_session(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                # sessionId absent — malformed or partial CDP failure
+                return {"result": {}}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_no_session)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+    async def test_raises_page_load_error_when_evaluate_returns_no_object_id(
+        self,
+    ) -> None:
+        """If Runtime.evaluate returns no objectId, PageLoadError is raised.
+
+        An empty objectId would cause callFunctionOn to target nothing, silently
+        dropping the write. The guard must catch this before proceeding to Step 4.
+        """
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _fake_no_object_id(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-abc"}}
+            if method == "Runtime.evaluate":
+                # objectId absent — SW context not accessible
+                return {"result": {"result": {}}}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_no_object_id)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
