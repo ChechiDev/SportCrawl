@@ -1015,3 +1015,82 @@ class TestPydollEngineInjectStorageConfigToExtension:
             assert sentinel not in fn_decl, (
                 f"Token sentinel must not appear in functionDeclaration. cmd={cmd}"
             )
+
+    async def test_raises_page_load_error_when_attach_returns_no_session_id(
+        self,
+    ) -> None:
+        """If Target.attachToTarget returns no sessionId, PageLoadError is raised.
+
+        An empty sessionId would silently route CDP commands to the wrong context
+        (main session or nowhere), causing config injection to appear to succeed
+        when the SW was never configured. The guard must prevent this.
+        """
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _fake_no_session(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                # sessionId absent — malformed or partial CDP failure
+                return {"result": {}}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_no_session)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+    async def test_raises_page_load_error_when_evaluate_returns_no_object_id(
+        self,
+    ) -> None:
+        """If Runtime.evaluate returns no objectId, PageLoadError is raised.
+
+        An empty objectId would cause callFunctionOn to target nothing, silently
+        dropping the write. The guard must catch this before proceeding to Step 4.
+        """
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _fake_no_object_id(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-abc"}}
+            if method == "Runtime.evaluate":
+                # objectId absent — SW context not accessible
+                return {"result": {"result": {}}}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_no_object_id)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})

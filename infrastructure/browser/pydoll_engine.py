@@ -404,6 +404,12 @@ class PydollEngine(ScriptableEngine):
                 timeout=_INJECT_STORAGE_TIMEOUT_S,
             )
             session_id: str = attach_result.get("result", {}).get("sessionId", "")
+            if not session_id:
+                raise PageLoadError(
+                    "inject_storage_config_to_extension:"
+                    " Target.attachToTarget returned no sessionId",
+                    url="",
+                )
 
             # Step 3: get global object in SW context
             eval_cmd: dict[str, Any] = {
@@ -418,15 +424,32 @@ class PydollEngine(ScriptableEngine):
             object_id: str = (
                 eval_result.get("result", {}).get("result", {}).get("objectId", "")
             )
+            if not object_id:
+                raise PageLoadError(
+                    "inject_storage_config_to_extension:"
+                    " Runtime.evaluate returned no objectId for SW global",
+                    url="",
+                )
 
-            # Step 4: call function on SW global — config as structured arg, not in body
-            _fn = "function(cfg) { chrome.storage.local.set(cfg); }"
+            # Step 4: call function on SW global.
+            # Config is passed as a structured CDP argument — never in the JS body.
+            # The function awaits the storage write and resolves true, so the CDP
+            # call confirms the write succeeded rather than dropping silently.
+            _fn = (
+                "function(cfg) {"
+                " return new Promise(function(resolve) {"
+                " chrome.storage.local.set(cfg, function() { resolve(true); });"
+                " });"
+                "}"
+            )
             call_cmd: dict[str, Any] = {
                 "method": "Runtime.callFunctionOn",
                 "params": {
                     "functionDeclaration": _fn,
                     "objectId": object_id,
                     "arguments": [{"value": config}],
+                    "awaitPromise": True,
+                    "returnByValue": True,
                 },
                 "sessionId": session_id,
             }

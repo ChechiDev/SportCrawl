@@ -559,9 +559,9 @@ def smoke_clearance(
                     "target navigation loop is not usable "
                     f"(closed={_is_closed}, running={_is_running})"
                 )
-            _nav_url = os.environ.get("SCRAPING__WORK_SERVER_HOST", "").strip()
-            if not _nav_url:
-                raise RuntimeError("SCRAPING__WORK_SERVER_HOST is not set")
+            # Navigate to the work server root — loopback-only (asserted by gate 2).
+            # The URL is the same base used by every other real-clearance request.
+            _nav_url = f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}"
             _loop.run_until_complete(engine.navigate(_nav_url))
 
         providers = RealClearanceProviders(

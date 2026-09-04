@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-_BG = Path(
-    "/home/chechidev/dev/sportcrawl/extensions/sportcrawl-chrome/background.js"
+_BG = (
+    Path(__file__).parents[3] / "extensions" / "sportcrawl-chrome" / "background.js"
 ).read_text()
 
 
