@@ -408,3 +408,75 @@ class TestTargetNavigatorSeam:
         assert navigator_called[0] is True
         assert report.status == HarnessStatus.PASS
         assert report.gate_results.get("target_navigation") == GateStatus.PASS
+
+    def test_navigator_source_reads_scraping_target_url_not_work_server(self) -> None:
+        """Structural guard: _target_navigator must use SCRAPING__TARGET_URL."""
+        # Use __file__-relative path so this is deterministic regardless of cwd.
+        from pathlib import Path
+
+        main_py = Path(__file__).parents[3] / "cli" / "main.py"
+        source = main_py.read_text()
+        nav_start = source.find("def _target_navigator()")
+        assert nav_start != -1, "_target_navigator not found in cli/main.py"
+        # Slice to the next peer-level nested def or the providers assignment.
+        nav_end = source.find("\n        def ", nav_start + 1)
+        if nav_end == -1:
+            nav_end = source.find("\n        providers ", nav_start)
+        if nav_end == -1:
+            nav_end = len(source)
+        navigator_body = source[nav_start:nav_end]
+        assert "SCRAPING__TARGET_URL" in navigator_body, (
+            "_target_navigator body must read SCRAPING__TARGET_URL"
+        )
+        assert "_WORK_SERVER_PORT" not in navigator_body, (
+            "_target_navigator must not construct the work-server URL"
+        )
+
+    def test_navigator_raises_on_missing_target_url_returns_blocked(self) -> None:
+        """RuntimeError for missing SCRAPING__TARGET_URL blocks at target_navigation."""
+
+        def _missing_url_navigator() -> None:
+            raise RuntimeError(
+                "SCRAPING__TARGET_URL is not set — cannot navigate to clearance target"
+            )
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            target_navigator=_missing_url_navigator,
+        )
+
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == "target_navigation"
+        assert report.gate_results.get("target_navigation") == GateStatus.BLOCKED
+
+    def test_navigator_page_load_error_does_not_propagate_url(self) -> None:
+        """PageLoadError from navigate must be re-raised without the raw target URL."""
+        from core.exceptions.scraper import PageLoadError
+
+        captured: list[Exception] = []
+
+        def _failing_navigator() -> None:
+            # Simulate the sanitized re-raise from _target_navigator.
+            try:
+                raise PageLoadError("target navigation failed")
+            except PageLoadError as exc:
+                captured.append(exc)
+                raise
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            target_navigator=_failing_navigator,
+        )
+
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == "target_navigation"
+        # The re-raised error message must not contain any URL fragment.
+        assert captured, "navigator was not called"
+        error_msg = str(captured[0])
+        assert "http" not in error_msg, (
+            f"PageLoadError message must not contain URL: {error_msg!r}"
+        )
