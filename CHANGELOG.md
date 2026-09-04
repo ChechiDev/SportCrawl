@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] — 2026-09-04
+
+### Fixed
+
+- **Real-smoke harness — target navigation after extension config injection**: the harness now navigates to the configured target URL after extension config injection and before clearance observation — previously the browser stayed on a blank/NTP tab, so no Cloudflare challenge could fire and no `cf_clearance` cookie was ever set; the new generic `target_navigator` seam is called between gate-11b (inject) and gate-12 (observe); navigation failure returns `BLOCKED` at gate `target_navigation` with type-only diagnostics
+- **Extension config injection — service-worker context**: `inject_storage_config_to_extension()` now targets the Chrome extension service-worker CDP session (via `Target.getTargets` → `Target.attachToTarget` → SW global `object_id`) instead of the normal blank tab context where `chrome.storage.local` does not exist; the token remains in a structured CDP argument and never appears in any JS function body string or log
+- **Extension service-worker context discovery — sanitized controlled failure**: missing or empty `sessionId` / `objectId` from extension service-worker attachment now raises `PageLoadError` immediately with a fixed-string message — no config values, no URL, no token interpolated
+- **Extension cookie listener — config reload for MV3 service-worker resilience**: `chrome.cookies.onChanged` listener now calls `await loadConfig()` before `_isRuntimeReady()` — if the MV3 service worker is terminated between config injection and the Cloudflare challenge, the listener reloads config on revival instead of silently skipping the clearance POST
+
 ## [0.43.0] — 2026-09-01
 
 ### Fixed
@@ -483,7 +492,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.40.0...v0.41.0
