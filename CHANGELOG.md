@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-09-04
+
+### Fixed
+
+- **Real-smoke harness — target navigator URL source**: `_target_navigator` now reads the generic `SCRAPING__TARGET_URL` environment variable (env-first, `.env` fallback) instead of constructing the work_server loopback URL — previously gate-11c navigated to the local work_server address, no Cloudflare challenge could fire, and `clearance_observed` always blocked
+- **Target navigation safe missing-config block**: if `SCRAPING__TARGET_URL` is absent or empty, `_target_navigator` raises `RuntimeError` immediately and the gate returns `BLOCKED` at `target_navigation` — no network call is attempted and no URL is printed or logged
+- **Navigation failure sanitized re-raise**: `PageLoadError` from `engine.navigate()` is caught and re-raised as `PageLoadError("target navigation failed", url="")` — the raw target URL never propagates into exception messages, tracebacks, or logs
+
 ## [0.44.0] — 2026-09-04
 
 ### Fixed
@@ -492,7 +500,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.41.0...v0.42.0
