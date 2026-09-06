@@ -89,6 +89,30 @@ function persistStatus(status) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Classify a fetch() rejection into a stable operational error code.
+ * Avoids exposing raw err.name as an operational signal.
+ * @param {Error|null} err
+ * @returns {string}
+ */
+function _classifyFetchError(err) {
+  if (err && err.name === "AbortError") return "aborted";
+  if (err && err.name === "TypeError") return "network_error";
+  return "fetch_error";
+}
+
+/**
+ * Classify an HTTP status code into a coarse bucket string.
+ * @param {number} status
+ * @returns {string}
+ */
+function _classifyHttpStatus(status) {
+  if (status < 300) return "2xx";
+  if (status < 400) return "3xx";
+  if (status < 500) return "4xx";
+  return "5xx";
+}
+
+/**
  * Boundary-safe domain suffix check.
  * Matches exact, dot-prefixed (.example.com), or subdomain (sub.example.com).
  */
@@ -107,6 +131,19 @@ chrome.cookies.onChanged.addListener(async (details) => {
     return;
   }
   if (!_allowedClearanceDomain) {
+    try {
+      chrome.storage.local.set({
+        last_clearance_post_status: {
+          attempted: false,
+          drop_reason: "CLEARANCE_DOMAIN_NOT_CONFIGURED",
+          timestamp_ms: Date.now(),
+        },
+      }).catch(() =>
+        console.warn("[SportCrawl] diagnostic write failed: storage write failed")
+      );
+    } catch (_e) {
+      console.warn("[SportCrawl] diagnostic write failed: storage write failed");
+    }
     console.warn("[SportCrawl] cookie listener skipped: clearance domain not configured");
     return;
   }
@@ -145,6 +182,11 @@ chrome.cookies.onChanged.addListener(async (details) => {
   const expires_at = new Date(expirationDate * 1000).toISOString();
 
   const url = `${_config.work_server_url}/api/clearance`;
+  // SW termination window: chrome.cookies.onChanged is not an ExtendableEvent,
+  // so event.waitUntil() is unavailable here. The diagnostic write may be lost if
+  // the SW is terminated after the fetch resolves but before the storage write
+  // completes. A harness should treat a missing or stale last_clearance_post_status
+  // as inconclusive rather than a confirmed failure.
   fetch(url, {
     method: "POST",
     headers: {
@@ -168,8 +210,38 @@ chrome.cookies.onChanged.addListener(async (details) => {
         console.log("[SportCrawl] Clearance delivered to work_server.");
         persistStatus("ok");
       }
+      // Durable diagnostic — no sensitive values included.
+      const cls = _classifyHttpStatus(res.status);
+      try {
+        chrome.storage.local.set({
+          last_clearance_post_status: {
+            attempted: true,
+            http_status_class: cls,
+            error_class: null,
+            timestamp_ms: Date.now(),
+          },
+        }).catch(() =>
+          console.warn("[SportCrawl] diagnostic write failed: storage write failed")
+        );
+      } catch (_e) {
+        console.warn("[SportCrawl] diagnostic write failed: storage write failed");
+      }
     })
     .catch((err) => {
+      try {
+        chrome.storage.local.set({
+          last_clearance_post_status: {
+            attempted: true,
+            http_status_class: "network_error",
+            error_class: _classifyFetchError(err),
+            timestamp_ms: Date.now(),
+          },
+        }).catch(() =>
+          console.warn("[SportCrawl] diagnostic write failed: storage write failed")
+        );
+      } catch (_e) {
+        console.warn("[SportCrawl] diagnostic write failed: storage write failed");
+      }
       console.error("[SportCrawl] /api/clearance POST error:", err);
       persistStatus("err");
     });
