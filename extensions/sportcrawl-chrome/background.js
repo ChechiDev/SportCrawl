@@ -2,7 +2,7 @@
  * background.js — SportCrawl MV3 service worker
  *
  * Responsibilities:
- *   1. CF clearance capture: listen for cf_clearance cookie on fbref.com, POST to work_server.
+ *   1. CF clearance capture: listen for cf_clearance cookie on the configured clearance domain, POST to work_server.
  *   2. Task poll loop: chrome.alarms fires every 1 min, polls for the next task, executes, posts result.
  *   3. Auth: every outbound request carries Authorization: Bearer {token}.
  *   4. Backoff: exponential on 5xx / network errors (base 2s, x2, cap 60s); reset on success.
@@ -15,6 +15,7 @@ const BACKOFF_BASE_MS = 2000;
 const BACKOFF_CAP_MS = 60000;
 
 let _config = { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false };
+let _allowedClearanceDomain = ""; // kept separate from _config to allow independent reset during service worker restart
 let _backoffMs = BACKOFF_BASE_MS;
 let _fatalStop = false;
 
@@ -32,7 +33,7 @@ async function loadConfig() {
 
   return new Promise((resolve) => {
     chrome.storage.local.get(
-      { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false },
+      { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false, allowed_clearance_domain: "" },
       (data) => {
         _config = {
           work_server_url: data.work_server_url.trim(),
@@ -41,6 +42,7 @@ async function loadConfig() {
           worker_id: data.worker_id.trim(),
           disable_task_polling: !!data.disable_task_polling,
         };
+        _allowedClearanceDomain = (data.allowed_clearance_domain || "").trim().replace(/^\./, "");
         resolve(_config.work_server_url !== "" && _config.work_server_token !== "");
       }
     );
@@ -86,17 +88,29 @@ function persistStatus(status) {
 // CF clearance capture
 // ---------------------------------------------------------------------------
 
+/**
+ * Boundary-safe domain suffix check.
+ * Matches exact, dot-prefixed (.example.com), or subdomain (sub.example.com).
+ */
+function _domainMatches(cookieDomain, allowedDomain) {
+  if (!allowedDomain) return false;
+  return cookieDomain === allowedDomain
+    || cookieDomain === "." + allowedDomain
+    || cookieDomain.endsWith("." + allowedDomain);
+}
+
 chrome.cookies.onChanged.addListener(async (details) => {
   await loadConfig(); // reload config in case SW was terminated and restarted
   const cookie = details.cookie;
-  // removed covers all removal causes; explicit set fires with removed=false
-  const isSet = !details.removed;
 
-  if (
-    cookie.name !== "cf_clearance" ||
-    !cookie.domain.includes("fbref.com") ||
-    !isSet
-  ) {
+  if (cookie.name !== "cf_clearance" || details.removed) {
+    return;
+  }
+  if (!_allowedClearanceDomain) {
+    console.warn("[SportCrawl] cookie listener skipped: clearance domain not configured");
+    return;
+  }
+  if (!_domainMatches(cookie.domain, _allowedClearanceDomain)) {
     return;
   }
 
