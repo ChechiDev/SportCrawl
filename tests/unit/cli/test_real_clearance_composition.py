@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -154,12 +155,11 @@ def test_make_navigator_raises_on_missing_url() -> None:
     engine = MagicMock()
     engine.navigate = AsyncMock()
 
-    navigator = make_target_navigator(engine=engine, loop=loop)
-
+    # D4: URL resolved at construction time — patch must wrap the factory call
     with patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
          patch.dict("os.environ", {}, clear=True):
         with pytest.raises(RuntimeError, match="SCRAPING__TARGET_URL"):
-            navigator()
+            make_target_navigator(engine=engine, loop=loop)
 
     loop.close()
 
@@ -171,12 +171,11 @@ def test_make_navigator_raises_on_scheme_less_url() -> None:
     engine = MagicMock()
     engine.navigate = AsyncMock()
 
-    navigator = make_target_navigator(engine=engine, loop=loop)
-
+    # D4: URL resolved at construction time — patch must wrap the factory call
     with patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
          patch.dict("os.environ", {"SCRAPING__TARGET_URL": "//example.com"}):
         with pytest.raises(RuntimeError, match="target navigation"):
-            navigator()
+            make_target_navigator(engine=engine, loop=loop)
 
     loop.close()
 
@@ -188,10 +187,10 @@ def test_make_navigator_calls_engine_navigate() -> None:
     engine = MagicMock()
     engine.navigate = AsyncMock()
 
-    navigator = make_target_navigator(engine=engine, loop=loop)
-
+    # D4: URL resolved at construction time — patch must wrap the factory call
     with patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
          patch.dict("os.environ", {"SCRAPING__TARGET_URL": "https://example.com"}):
+        navigator = make_target_navigator(engine=engine, loop=loop)
         navigator()
 
     engine.navigate.assert_called_once_with("https://example.com")
@@ -208,12 +207,12 @@ def test_navigator_sanitizes_page_load_error_message() -> None:
         side_effect=PageLoadError("https://secret.example.com navigation failed")
     )
 
-    navigator = make_target_navigator(engine=engine, loop=loop)
-
+    # D4: URL resolved at construction time — patch must wrap the factory call
     with patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
          patch.dict(
              "os.environ", {"SCRAPING__TARGET_URL": "https://secret.example.com"}
          ):
+        navigator = make_target_navigator(engine=engine, loop=loop)
         with pytest.raises(PageLoadError) as exc_info:
             navigator()
 
@@ -282,7 +281,11 @@ def test_make_navigator_raises_when_loop_closed() -> None:
     loop = asyncio.new_event_loop()
     loop.close()
     engine = MagicMock()
-    nav = make_target_navigator(engine=engine, loop=loop)
+
+    # D4: URL resolved at construction time — patch must wrap the factory call
+    with patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
+         patch.dict("os.environ", {"SCRAPING__TARGET_URL": "https://example.com"}):
+        nav = make_target_navigator(engine=engine, loop=loop)
 
     with pytest.raises(RuntimeError, match="loop is not usable"):
         nav()
@@ -328,7 +331,9 @@ def test_make_navigator_times_out_on_hung_navigation() -> None:
 
     engine = MagicMock()
     engine.navigate = _hang
-    with patch.object(_comp_module, "_NAV_TIMEOUT_S", 0.05):
+    with patch.object(_comp_module, "_NAV_TIMEOUT_S", 0.05), \
+         patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
+         patch.dict("os.environ", {"SCRAPING__TARGET_URL": "https://example.com"}):
         nav = make_target_navigator(engine)
         loop = asyncio.new_event_loop()
         try:
@@ -374,13 +379,13 @@ def test_make_navigator_env_overrides_dotenv() -> None:
     engine.navigate = AsyncMock()
 
     loop = asyncio.new_event_loop()
-    navigator = make_target_navigator(engine=engine, loop=loop)
 
+    # D4: URL resolved at construction time — both patches must wrap the factory call
     try:
         with (
             patch(
                 "cli.real_clearance_composition.dotenv_values",
-                return_value={"SCRAPING__TARGET_URL": "https://from-dotenv.example.com"},
+                return_value={"SCRAPING__TARGET_URL": "https://dotenv.example.com"},
             ),
             patch.dict(
                 "os.environ",
@@ -388,6 +393,7 @@ def test_make_navigator_env_overrides_dotenv() -> None:
                 clear=False,
             ),
         ):
+            navigator = make_target_navigator(engine=engine, loop=loop)
             navigator()
     finally:
         loop.close()
@@ -410,7 +416,9 @@ def test_navigator_timeout_calls_engine_stop() -> None:
     engine = MagicMock()
     engine.navigate = _hang
     engine.stop = AsyncMock()
-    with patch.object(_comp_module, "_NAV_TIMEOUT_S", 0.05):
+    with patch.object(_comp_module, "_NAV_TIMEOUT_S", 0.05), \
+         patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
+         patch.dict("os.environ", {"SCRAPING__TARGET_URL": "https://example.com"}):
         nav = make_target_navigator(engine)
         loop = asyncio.new_event_loop()
         try:
@@ -452,7 +460,9 @@ def test_navigator_timeout_contains_stop_error() -> None:
     engine = MagicMock()
     engine.navigate = _hang
     engine.stop = AsyncMock(side_effect=RuntimeError("stop failed"))
-    with patch.object(_comp_module, "_NAV_TIMEOUT_S", 0.05):
+    with patch.object(_comp_module, "_NAV_TIMEOUT_S", 0.05), \
+         patch("cli.real_clearance_composition.dotenv_values", return_value={}), \
+         patch.dict("os.environ", {"SCRAPING__TARGET_URL": "https://example.com"}):
         nav = make_target_navigator(engine)
         loop = asyncio.new_event_loop()
         try:
@@ -460,3 +470,43 @@ def test_navigator_timeout_contains_stop_error() -> None:
                 loop.run_until_complete(nav())
         finally:
             loop.close()
+
+
+# ---------------------------------------------------------------------------
+# D4: early resolution — construction-time failure
+# ---------------------------------------------------------------------------
+
+
+def test_make_navigator_raises_at_construction_if_url_missing() -> None:
+    from cli.real_clearance_composition import make_target_navigator
+
+    engine = AsyncMock(spec=["inject_storage_config", "navigate", "stop"])
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("cli.real_clearance_composition.dotenv_values", return_value={}):
+            with pytest.raises(RuntimeError, match="target"):
+                make_target_navigator(engine)
+
+
+# ---------------------------------------------------------------------------
+# D5: no chained cause
+# ---------------------------------------------------------------------------
+
+
+def test_navigator_page_load_error_has_no_chained_cause() -> None:
+    """PageLoadError.__cause__ must be None — no chained trace can expose raw URLs."""
+    from cli.real_clearance_composition import make_target_navigator
+
+    engine = AsyncMock(spec=["inject_storage_config", "navigate", "stop"])
+    engine.navigate.side_effect = PageLoadError("internal engine error")
+    target_url = "https://sport.example.com"
+    _patch = "cli.real_clearance_composition._resolve_nav_url"
+    with patch(_patch, return_value=target_url):
+        navigator = make_target_navigator(engine)
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(PageLoadError) as exc_info:
+            loop.run_until_complete(navigator())
+    finally:
+        loop.close()
+    err = exc_info.value
+    assert err.__cause__ is None

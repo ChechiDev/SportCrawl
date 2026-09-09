@@ -15,16 +15,18 @@ import logging
 import os
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlparse as _urlparse
 
 from dotenv import dotenv_values
 
+from cli.url_validation import validate_target_url
 from core.exceptions.scraper import PageLoadError
 
 _NAV_TIMEOUT_S: float = 30.0
 _INJECT_TIMEOUT_S: float = 15.0
 _CLEANUP_TIMEOUT_S: float = 5.0
 _STOP_TIMEOUT_S: float = 3.0
+
+_logger = logging.getLogger(__name__)
 
 
 def make_extension_config_injector(
@@ -112,47 +114,61 @@ def make_cleanup(loop: asyncio.AbstractEventLoop) -> Callable[[], None]:
     return _cleanup
 
 
+def _resolve_nav_url() -> str:
+    """Resolve and validate the target navigation URL from the environment.
+
+    Raises RuntimeError with a sanitized message if the URL is missing or invalid.
+    Emits structured log on failure — never logs raw URL or env var values.
+    """
+    _env_overlay = {**dotenv_values(".env"), **os.environ}
+    _nav_url = (_env_overlay.get("SCRAPING__TARGET_URL") or "").strip()
+    if not _nav_url:
+        _logger.error(
+            "target URL resolution failed", extra={"reason": "missing_env_var"}
+        )
+        raise RuntimeError(
+            "SCRAPING__TARGET_URL is not set — "
+            "cannot navigate to clearance target"
+        )
+    try:
+        return validate_target_url(_nav_url)
+    except ValueError as _exc:
+        _logger.error(
+            "target URL resolution failed", extra={"reason": "url_validation_failed"}
+        )
+        raise RuntimeError(
+            f"target navigation failed — {_exc}"
+        ) from None
+
+
 def make_target_navigator(
     engine: Any,
     loop: asyncio.AbstractEventLoop | None = None,
 ) -> Callable[[], Any]:
-    """Return a sync callable that navigates to the configured clearance target.
+    """Return a callable that navigates to the configured clearance target.
 
-    The target URL is read generically from the environment (SCRAPING__TARGET_URL)
-    — no domain is hardcoded here. Navigation failure raises PageLoadError, which
-    the harness maps to BLOCKED at the target_navigation gate.
+    The target URL is resolved and validated ONCE at factory construction time.
+    If resolution fails, this function raises immediately — no closure is returned.
+
+    Navigation failure raises PageLoadError, which the harness maps to BLOCKED
+    at the target_navigation gate.
 
     Runs on the provided event loop so all pydoll async objects remain on one
     loop throughout the session.
     """
-
-    def _resolve_nav_url() -> str:
-        _env_overlay = {**dotenv_values(".env"), **os.environ}
-        _nav_url = (_env_overlay.get("SCRAPING__TARGET_URL") or "").strip()
-        if not _nav_url:
-            raise RuntimeError(
-                "SCRAPING__TARGET_URL is not set — "
-                "cannot navigate to clearance target"
-            )
-        # Reject scheme-less URLs (e.g. //example.com) — urlparse gives
-        # an empty scheme for these.
-        _parsed = _urlparse(_nav_url)
-        if not _parsed.scheme:
-            raise RuntimeError("target navigation failed — invalid URL scheme")
-        return _nav_url
+    _url = _resolve_nav_url()  # raises here if invalid — closure never created
 
     async def _navigate_with_timeout() -> None:
-        _nav_url = _resolve_nav_url()
         try:
-            await asyncio.wait_for(engine.navigate(_nav_url), timeout=_NAV_TIMEOUT_S)
+            await asyncio.wait_for(engine.navigate(_url), timeout=_NAV_TIMEOUT_S)
         except TimeoutError:
             try:
                 await asyncio.wait_for(engine.stop(), timeout=_STOP_TIMEOUT_S)
             except Exception:  # noqa: BLE001
                 pass
             raise RuntimeError("target navigation failed — timed out") from None
-        except PageLoadError as _nav_exc:
-            raise PageLoadError("target navigation failed") from _nav_exc
+        except PageLoadError:
+            raise PageLoadError("target navigation failed") from None
 
     if loop is None:
         return _navigate_with_timeout
