@@ -90,13 +90,27 @@ def test_make_injector_calls_engine_inject() -> None:
         "disable_task_polling": True,
     }
 
-    injector = make_extension_config_injector(engine=engine, config=config, loop=loop)
-    try:
-        injector()
-    finally:
-        loop.close()
+    _url_patch = {"SCRAPING__TARGET_URL": "https://example.com"}
+    with (
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_patch, clear=False),
+    ):
+        injector = make_extension_config_injector(
+            engine=engine, config=config, loop=loop
+        )
+        try:
+            injector()
+        finally:
+            loop.close()
 
-    engine.inject_storage_config.assert_called_once_with(config)
+    call_config = engine.inject_storage_config.call_args[0][0]
+    # All original keys must be preserved
+    for key, value in config.items():
+        assert call_config[key] == value, (
+            f"Key {key!r} must be preserved in call config"
+        )
+    # allowed_clearance_domain must be added
+    assert call_config["allowed_clearance_domain"] == "example.com"
 
 
 def test_make_injector_calls_engine_inject_with_empty_config() -> None:
@@ -107,13 +121,22 @@ def test_make_injector_calls_engine_inject_with_empty_config() -> None:
     engine = MagicMock()
     engine.inject_storage_config = AsyncMock()
 
-    injector = make_extension_config_injector(engine=engine, config={}, loop=loop)
-    try:
-        injector()
-    finally:
-        loop.close()
+    _url_patch = {"SCRAPING__TARGET_URL": "https://example.com"}
+    with (
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_patch, clear=False),
+    ):
+        injector = make_extension_config_injector(
+            engine=engine, config={}, loop=loop
+        )
+        try:
+            injector()
+        finally:
+            loop.close()
 
-    engine.inject_storage_config.assert_called_once_with({})
+    engine.inject_storage_config.assert_called_once()
+    call_config = engine.inject_storage_config.call_args[0][0]
+    assert call_config.get("allowed_clearance_domain") == "example.com"
 
 
 def test_make_injector_raises_when_loop_closed() -> None:
@@ -123,7 +146,12 @@ def test_make_injector_raises_when_loop_closed() -> None:
     loop.close()
 
     engine = MagicMock()
-    injector = make_extension_config_injector(engine=engine, config={}, loop=loop)
+    _url_env = {"SCRAPING__TARGET_URL": "https://example.com"}
+    with (
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_env, clear=False),
+    ):
+        injector = make_extension_config_injector(engine=engine, config={}, loop=loop)
 
     with pytest.raises(RuntimeError, match="not usable"):
         injector()
@@ -136,7 +164,14 @@ def test_make_injector_raises_when_loop_running() -> None:
     async def _inner() -> None:
         loop = asyncio.get_event_loop()
         engine = MagicMock()
-        injector = make_extension_config_injector(engine=engine, config={}, loop=loop)
+        _url_env = {"SCRAPING__TARGET_URL": "https://example.com"}
+        with (
+            patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+            patch.dict(os.environ, _url_env, clear=False),
+        ):
+            injector = make_extension_config_injector(
+                engine=engine, config={}, loop=loop
+            )
         with pytest.raises(RuntimeError, match="not usable"):
             injector()
 
@@ -307,9 +342,14 @@ def test_make_injector_restores_logger_level_on_failure() -> None:
     orig_level = logger.level
 
     loop = asyncio.new_event_loop()
-    injector = make_extension_config_injector(
-        engine=engine, config={"key": "value"}, loop=loop
-    )
+    _url_env = {"SCRAPING__TARGET_URL": "https://example.com"}
+    with (
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_env, clear=False),
+    ):
+        injector = make_extension_config_injector(
+            engine=engine, config={"key": "value"}, loop=loop
+        )
     try:
         with pytest.raises(RuntimeError, match="inject failed"):
             injector()
@@ -352,7 +392,12 @@ def test_make_injector_times_out_on_hung_injection() -> None:
 
     engine = MagicMock()
     engine.inject_storage_config = _hang
-    with patch.object(_comp_module, "_INJECT_TIMEOUT_S", 0.05):
+    _url_env = {"SCRAPING__TARGET_URL": "https://example.com"}
+    with (
+        patch.object(_comp_module, "_INJECT_TIMEOUT_S", 0.05),
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_env, clear=False),
+    ):
         injector = make_extension_config_injector(engine, {"k": "v"})
         loop = asyncio.new_event_loop()
         try:
@@ -439,7 +484,12 @@ def test_injector_timeout_calls_engine_stop() -> None:
     engine = MagicMock()
     engine.inject_storage_config = _hang
     engine.stop = AsyncMock()
-    with patch.object(_comp_module, "_INJECT_TIMEOUT_S", 0.05):
+    _url_env = {"SCRAPING__TARGET_URL": "https://example.com"}
+    with (
+        patch.object(_comp_module, "_INJECT_TIMEOUT_S", 0.05),
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_env, clear=False),
+    ):
         injector = make_extension_config_injector(engine, {"k": "v"})
         loop = asyncio.new_event_loop()
         try:
@@ -510,3 +560,98 @@ def test_navigator_page_load_error_has_no_chained_cause() -> None:
         loop.close()
     err = exc_info.value
     assert err.__cause__ is None
+
+
+# ---------------------------------------------------------------------------
+# WU6: allowed_clearance_domain must be included in inject_storage_config call
+# ---------------------------------------------------------------------------
+
+
+def test_injector_includes_allowed_clearance_domain() -> None:
+    """inject_storage_config must include allowed_clearance_domain."""
+    from cli.real_clearance_composition import make_extension_config_injector
+
+    engine = MagicMock()
+    engine.inject_storage_config = AsyncMock()
+
+    config = {
+        "work_server_url": "http://127.0.0.1:9731",
+        "work_server_token": "tok",
+        "profile_id": "smoke",
+        "worker_id": "smoke",
+        "disable_task_polling": True,
+    }
+
+    _url_patch = {"SCRAPING__TARGET_URL": "https://example.com"}
+    loop = asyncio.new_event_loop()
+    with (
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_patch, clear=False),
+    ):
+        injector = make_extension_config_injector(
+            engine=engine, config=config, loop=loop
+        )
+        try:
+            injector()
+        finally:
+            loop.close()
+
+    call_config = engine.inject_storage_config.call_args[0][0]
+    assert call_config.get("allowed_clearance_domain") == "example.com", (
+        "inject_storage_config must receive allowed_clearance_domain='example.com', "
+        f"got: {call_config.get('allowed_clearance_domain')!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# WU6: injection domain must derive from the same URL source as navigation
+# ---------------------------------------------------------------------------
+
+
+def test_injection_domain_consistent_with_navigation_url() -> None:
+    """allowed_clearance_domain must equal the hostname of the navigation target URL.
+
+    Both make_extension_config_injector and make_target_navigator call _resolve_nav_url
+    independently. This test guards that both factories resolve to the same source,
+    so the extension always whitelists exactly the domain Chrome will navigate to.
+    """
+    from urllib.parse import urlparse
+
+    from cli.real_clearance_composition import (
+        make_extension_config_injector,
+        make_target_navigator,
+    )
+
+    inj_engine = MagicMock()
+    inj_engine.inject_storage_config = AsyncMock()
+    nav_engine = MagicMock()
+    nav_engine.navigate = AsyncMock()
+
+    _synthetic_url = "https://test.example.com/path"
+
+    loop = asyncio.new_event_loop()
+    try:
+        _url_env = {"SCRAPING__TARGET_URL": _synthetic_url}
+        with (
+            patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+            patch.dict(os.environ, _url_env, clear=False),
+        ):
+            injector = make_extension_config_injector(
+                engine=inj_engine, config={}, loop=loop
+            )
+            navigator = make_target_navigator(engine=nav_engine, loop=loop)
+            injector()
+            navigator()
+    finally:
+        loop.close()
+
+    injected_domain = inj_engine.inject_storage_config.call_args[0][0].get(
+        "allowed_clearance_domain"
+    )
+    navigated_url = nav_engine.navigate.call_args[0][0]
+    expected_domain = urlparse(navigated_url).hostname
+
+    assert injected_domain == expected_domain, (
+        f"allowed_clearance_domain {injected_domain!r} must equal the hostname "
+        f"of the navigation URL {navigated_url!r} (expected {expected_domain!r})"
+    )

@@ -18,7 +18,7 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from cli.url_validation import validate_target_url
+from cli.url_validation import extract_hostname, validate_target_url
 from core.exceptions.scraper import PageLoadError
 
 _NAV_TIMEOUT_S: float = 30.0
@@ -41,9 +41,19 @@ def make_extension_config_injector(
     appears in any script string that could be logged by pydoll or a future
     debug wrapper.
 
+    The target URL is resolved at construction time to derive
+    ``allowed_clearance_domain`` and inject it into the config. This ensures
+    the Chrome extension never receives an empty domain and always knows which
+    cf_clearance cookies are valid.
+
     Runs on the provided event loop so all pydoll async objects remain on one
     loop throughout the session.
     """
+    _target_url = _resolve_nav_url()
+    _full_config: dict[str, Any] = {
+        **config,
+        "allowed_clearance_domain": extract_hostname(_target_url),
+    }
 
     async def _inject_with_timeout() -> None:
         _pydoll_logger = logging.getLogger("pydoll")
@@ -52,7 +62,7 @@ def make_extension_config_injector(
         try:
             try:
                 await asyncio.wait_for(
-                    engine.inject_storage_config(config),
+                    engine.inject_storage_config(_full_config),
                     timeout=_INJECT_TIMEOUT_S,
                 )
             except TimeoutError:
