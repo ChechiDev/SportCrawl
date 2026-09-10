@@ -1344,3 +1344,416 @@ class TestPydollEngineInjectStorageConfigToExtension:
 
         with pytest.raises(PageLoadError):
             await engine.inject_storage_config_to_extension({"key": "value"})
+
+    # -----------------------------------------------------------------------
+    # WU8-A: exceptionDetails in callFunctionOn raises PageLoadError
+    # -----------------------------------------------------------------------
+
+    async def test_exception_details_in_call_function_on_raises_page_load_error(
+        self,
+    ) -> None:
+        """If callFunctionOn CDP response contains exceptionDetails, PageLoadError."""
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_count = 0
+
+        async def _fake_with_exception(cmd: dict) -> dict:
+            nonlocal call_count
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-abc"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                call_count += 1
+                if call_count == 1:
+                    return {
+                        "result": {
+                            "result": {"type": "undefined"},
+                            "exceptionDetails": {
+                                "text": (
+                                    "chrome.runtime.lastError:"
+                                    " Extension context invalidated"
+                                ),
+                                "exception": {"type": "object"},
+                            },
+                        }
+                    }
+                return {"result": {"result": {"value": True}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_with_exception)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError, match="exceptionDetails"):
+            await engine.inject_storage_config_to_extension(
+                {"allowed_clearance_domain": "example.com"}
+            )
+
+    # -----------------------------------------------------------------------
+    # WU8-B: post-injection readback — success (matching domain)
+    # -----------------------------------------------------------------------
+
+    async def test_post_injection_readback_success(self) -> None:
+        """After write, engine reads back allowed_clearance_domain and succeeds."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_count = 0
+
+        async def _fake_readback_match(cmd: dict) -> dict:
+            nonlocal call_count
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-abc"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                call_count += 1
+                if call_count == 1:
+                    return {"result": {"result": {"value": True}}}
+                return {
+                    "result": {
+                        "result": {
+                            "value": {"allowed_clearance_domain": "example.com"}
+                        }
+                    }
+                }
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_readback_match)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension(
+            {"allowed_clearance_domain": "example.com"}
+        )
+        assert call_count == 2, (
+            f"Expected 2 callFunctionOn calls (write + readback), got {call_count}"
+        )
+
+    # -----------------------------------------------------------------------
+    # WU8-B2: no readback when allowed_clearance_domain absent — exactly 1 call
+    # -----------------------------------------------------------------------
+
+    async def test_no_readback_when_domain_not_in_config(self) -> None:
+        """When config does NOT contain allowed_clearance_domain, exactly one
+        Runtime.callFunctionOn call is made (the write, not the readback)."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_sw_fake_execute()
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension({"key": "value"})
+
+        call_fn_calls = [
+            c
+            for c in mock_tab._execute_command.call_args_list
+            if c[0][0].get("method") == "Runtime.callFunctionOn"
+        ]
+        assert len(call_fn_calls) == 1, (
+            f"Expected exactly 1 callFunctionOn (write only, no readback),"
+            f" got {len(call_fn_calls)}"
+        )
+
+    # -----------------------------------------------------------------------
+    # WU8-C: post-injection readback — mismatch raises PageLoadError
+    # -----------------------------------------------------------------------
+
+    async def test_post_injection_readback_mismatch_raises(self) -> None:
+        """When readback returns a different domain, PageLoadError is raised."""
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_count = 0
+
+        async def _fake_readback_mismatch(cmd: dict) -> dict:
+            nonlocal call_count
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-abc"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                call_count += 1
+                if call_count == 1:
+                    return {"result": {"result": {"value": True}}}
+                return {
+                    "result": {
+                        "result": {
+                            "value": {"allowed_clearance_domain": "wrong.com"}
+                        }
+                    }
+                }
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_readback_mismatch)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError, match="readback"):
+            await engine.inject_storage_config_to_extension(
+                {"allowed_clearance_domain": "example.com"}
+            )
+
+    # -----------------------------------------------------------------------
+    # WU8-D: post-injection readback — empty object raises PageLoadError
+    # -----------------------------------------------------------------------
+
+    async def test_post_injection_readback_missing_key_raises(self) -> None:
+        """When readback returns {}, PageLoadError is raised."""
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_count = 0
+
+        async def _fake_readback_empty(cmd: dict) -> dict:
+            nonlocal call_count
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-abc"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                call_count += 1
+                if call_count == 1:
+                    return {"result": {"result": {"value": True}}}
+                return {"result": {"result": {"value": {}}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_readback_empty)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError, match="readback"):
+            await engine.inject_storage_config_to_extension(
+                {"allowed_clearance_domain": "example.com"}
+            )
+
+
+# ---------------------------------------------------------------------------
+# read_extension_storage_diagnostic() — sanitized diagnostic reads
+# ---------------------------------------------------------------------------
+
+
+class TestPydollEngineReadExtensionStorageDiagnostic:
+    """Tests for read_extension_storage_diagnostic() — best-effort, sanitized."""
+
+    @staticmethod
+    def _make_diagnostic_fake(
+        key: str,
+        stored_value: object | None,
+        sw_url: str = "chrome-extension://abc123/background.js",
+    ):
+        """Return async side_effect faking SW CDP round-trips for diagnostic reads."""
+
+        async def _fake(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-diag-1",
+                                "type": "service_worker",
+                                "url": sw_url,
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-diag"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-diag"}}}
+            if method == "Runtime.callFunctionOn":
+                if stored_value is None:
+                    return {"result": {"result": {"value": {}}}}
+                return {"result": {"result": {"value": {key: stored_value}}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        return _fake
+
+    # -----------------------------------------------------------------------
+    # WU8-E: sanitized read — success, returns only safe subset
+    # -----------------------------------------------------------------------
+
+    async def test_diagnostic_read_returns_sanitized_subset(self) -> None:
+        """read_extension_storage_diagnostic returns only the safe subset of fields."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        raw_value = {
+            "attempted": True,
+            "drop_reason": "payload_too_large",
+            "error_class": "ValidationError",
+            "http_status_class": "4xx",
+            # sensitive fields that must NOT be returned
+            "raw_body": "<html>secret</html>",
+            "cookie": "session=abc123",
+            "token": "Bearer xyz",
+            "url": "https://example.com/clearance",
+        }
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_diagnostic_fake(
+                "last_clearance_post_status", raw_value
+            )
+        )
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_storage_diagnostic(
+            "last_clearance_post_status"
+        )
+
+        assert result is not None
+        assert result.get("attempted") is True
+        assert result.get("drop_reason") == "payload_too_large"
+        assert result.get("error_class") == "ValidationError"
+        assert result.get("http_status_class") == "4xx"
+        assert "raw_body" not in result
+        assert "cookie" not in result
+        assert "token" not in result
+        assert "url" not in result
+
+    # -----------------------------------------------------------------------
+    # WU8-E2: falsy-dict bug — {"attempted": False} must not return None
+    # -----------------------------------------------------------------------
+
+    async def test_diagnostic_read_returns_dict_with_falsy_values(self) -> None:
+        """read_extension_storage_diagnostic must not treat {"attempted": False}
+        as falsy and return None — the dict itself is valid even when values are
+        falsy booleans."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        raw_value = {"attempted": False}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_diagnostic_fake(
+                "last_clearance_post_status", raw_value
+            )
+        )
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_storage_diagnostic(
+            "last_clearance_post_status"
+        )
+
+        assert result is not None, (
+            "A dict with falsy values like {'attempted': False} must not be "
+            "treated as None — the {} or None bug"
+        )
+        assert result.get("attempted") is False
+
+    # -----------------------------------------------------------------------
+    # WU8-F: sanitized read — key absent returns None
+    # -----------------------------------------------------------------------
+
+    async def test_diagnostic_read_key_absent_returns_none(self) -> None:
+        """read_extension_storage_diagnostic returns None when key not in storage."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_diagnostic_fake("last_clearance_post_status", None)
+        )
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_storage_diagnostic(
+            "last_clearance_post_status"
+        )
+        assert result is None
+
+    # -----------------------------------------------------------------------
+    # WU8-G: no SW target — returns None (does not raise)
+    # -----------------------------------------------------------------------
+
+    async def test_diagnostic_read_no_sw_target_returns_none(self) -> None:
+        """read_extension_storage_diagnostic returns None when no SW target found."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _no_sw(cmd: dict) -> dict:
+            if cmd.get("method") == "Target.getTargets":
+                return {"result": {"targetInfos": []}}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_no_sw)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_storage_diagnostic(
+            "last_clearance_post_status"
+        )
+        assert result is None
