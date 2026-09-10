@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] — 2026-09-10
+
+### Fixed
+
+- **Extension clearance domain matching — generalized**: `chrome.cookies.onChanged` now uses a config-derived `_allowedClearanceDomain` variable and a boundary-safe `_domainMatches()` function (exact match, `.`-prefixed subdomain, and suffix checks) instead of a hardcoded domain literal — any configured clearance target is matched correctly without code changes
+- **Extension postback diagnostics — sanitized and durable**: cookie events that are dropped or result in a failed POST now write a structured diagnostic to `chrome.storage.local`; not-attempted events emit `{ attempted: false, drop_reason, timestamp_ms }`; attempted events emit `{ attempted: true, http_status_class, error_class, timestamp_ms }` — all `chrome.storage.local.set()` calls are wrapped in `try/catch` to guard against service-worker termination sync throws
+- **Real-clearance composition extracted from CLI entrypoint**: async orchestration closures (navigation, injection, cleanup) have been moved from `cli/main.py` into `cli/real_clearance_composition.py`; a `BrowserEngine` Protocol defines the hexagonal seam; `cli/main.py` remains a thin composition root with no new orchestration responsibility
+- **Configured target URL validation**: `SCRAPING__TARGET_URL` is now validated at composition factory construction time via `cli/url_validation.py`; accepted schemes are `http`/`https` only; IP literals (IPv4 and IPv6), unsafe schemes (`javascript:`, `file:`, `data:`), protocol-relative URLs, userinfo-embedded URLs, and empty/whitespace-only values are all rejected; error messages are sanitized — no raw URL value is interpolated; the target URL is resolved once at factory construction, not at navigation call time
+- **Wireup tests updated for composition seam**: `test_main_real_clearance_wireup.py` and related tests updated to patch `cli.main.make_target_navigator` and expose the navigator mock in assertions; tests are now `.env`-independent and deterministic across CI environments; a new test asserts the navigator is correctly wired to `harness.run(target_navigator=...)`
+
+### Not included (postponed)
+
+- **WU3 — MV3 config-readiness race mitigation**: sleep-based bounded retry in the cookie listener was rejected (MV3 service-worker termination during `setTimeout` sleep windows makes retry unreliable; `event.waitUntil` is unavailable on `chrome.cookies.onChanged`); WU2's `CONFIG_NOT_READY` durable diagnostic is the accepted mitigation; WU3 is deferred until real-smoke confirms the race occurs in practice
+
 ## [0.45.0] — 2026-09-04
 
 ### Fixed
