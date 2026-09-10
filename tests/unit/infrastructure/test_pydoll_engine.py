@@ -783,7 +783,7 @@ class TestPydollEngineInjectStorageConfig:
         ) -> object:
             captured_timeout.append(timeout)
             return await _real_wait_for(  # type: ignore[arg-type]
-                coro, timeout=timeout, **kw
+                coro, timeout=timeout, **kw  # type: ignore[arg-type]
             )
 
         with patch(
@@ -883,6 +883,8 @@ class TestPydollEngineInjectStorageConfigToExtension:
                 return {"result": {"result": {"objectId": object_id}}}
             if method == "Runtime.callFunctionOn":
                 return {"result": {"result": {"value": True}}}
+            if method == "Target.detachFromTarget":
+                return {}
             return {}
 
         return _fake
@@ -1054,6 +1056,254 @@ class TestPydollEngineInjectStorageConfigToExtension:
 
         with pytest.raises(PageLoadError):
             await engine.inject_storage_config_to_extension({"key": "value"})
+
+    # -----------------------------------------------------------------------
+    # F2: no-SW-target path retries exactly _SW_TARGET_RETRIES times
+    # -----------------------------------------------------------------------
+
+    async def test_retries_get_targets_exactly_sw_target_retries_times(self) -> None:
+        """When getTargets never returns a SW target, it is called exactly
+        _SW_TARGET_RETRIES times before PageLoadError is raised.
+
+        Guards against regressions that reduce or skip retries silently.
+        """
+        import infrastructure.browser.pydoll_engine as _eng_mod
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _no_sw_target(cmd: dict) -> dict:
+            if cmd.get("method") == "Target.getTargets":
+                return {"result": {"targetInfos": []}}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_no_sw_target)
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with patch.object(_eng_mod, "_SW_TARGET_RETRY_DELAY_S", 0.0):
+            with pytest.raises(PageLoadError):
+                await engine.inject_storage_config_to_extension({"key": "value"})
+
+        get_targets_calls = [
+            c
+            for c in mock_tab._execute_command.call_args_list
+            if c[0][0].get("method") == "Target.getTargets"
+        ]
+        assert len(get_targets_calls) == _eng_mod._SW_TARGET_RETRIES, (
+            f"Expected {_eng_mod._SW_TARGET_RETRIES} getTargets attempts, "
+            f"got {len(get_targets_calls)}"
+        )
+
+    # -----------------------------------------------------------------------
+    # F1: getTargets exception propagates immediately — no retry, no detach
+    # -----------------------------------------------------------------------
+
+    async def test_get_targets_exception_propagates_without_retry(self) -> None:
+        """If Target.getTargets raises, the exception propagates immediately.
+
+        The retry loop only retries when the target is not found — it must not
+        swallow or retry on transport/CDP failures.
+        """
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_count = 0
+
+        async def _raises_on_get_targets(cmd: dict) -> dict:
+            nonlocal call_count
+            if cmd.get("method") == "Target.getTargets":
+                call_count += 1
+                raise KeyError("simulated CDP failure on getTargets")
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=_raises_on_get_targets
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+        assert call_count == 1, (
+            f"getTargets exception must not be retried — "
+            f"expected 1 call, got {call_count}"
+        )
+        detach_calls = [
+            c
+            for c in mock_tab._execute_command.call_args_list
+            if c[0][0].get("method") == "Target.detachFromTarget"
+        ]
+        assert len(detach_calls) == 0, (
+            "detach must not be attempted if attach never happened"
+        )
+
+    # -----------------------------------------------------------------------
+    # F3: detach failure does not mask the original post-attach failure
+    # -----------------------------------------------------------------------
+
+    async def test_detach_failure_does_not_mask_original_error(self) -> None:
+        """If Target.detachFromTarget itself raises, the original error propagates.
+
+        The try/except Exception in the finally block must swallow detach
+        errors — the caller must see the original failure from steps 3/4.
+        """
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _fail_evaluate_and_detach(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-xyz"}}
+            if method == "Target.detachFromTarget":
+                raise OSError("detach transport error")
+            raise KeyError("simulated failure at evaluate")
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=_fail_evaluate_and_detach
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        # Original error (KeyError → PageLoadError) must propagate despite detach error
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+    # -----------------------------------------------------------------------
+    # F4: cancellation after attach still attempts detach
+    # -----------------------------------------------------------------------
+
+    async def test_cancellation_after_attach_still_attempts_detach(self) -> None:
+        """If the coroutine is cancelled while a post-attach step is awaited,
+        the finally block still runs and Target.detachFromTarget is attempted.
+        """
+        import asyncio as _asyncio
+
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        detach_attempted: list[str] = []
+
+        async def _cancel_at_evaluate(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-cancel"}}
+            if method == "Target.detachFromTarget":
+                detach_attempted.append(
+                    cmd.get("params", {}).get("sessionId", "")
+                )
+                return {}
+            # Runtime.evaluate — raise CancelledError to simulate cancellation
+            raise _asyncio.CancelledError()
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=_cancel_at_evaluate
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises((_asyncio.CancelledError, Exception)):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+        assert detach_attempted == ["session-cancel"], (
+            "Target.detachFromTarget must be attempted after cancellation "
+            f"with the correct session ID; got: {detach_attempted}"
+        )
+
+    async def test_detaches_session_on_success(self) -> None:
+        """Target.detachFromTarget must be called after successful injection."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_sw_fake_execute(session_id="session-abc")
+        )
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension({"key": "value"})
+
+        calls = mock_tab._execute_command.call_args_list
+        detach_calls = [
+            c for c in calls if c[0][0].get("method") == "Target.detachFromTarget"
+        ]
+        assert len(detach_calls) == 1
+        params = detach_calls[0][0][0].get("params", {})
+        assert params.get("sessionId") == "session-abc"
+
+    async def test_detaches_session_on_failure_after_attach(self) -> None:
+        """Target.detachFromTarget must be called even when steps 3/4 fail."""
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _fake_fail_at_evaluate(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-xyz"}}
+            if method == "Target.detachFromTarget":
+                return {}
+            raise KeyError("simulated CDP failure at evaluate")
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake_fail_at_evaluate)
+
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError):
+            await engine.inject_storage_config_to_extension({"key": "value"})
+
+        calls = mock_tab._execute_command.call_args_list
+        detach_calls = [
+            c for c in calls if c[0][0].get("method") == "Target.detachFromTarget"
+        ]
+        assert len(detach_calls) == 1
+        params = detach_calls[0][0][0].get("params", {})
+        assert params.get("sessionId") == "session-xyz"
 
     async def test_raises_page_load_error_when_evaluate_returns_no_object_id(
         self,

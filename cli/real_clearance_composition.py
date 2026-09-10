@@ -62,7 +62,7 @@ def make_extension_config_injector(
         try:
             try:
                 await asyncio.wait_for(
-                    engine.inject_storage_config(_full_config),
+                    engine.inject_storage_config_to_extension(_full_config),
                     timeout=_INJECT_TIMEOUT_S,
                 )
             except TimeoutError:

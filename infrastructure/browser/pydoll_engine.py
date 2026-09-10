@@ -42,6 +42,8 @@ _CHALLENGE_MARKERS = ("just a moment", "checking your browser")
 # Chosen to exceed realistic CDP round-trip latency (< 1 s) while keeping the
 # browser-start gate bounded when the pipe is unresponsive.
 _INJECT_STORAGE_TIMEOUT_S: float = 15.0
+_SW_TARGET_RETRIES: int = 3
+_SW_TARGET_RETRY_DELAY_S: float = 0.1
 _EXTENSION_PATH = Path(__file__).parents[2] / "extensions" / "sportcrawl-chrome"
 _CHALLENGE_TIMEOUT = 120  # seconds — Turnstile managed challenge can take 30–90s
 
@@ -367,25 +369,34 @@ class PydollEngine(ScriptableEngine):
                 url="",
             )
         try:
-            # Step 1: find the extension service worker target
+            # Step 1: find the extension service worker target (with retries for SW
+            # timing window — the SW may not have registered yet at attach time)
             get_targets_cmd: dict[str, Any] = {
                 "method": "Target.getTargets",
                 "params": {},
             }
-            targets_result = await asyncio.wait_for(
-                self._tab._execute_command(get_targets_cmd),
-                timeout=_INJECT_STORAGE_TIMEOUT_S,
-            )
-            target_infos = targets_result.get("result", {}).get("targetInfos", [])
-            sw_target = next(
-                (
-                    t
-                    for t in target_infos
-                    if t.get("type") == "service_worker"
-                    and t.get("url", "").startswith("chrome-extension://")
-                ),
-                None,
-            )
+            sw_target = None
+            for _attempt in range(_SW_TARGET_RETRIES):
+                targets_result = await asyncio.wait_for(
+                    self._tab._execute_command(get_targets_cmd),
+                    timeout=_INJECT_STORAGE_TIMEOUT_S,
+                )
+                target_infos = (
+                    targets_result.get("result", {}).get("targetInfos", [])
+                )
+                sw_target = next(
+                    (
+                        t
+                        for t in target_infos
+                        if t.get("type") == "service_worker"
+                        and t.get("url", "").startswith("chrome-extension://")
+                    ),
+                    None,
+                )
+                if sw_target is not None:
+                    break
+                if _attempt < _SW_TARGET_RETRIES - 1:
+                    await asyncio.sleep(_SW_TARGET_RETRY_DELAY_S)
             if sw_target is None:
                 raise PageLoadError(
                     "inject_storage_config_to_extension:"
@@ -411,52 +422,69 @@ class PydollEngine(ScriptableEngine):
                     url="",
                 )
 
-            # Step 3: get global object in SW context
-            eval_cmd: dict[str, Any] = {
-                "method": "Runtime.evaluate",
-                "params": {"expression": "this", "returnByValue": False},
-                "sessionId": session_id,
+            # Steps 3+4 run inside a try/finally so the session is always detached,
+            # even if the steps fail or the coroutine is cancelled.
+            _detach_cmd: dict[str, Any] = {
+                "method": "Target.detachFromTarget",
+                "params": {"sessionId": session_id},
             }
-            eval_result = await asyncio.wait_for(
-                self._tab._execute_command(eval_cmd),
-                timeout=_INJECT_STORAGE_TIMEOUT_S,
-            )
-            object_id: str = (
-                eval_result.get("result", {}).get("result", {}).get("objectId", "")
-            )
-            if not object_id:
-                raise PageLoadError(
-                    "inject_storage_config_to_extension:"
-                    " Runtime.evaluate returned no objectId for SW global",
-                    url="",
+            try:
+                # Step 3: get global object in SW context
+                eval_cmd: dict[str, Any] = {
+                    "method": "Runtime.evaluate",
+                    "params": {"expression": "this", "returnByValue": False},
+                    "sessionId": session_id,
+                }
+                eval_result = await asyncio.wait_for(
+                    self._tab._execute_command(eval_cmd),
+                    timeout=_INJECT_STORAGE_TIMEOUT_S,
                 )
+                object_id: str = (
+                    eval_result.get("result", {})
+                    .get("result", {})
+                    .get("objectId", "")
+                )
+                if not object_id:
+                    raise PageLoadError(
+                        "inject_storage_config_to_extension:"
+                        " Runtime.evaluate returned no objectId for SW global",
+                        url="",
+                    )
 
-            # Step 4: call function on SW global.
-            # Config is passed as a structured CDP argument — never in the JS body.
-            # The function awaits the storage write and resolves true, so the CDP
-            # call confirms the write succeeded rather than dropping silently.
-            _fn = (
-                "function(cfg) {"
-                " return new Promise(function(resolve) {"
-                " chrome.storage.local.set(cfg, function() { resolve(true); });"
-                " });"
-                "}"
-            )
-            call_cmd: dict[str, Any] = {
-                "method": "Runtime.callFunctionOn",
-                "params": {
-                    "functionDeclaration": _fn,
-                    "objectId": object_id,
-                    "arguments": [{"value": config}],
-                    "awaitPromise": True,
-                    "returnByValue": True,
-                },
-                "sessionId": session_id,
-            }
-            await asyncio.wait_for(
-                self._tab._execute_command(call_cmd),
-                timeout=_INJECT_STORAGE_TIMEOUT_S,
-            )
+                # Step 4: call function on SW global.
+                # Config is passed as a structured CDP argument — never in JS body.
+                # The function awaits the storage write and resolves true, so the CDP
+                # call confirms the write succeeded rather than dropping silently.
+                _fn = (
+                    "function(cfg) {"
+                    " return new Promise(function(resolve) {"
+                    " chrome.storage.local.set(cfg, function() { resolve(true); });"
+                    " });"
+                    "}"
+                )
+                call_cmd: dict[str, Any] = {
+                    "method": "Runtime.callFunctionOn",
+                    "params": {
+                        "functionDeclaration": _fn,
+                        "objectId": object_id,
+                        "arguments": [{"value": config}],
+                        "awaitPromise": True,
+                        "returnByValue": True,
+                    },
+                    "sessionId": session_id,
+                }
+                await asyncio.wait_for(
+                    self._tab._execute_command(call_cmd),
+                    timeout=_INJECT_STORAGE_TIMEOUT_S,
+                )
+            finally:
+                try:
+                    await asyncio.wait_for(
+                        self._tab._execute_command(_detach_cmd),
+                        timeout=_INJECT_STORAGE_TIMEOUT_S,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
         except PageLoadError:
             raise
         except (
