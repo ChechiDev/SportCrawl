@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.1] — 2026-09-10
+
+### Fixed
+
+- **Extension config injection uses service-worker context**: `make_extension_config_injector` now calls `engine.inject_storage_config_to_extension()` instead of `engine.inject_storage_config()`; the former attaches to the Chrome extension service-worker CDP target and writes to `chrome.storage.local`, whereas the latter ran in a normal tab context where `chrome.storage.local` is unavailable — a silent no-op that caused every prior real-smoke attempt to block at `clearance_observed`
+- **CDP session cleanup on extension injection**: `inject_storage_config_to_extension` now issues `Target.detachFromTarget` in a `finally` block after every successful `Target.attachToTarget`, preventing CDP session leaks on success, failure, and coroutine cancellation
+- **Service-worker target readiness retry**: extension SW target lookup retries up to `_SW_TARGET_RETRIES` times with a bounded delay before raising `PageLoadError`, covering the timing window where the SW has not yet registered in Chrome's target list at injection time
+- **Reliability test coverage**: tests added for injection-method guard (ensures `inject_storage_config` is not called), `getTargets` exception propagation without retry, exact retry count on no-SW-target path, detach-failure masking prevention, and cancellation-after-attach detach behavior
+
 ## [0.47.0] — 2026-09-10
 
 ### Fixed
@@ -521,7 +530,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.1...HEAD
+[0.47.1]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.0...v0.47.1
+[0.47.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.46.0...v0.47.0
+[0.46.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.42.0...v0.43.0
