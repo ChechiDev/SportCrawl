@@ -80,7 +80,7 @@ def test_make_injector_calls_engine_inject() -> None:
 
     loop = asyncio.new_event_loop()
     engine = MagicMock()
-    engine.inject_storage_config = AsyncMock()
+    engine.inject_storage_config_to_extension = AsyncMock()
 
     config = {
         "work_server_url": "http://127.0.0.1:9731",
@@ -103,7 +103,7 @@ def test_make_injector_calls_engine_inject() -> None:
         finally:
             loop.close()
 
-    call_config = engine.inject_storage_config.call_args[0][0]
+    call_config = engine.inject_storage_config_to_extension.call_args[0][0]
     # All original keys must be preserved
     for key, value in config.items():
         assert call_config[key] == value, (
@@ -119,7 +119,7 @@ def test_make_injector_calls_engine_inject_with_empty_config() -> None:
 
     loop = asyncio.new_event_loop()
     engine = MagicMock()
-    engine.inject_storage_config = AsyncMock()
+    engine.inject_storage_config_to_extension = AsyncMock()
 
     _url_patch = {"SCRAPING__TARGET_URL": "https://example.com"}
     with (
@@ -134,8 +134,8 @@ def test_make_injector_calls_engine_inject_with_empty_config() -> None:
         finally:
             loop.close()
 
-    engine.inject_storage_config.assert_called_once()
-    call_config = engine.inject_storage_config.call_args[0][0]
+    engine.inject_storage_config_to_extension.assert_called_once()
+    call_config = engine.inject_storage_config_to_extension.call_args[0][0]
     assert call_config.get("allowed_clearance_domain") == "example.com"
 
 
@@ -334,7 +334,7 @@ def test_make_injector_restores_logger_level_on_failure() -> None:
     from cli.real_clearance_composition import make_extension_config_injector
 
     engine = MagicMock()
-    engine.inject_storage_config = AsyncMock(
+    engine.inject_storage_config_to_extension = AsyncMock(
         side_effect=RuntimeError("inject failed")
     )
 
@@ -366,7 +366,7 @@ def test_make_navigator_times_out_on_hung_navigation() -> None:
     """Navigation that never completes raises RuntimeError, not a hang."""
     from cli.real_clearance_composition import make_target_navigator
 
-    async def _hang(url: str) -> None:
+    async def _hang(_url: str) -> None:
         await asyncio.sleep(9999)
 
     engine = MagicMock()
@@ -387,11 +387,11 @@ def test_make_injector_times_out_on_hung_injection() -> None:
     """Injection that never completes raises RuntimeError, not a hang."""
     from cli.real_clearance_composition import make_extension_config_injector
 
-    async def _hang(cfg: dict) -> None:
+    async def _hang(_cfg: dict) -> None:
         await asyncio.sleep(9999)
 
     engine = MagicMock()
-    engine.inject_storage_config = _hang
+    engine.inject_storage_config_to_extension = _hang
     _url_env = {"SCRAPING__TARGET_URL": "https://example.com"}
     with (
         patch.object(_comp_module, "_INJECT_TIMEOUT_S", 0.05),
@@ -455,7 +455,7 @@ def test_navigator_timeout_calls_engine_stop() -> None:
     """On navigation timeout, engine.stop() is called to abort in-flight CDP."""
     from cli.real_clearance_composition import make_target_navigator
 
-    async def _hang(url: str) -> None:
+    async def _hang(_url: str) -> None:
         await asyncio.sleep(9999)
 
     engine = MagicMock()
@@ -478,11 +478,11 @@ def test_injector_timeout_calls_engine_stop() -> None:
     """On injection timeout, engine.stop() is called to abort in-flight CDP."""
     from cli.real_clearance_composition import make_extension_config_injector
 
-    async def _hang(cfg: dict) -> None:
+    async def _hang(_cfg: dict) -> None:
         await asyncio.sleep(9999)
 
     engine = MagicMock()
-    engine.inject_storage_config = _hang
+    engine.inject_storage_config_to_extension = _hang
     engine.stop = AsyncMock()
     _url_env = {"SCRAPING__TARGET_URL": "https://example.com"}
     with (
@@ -504,7 +504,7 @@ def test_navigator_timeout_contains_stop_error() -> None:
     """If engine.stop() itself raises, the timeout RuntimeError is still raised."""
     from cli.real_clearance_composition import make_target_navigator
 
-    async def _hang(url: str) -> None:
+    async def _hang(_url: str) -> None:
         await asyncio.sleep(9999)
 
     engine = MagicMock()
@@ -563,16 +563,50 @@ def test_navigator_page_load_error_has_no_chained_cause() -> None:
 
 
 # ---------------------------------------------------------------------------
+# WU7: injector must use extension service-worker context, not tab context
+# ---------------------------------------------------------------------------
+
+
+def test_injector_uses_extension_sw_context_method() -> None:
+    """Injector must call inject_storage_config_to_extension, not inject_storage_config.
+
+    inject_storage_config runs JS in a normal tab where chrome.storage.local
+    does not exist — a silent no-op. inject_storage_config_to_extension attaches
+    to the extension service-worker target and writes to chrome.storage.local.
+    """
+    from cli.real_clearance_composition import make_extension_config_injector
+
+    loop = asyncio.new_event_loop()
+    engine = MagicMock()
+    engine.inject_storage_config_to_extension = AsyncMock()
+    engine.inject_storage_config = AsyncMock()
+
+    _url_patch = {"SCRAPING__TARGET_URL": "https://example.com"}
+    with (
+        patch("cli.real_clearance_composition.dotenv_values", return_value={}),
+        patch.dict(os.environ, _url_patch, clear=False),
+    ):
+        injector = make_extension_config_injector(engine=engine, config={}, loop=loop)
+        try:
+            injector()
+        finally:
+            loop.close()
+
+    engine.inject_storage_config_to_extension.assert_called_once()
+    engine.inject_storage_config.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # WU6: allowed_clearance_domain must be included in inject_storage_config call
 # ---------------------------------------------------------------------------
 
 
 def test_injector_includes_allowed_clearance_domain() -> None:
-    """inject_storage_config must include allowed_clearance_domain."""
+    """inject_storage_config_to_extension must include allowed_clearance_domain."""
     from cli.real_clearance_composition import make_extension_config_injector
 
     engine = MagicMock()
-    engine.inject_storage_config = AsyncMock()
+    engine.inject_storage_config_to_extension = AsyncMock()
 
     config = {
         "work_server_url": "http://127.0.0.1:9731",
@@ -596,7 +630,7 @@ def test_injector_includes_allowed_clearance_domain() -> None:
         finally:
             loop.close()
 
-    call_config = engine.inject_storage_config.call_args[0][0]
+    call_config = engine.inject_storage_config_to_extension.call_args[0][0]
     assert call_config.get("allowed_clearance_domain") == "example.com", (
         "inject_storage_config must receive allowed_clearance_domain='example.com', "
         f"got: {call_config.get('allowed_clearance_domain')!r}"
@@ -623,7 +657,7 @@ def test_injection_domain_consistent_with_navigation_url() -> None:
     )
 
     inj_engine = MagicMock()
-    inj_engine.inject_storage_config = AsyncMock()
+    inj_engine.inject_storage_config_to_extension = AsyncMock()
     nav_engine = MagicMock()
     nav_engine.navigate = AsyncMock()
 
@@ -645,7 +679,7 @@ def test_injection_domain_consistent_with_navigation_url() -> None:
     finally:
         loop.close()
 
-    injected_domain = inj_engine.inject_storage_config.call_args[0][0].get(
+    injected_domain = inj_engine.inject_storage_config_to_extension.call_args[0][0].get(
         "allowed_clearance_domain"
     )
     navigated_url = nav_engine.navigate.call_args[0][0]
