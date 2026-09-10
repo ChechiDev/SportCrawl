@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] — 2026-09-10
+
+### Fixed
+
+- **Extension clearance domain injection**: `make_extension_config_injector` now derives `allowed_clearance_domain` from the validated target URL hostname at factory construction time and injects it into the CDP storage config; previously the key was absent and the extension fell into its `CLEARANCE_DOMAIN_NOT_CONFIGURED` branch, discarding every `cf_clearance` cookie without POSTing — the value is derived generically from `SCRAPING__TARGET_URL` with no site-specific hardcoding
+- **Wireup test isolation from extension injector**: wireup tests in `test_main_real_clearance_wireup.py` and `test_smoke_clearance_real_clearance.py` now patch `cli.main.make_extension_config_injector` alongside `cli.main.make_target_navigator`; tests no longer depend on `.env` or `SCRAPING__TARGET_URL` being set in CI; a new domain/navigation consistency test guards that the injected `allowed_clearance_domain` matches the hostname used by the navigator
+
 ## [0.46.0] — 2026-09-10
 
 ### Fixed
