@@ -242,14 +242,20 @@ class TestRealClearanceFlagRegistration:
 
     def test_real_clearance_exits_nonzero_when_blocked(self) -> None:
         """--real-clearance exits non-zero when no providers configured."""
-        result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
+        from unittest.mock import MagicMock, patch
+
+        with patch("cli.main.make_target_navigator", return_value=MagicMock()):
+            result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
         assert result.exit_code != 0, (
             f"--real-clearance should exit non-zero (BLOCKED). Got: {result.output}"
         )
 
     def test_real_clearance_output_mentions_blocked(self) -> None:
         """--real-clearance output must mention BLOCKED or blocked."""
-        result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
+        from unittest.mock import MagicMock, patch
+
+        with patch("cli.main.make_target_navigator", return_value=MagicMock()):
+            result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
         assert "blocked" in result.output.lower() or "BLOCKED" in result.output, (
             f"--real-clearance must report BLOCKED. Got: {result.output!r}"
         )

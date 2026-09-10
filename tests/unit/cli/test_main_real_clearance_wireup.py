@@ -58,7 +58,10 @@ def _invoke_patched(
         patch("cli.main.RealClearanceProviders") as m_providers_cls,
         patch("cli.main.RealClearanceSeams") as m_seams_cls,
         patch("cli.main.RealClearanceHarness") as m_harness_cls,
+        patch("cli.main.make_target_navigator") as m_make_nav,
     ):
+        mock_nav = MagicMock()
+        m_make_nav.return_value = mock_nav
         mock_harness_inst = MagicMock()
         mock_harness_inst.run.return_value = mock_report
         m_harness_cls.return_value = mock_harness_inst
@@ -77,6 +80,8 @@ def _invoke_patched(
             "providers_cls": m_providers_cls,
             "seams_cls": m_seams_cls,
             "harness_cls": m_harness_cls,
+            "make_nav": m_make_nav,
+            "nav": mock_nav,
         }
         return result, mocks, mock_harness_inst
 
@@ -210,6 +215,17 @@ class TestRealClearanceHarnessInvocation:
         _, _, harness_inst = _invoke_patched(HarnessStatus.FAIL)
         assert harness_inst.run.call_count == 1
 
+    def test_target_navigator_wired_to_harness_run(self) -> None:
+        """Navigator returned by make_target_navigator must be passed to harness.run."""
+        _, mocks, harness_inst = _invoke_patched(HarnessStatus.PASS)
+        call_kwargs = harness_inst.run.call_args
+        assert call_kwargs is not None, "harness.run was not called"
+        passed_nav = call_kwargs.kwargs.get("target_navigator")
+        assert passed_nav is mocks["nav"], (
+            "target_navigator passed to harness.run must be the object "
+            "returned by make_target_navigator"
+        )
+
 
 class TestRealClearanceConstructorArgs:
     """Verify constructor arguments are correctly wired from env/config."""
@@ -231,6 +247,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceProviders"),
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
+            patch("cli.main.make_target_navigator", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -260,6 +277,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceProviders"),
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
+            patch("cli.main.make_target_navigator", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -285,6 +303,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceProviders"),
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
+            patch("cli.main.make_target_navigator", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -308,6 +327,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceProviders"),
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
+            patch("cli.main.make_target_navigator", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -702,6 +722,7 @@ def _invoke_patched_with_engine(
         patch("cli.main.RealClearanceProviders"),
         patch("cli.main.RealClearanceSeams"),
         patch("cli.main.RealClearanceHarness") as m_harness_cls,
+        patch("cli.main.make_target_navigator", return_value=MagicMock()),
     ):
         mock_harness_inst = MagicMock()
         mock_harness_inst.run.return_value = mock_report
@@ -849,6 +870,7 @@ class TestBrowserEngineInitFailure:
         with (
             patch("cli.main.PydollEngine", side_effect=RuntimeError("bad profile")),
             patch("cli.main.Settings"),
+            patch("cli.main.make_target_navigator", return_value=MagicMock()),
             patch("cli.main.typer.echo", echo_mock),
         ):
             result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
