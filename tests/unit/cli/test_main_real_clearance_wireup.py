@@ -59,9 +59,11 @@ def _invoke_patched(
         patch("cli.main.RealClearanceSeams") as m_seams_cls,
         patch("cli.main.RealClearanceHarness") as m_harness_cls,
         patch("cli.main.make_target_navigator") as m_make_nav,
+        patch("cli.main.make_extension_config_injector") as m_make_injector,
     ):
         mock_nav = MagicMock()
         m_make_nav.return_value = mock_nav
+        m_make_injector.return_value = MagicMock()
         mock_harness_inst = MagicMock()
         mock_harness_inst.run.return_value = mock_report
         m_harness_cls.return_value = mock_harness_inst
@@ -82,6 +84,7 @@ def _invoke_patched(
             "harness_cls": m_harness_cls,
             "make_nav": m_make_nav,
             "nav": mock_nav,
+            "make_injector": m_make_injector,
         }
         return result, mocks, mock_harness_inst
 
@@ -248,6 +251,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
             patch("cli.main.make_target_navigator", return_value=MagicMock()),
+            patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -278,6 +282,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
             patch("cli.main.make_target_navigator", return_value=MagicMock()),
+            patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -304,6 +309,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
             patch("cli.main.make_target_navigator", return_value=MagicMock()),
+            patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -328,6 +334,7 @@ class TestRealClearanceConstructorArgs:
             patch("cli.main.RealClearanceSeams"),
             patch("cli.main.RealClearanceHarness") as m_harness_cls,
             patch("cli.main.make_target_navigator", return_value=MagicMock()),
+            patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
         ):
             mock_report = HarnessReport(status=HarnessStatus.PASS)
             m_harness_cls.return_value.run.return_value = mock_report
@@ -723,6 +730,7 @@ def _invoke_patched_with_engine(
         patch("cli.main.RealClearanceSeams"),
         patch("cli.main.RealClearanceHarness") as m_harness_cls,
         patch("cli.main.make_target_navigator", return_value=MagicMock()),
+        patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
     ):
         mock_harness_inst = MagicMock()
         mock_harness_inst.run.return_value = mock_report
@@ -871,6 +879,7 @@ class TestBrowserEngineInitFailure:
             patch("cli.main.PydollEngine", side_effect=RuntimeError("bad profile")),
             patch("cli.main.Settings"),
             patch("cli.main.make_target_navigator", return_value=MagicMock()),
+            patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
             patch("cli.main.typer.echo", echo_mock),
         ):
             result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
