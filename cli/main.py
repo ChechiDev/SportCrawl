@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import sys
 import urllib.request
 import warnings
@@ -33,6 +32,11 @@ from cli.clearance_providers import (  # noqa: E402
     LabelTargetValidator,
 )
 from cli.extension_config import smoke_extension_config  # noqa: E402
+from cli.real_clearance_composition import (  # noqa: E402
+    make_cleanup,
+    make_extension_config_injector,
+    make_target_navigator,
+)
 from cli.smoke_clearance_real import (  # noqa: E402
     ClearanceResult,
     HarnessStatus,
@@ -42,7 +46,6 @@ from cli.smoke_clearance_real import (  # noqa: E402
 )
 from cli.work_server_lifecycle import RealWorkServerLifecycle  # noqa: E402
 from config.settings import Settings  # noqa: E402
-from core.exceptions.scraper import PageLoadError  # noqa: E402
 from infrastructure.browser.pydoll_engine import PydollEngine  # noqa: E402
 from infrastructure.work_server.runtime import serve  # noqa: E402
 
@@ -508,78 +511,18 @@ def smoke_clearance(
         # creation; using separate loops raises RuntimeError on the second access.
         _loop = asyncio.new_event_loop()
 
-        def _extension_config_injector() -> None:
-            """Inject extension runtime config via CDP Runtime.callFunctionOn.
-
-            Config values are passed as a structured CDP argument dict — no values
-            are serialised into the JavaScript function body string. The bearer
-            token therefore never appears in any script string that could be logged
-            by pydoll or a future debug wrapper.
-
-            Runs on the same event loop as the browser launcher so all pydoll async
-            objects remain on one loop throughout the session.
-            """
-            _is_closed = _loop.is_closed()
-            _is_running = _loop.is_running()
-            if _is_closed or _is_running:
-                raise RuntimeError(
-                    "extension config loop is not usable "
-                    f"(closed={_is_closed}, running={_is_running})"
-                )
-            _pydoll_logger = logging.getLogger("pydoll")
-            _orig_level = _pydoll_logger.level
-            _pydoll_logger.setLevel(logging.WARNING)
-            try:
-                _loop.run_until_complete(
-                    engine.inject_storage_config(
-                        {
-                            "work_server_url": _ext_cfg.work_server_url,
-                            "work_server_token": _ext_cfg.work_server_token,
-                            "profile_id": _ext_cfg.profile_id,
-                            "worker_id": _ext_cfg.worker_id,
-                            "disable_task_polling": _ext_cfg.disable_task_polling,
-                        }
-                    )
-                )
-            finally:
-                _pydoll_logger.setLevel(_orig_level)
-
-        def _target_navigator() -> None:
-            """Navigate to the configured target URL after extension config injection.
-
-            The target URL is read generically from the environment — no domain
-            is hardcoded here. Navigation failure raises PageLoadError, which the
-            harness maps to BLOCKED at the target_navigation gate.
-
-            Runs on the same event loop as browser start and extension injection.
-            """
-            _is_closed = _loop.is_closed()
-            _is_running = _loop.is_running()
-            if _is_closed or _is_running:
-                raise RuntimeError(
-                    "target navigation loop is not usable "
-                    f"(closed={_is_closed}, running={_is_running})"
-                )
-            # Navigate to the generic scraping target URL so the Cloudflare
-            # challenge fires and a cf_clearance cookie is issued.
-            # Read from SCRAPING__TARGET_URL (env-first, .env fallback) —
-            # no domain is hardcoded here.
-            from dotenv import dotenv_values as _dotenv_values
-
-            _env_overlay = {**_dotenv_values(".env"), **os.environ}
-            _nav_url = (_env_overlay.get("SCRAPING__TARGET_URL") or "").strip()
-            if not _nav_url:
-                raise RuntimeError(
-                    "SCRAPING__TARGET_URL is not set — "
-                    "cannot navigate to clearance target"
-                )
-            try:
-                _loop.run_until_complete(engine.navigate(_nav_url))
-            except PageLoadError as _nav_exc:
-                # Re-raise without the raw URL so it never reaches logs or
-                # exception messages.  The harness maps PageLoadError to BLOCKED
-                # at the target_navigation gate.
-                raise PageLoadError("target navigation failed") from _nav_exc
+        _extension_config_injector = make_extension_config_injector(
+            engine=engine,
+            config={
+                "work_server_url": _ext_cfg.work_server_url,
+                "work_server_token": _ext_cfg.work_server_token,
+                "profile_id": _ext_cfg.profile_id,
+                "worker_id": _ext_cfg.worker_id,
+                "disable_task_polling": _ext_cfg.disable_task_polling,
+            },
+            loop=_loop,
+        )
+        _target_navigator = make_target_navigator(engine=engine, loop=_loop)
 
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
@@ -616,6 +559,7 @@ def smoke_clearance(
         )
 
         harness = RealClearanceHarness()
+        _cleanup = make_cleanup(_loop)
         try:
             report = harness.run(
                 providers,
@@ -624,15 +568,7 @@ def smoke_clearance(
                 target_navigator=_target_navigator,
             )
         finally:
-            if not _loop.is_closed():
-                pending = asyncio.all_tasks(_loop)
-                for task in pending:
-                    task.cancel()
-                if pending:
-                    _loop.run_until_complete(
-                        asyncio.gather(*pending, return_exceptions=True)
-                    )
-                _loop.close()
+            _cleanup()
 
         console.print(
             "[bold]smoke-clearance --real-clearance[/bold] — real clearance harness"

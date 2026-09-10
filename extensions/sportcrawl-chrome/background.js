@@ -2,7 +2,7 @@
  * background.js — SportCrawl MV3 service worker
  *
  * Responsibilities:
- *   1. CF clearance capture: listen for cf_clearance cookie on fbref.com, POST to work_server.
+ *   1. CF clearance capture: listen for cf_clearance cookie on the configured clearance domain, POST to work_server.
  *   2. Task poll loop: chrome.alarms fires every 1 min, polls for the next task, executes, posts result.
  *   3. Auth: every outbound request carries Authorization: Bearer {token}.
  *   4. Backoff: exponential on 5xx / network errors (base 2s, x2, cap 60s); reset on success.
@@ -15,6 +15,7 @@ const BACKOFF_BASE_MS = 2000;
 const BACKOFF_CAP_MS = 60000;
 
 let _config = { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false };
+let _allowedClearanceDomain = ""; // kept separate from _config to allow independent reset during service worker restart
 let _backoffMs = BACKOFF_BASE_MS;
 let _fatalStop = false;
 
@@ -32,7 +33,7 @@ async function loadConfig() {
 
   return new Promise((resolve) => {
     chrome.storage.local.get(
-      { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false },
+      { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false, allowed_clearance_domain: "" },
       (data) => {
         _config = {
           work_server_url: data.work_server_url.trim(),
@@ -41,6 +42,7 @@ async function loadConfig() {
           worker_id: data.worker_id.trim(),
           disable_task_polling: !!data.disable_task_polling,
         };
+        _allowedClearanceDomain = (data.allowed_clearance_domain || "").trim().replace(/^\./, "");
         resolve(_config.work_server_url !== "" && _config.work_server_token !== "");
       }
     );
@@ -86,17 +88,66 @@ function persistStatus(status) {
 // CF clearance capture
 // ---------------------------------------------------------------------------
 
+/**
+ * Classify a fetch() rejection into a stable operational error code.
+ * Avoids exposing raw err.name as an operational signal.
+ * @param {Error|null} err
+ * @returns {string}
+ */
+function _classifyFetchError(err) {
+  if (err && err.name === "AbortError") return "aborted";
+  if (err && err.name === "TypeError") return "network_error";
+  return "fetch_error";
+}
+
+/**
+ * Classify an HTTP status code into a coarse bucket string.
+ * @param {number} status
+ * @returns {string}
+ */
+function _classifyHttpStatus(status) {
+  if (status < 300) return "2xx";
+  if (status < 400) return "3xx";
+  if (status < 500) return "4xx";
+  return "5xx";
+}
+
+/**
+ * Boundary-safe domain suffix check.
+ * Matches exact, dot-prefixed (.example.com), or subdomain (sub.example.com).
+ */
+function _domainMatches(cookieDomain, allowedDomain) {
+  if (!allowedDomain) return false;
+  return cookieDomain === allowedDomain
+    || cookieDomain === "." + allowedDomain
+    || cookieDomain.endsWith("." + allowedDomain);
+}
+
 chrome.cookies.onChanged.addListener(async (details) => {
   await loadConfig(); // reload config in case SW was terminated and restarted
   const cookie = details.cookie;
-  // removed covers all removal causes; explicit set fires with removed=false
-  const isSet = !details.removed;
 
-  if (
-    cookie.name !== "cf_clearance" ||
-    !cookie.domain.includes("fbref.com") ||
-    !isSet
-  ) {
+  if (cookie.name !== "cf_clearance" || details.removed) {
+    return;
+  }
+  if (!_allowedClearanceDomain) {
+    try {
+      chrome.storage.local.set({
+        last_clearance_post_status: {
+          attempted: false,
+          drop_reason: "CLEARANCE_DOMAIN_NOT_CONFIGURED",
+          timestamp_ms: Date.now(),
+        },
+      }).catch(() =>
+        console.warn("[SportCrawl] diagnostic write failed: storage write failed")
+      );
+    } catch (_e) {
+      console.warn("[SportCrawl] diagnostic write failed: storage write failed");
+    }
+    console.warn("[SportCrawl] cookie listener skipped: clearance domain not configured");
+    return;
+  }
+  if (!_domainMatches(cookie.domain, _allowedClearanceDomain)) {
     return;
   }
 
@@ -131,6 +182,11 @@ chrome.cookies.onChanged.addListener(async (details) => {
   const expires_at = new Date(expirationDate * 1000).toISOString();
 
   const url = `${_config.work_server_url}/api/clearance`;
+  // SW termination window: chrome.cookies.onChanged is not an ExtendableEvent,
+  // so event.waitUntil() is unavailable here. The diagnostic write may be lost if
+  // the SW is terminated after the fetch resolves but before the storage write
+  // completes. A harness should treat a missing or stale last_clearance_post_status
+  // as inconclusive rather than a confirmed failure.
   fetch(url, {
     method: "POST",
     headers: {
@@ -154,8 +210,38 @@ chrome.cookies.onChanged.addListener(async (details) => {
         console.log("[SportCrawl] Clearance delivered to work_server.");
         persistStatus("ok");
       }
+      // Durable diagnostic — no sensitive values included.
+      const cls = _classifyHttpStatus(res.status);
+      try {
+        chrome.storage.local.set({
+          last_clearance_post_status: {
+            attempted: true,
+            http_status_class: cls,
+            error_class: null,
+            timestamp_ms: Date.now(),
+          },
+        }).catch(() =>
+          console.warn("[SportCrawl] diagnostic write failed: storage write failed")
+        );
+      } catch (_e) {
+        console.warn("[SportCrawl] diagnostic write failed: storage write failed");
+      }
     })
     .catch((err) => {
+      try {
+        chrome.storage.local.set({
+          last_clearance_post_status: {
+            attempted: true,
+            http_status_class: "network_error",
+            error_class: _classifyFetchError(err),
+            timestamp_ms: Date.now(),
+          },
+        }).catch(() =>
+          console.warn("[SportCrawl] diagnostic write failed: storage write failed")
+        );
+      } catch (_e) {
+        console.warn("[SportCrawl] diagnostic write failed: storage write failed");
+      }
       console.error("[SportCrawl] /api/clearance POST error:", err);
       persistStatus("err");
     });
