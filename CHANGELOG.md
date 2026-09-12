@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.2] — 2026-09-12
+
+### Fixed
+
+- **Extension storage injection — `chrome.runtime.lastError` surfaced**: the JS function injected via `inject_storage_config_to_extension` now rejects its Promise when `chrome.runtime.lastError` is set inside the `chrome.storage.local.set` callback; previously the callback resolved `true` unconditionally, silently discarding write failures
+- **Extension storage injection — CDP `exceptionDetails` treated as failure**: the result of `Runtime.callFunctionOn` is now inspected; if `exceptionDetails` is present the call raises `PageLoadError` immediately, converting a previously invisible CDP-level error into an explicit gate failure at `extension_config_inject`
+- **Extension storage injection — post-injection readback verification**: after the write, `inject_storage_config_to_extension` reads `allowed_clearance_domain` back from `chrome.storage.local` via the same SW CDP session and asserts it matches the injected value; a mismatch or missing key raises `PageLoadError`, ensuring the gate cannot pass with an empty or corrupt storage state
+- **Sanitized extension diagnostic read path**: new `read_extension_storage_diagnostic(key)` method on `PydollEngine` reads a single `chrome.storage.local` key via the SW CDP session and returns only the safe subset `{attempted, drop_reason, error_class, http_status_class}`; all other fields and raw values are stripped; the method is best-effort and returns `None` on any failure without raising
+- **Injection tests — storage failure, exception details, readback paths**: new tests cover `chrome.runtime.lastError` rejection propagation, CDP `exceptionDetails` detection, readback success, readback mismatch, readback missing key, readback skip when `allowed_clearance_domain` is absent from config, and sanitized diagnostic filtering
+
 ## [0.47.1] — 2026-09-10
 
 ### Fixed
@@ -530,7 +540,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.1...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.2...HEAD
+[0.47.2]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.1...v0.47.2
 [0.47.1]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.0...v0.47.1
 [0.47.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.45.0...v0.46.0
