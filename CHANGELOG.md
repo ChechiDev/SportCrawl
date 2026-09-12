@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.5] — 2026-09-12
+
+### Fixed
+
+- **Clearance observation timeout is now configurable**: `SCRAPING__CLEARANCE_TIMEOUT_S` env var (default `120`, minimum `1`) added to `ScrapingSettings` and wired into `RealClearanceSeams.clearance_timeout_s`; previously the 120-second observation window was hardcoded with no override path; zero and negative values are rejected by settings validation at startup
+
 ## [0.47.4] — 2026-09-12
 
 ### Fixed
