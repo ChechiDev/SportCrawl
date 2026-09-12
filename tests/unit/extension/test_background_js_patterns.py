@@ -423,3 +423,183 @@ class TestCookieListenerResilience:
         assert "async" in before_body, (
             "cookie listener callback must be async to support await loadConfig()"
         )
+
+
+class TestSWKeepalive:
+    """background.js must include a bounded keepalive alarm for clearance observation.
+    """
+
+    def _get_alarm_listener_body(self) -> str:
+        lines = _BG.splitlines()
+        start = next(
+            (
+                i for i, ln in enumerate(lines)
+                if "chrome.alarms.onAlarm.addListener" in ln
+            ),
+            None,
+        )
+        assert start is not None, "chrome.alarms.onAlarm.addListener not found"
+        depth = 0
+        body_lines: list[str] = []
+        in_body = False
+        for ln in lines[start:]:
+            opens = ln.count("{")
+            closes = ln.count("}")
+            if not in_body and opens > 0:
+                in_body = True
+            depth += opens - closes
+            body_lines.append(ln)
+            if in_body and depth == 0:
+                break
+        return "\n".join(body_lines)
+
+    def test_keepalive_alarm_name_constant_defined(self) -> None:
+        assert "KEEPALIVE_ALARM_NAME" in _BG, (
+            "KEEPALIVE_ALARM_NAME constant must be defined in background.js"
+        )
+
+    def test_keepalive_alarm_name_distinct_from_task_poll(self) -> None:
+        lines = _BG.splitlines()
+        poll_line = next(
+            (ln for ln in lines if re.match(r"\s*const ALARM_NAME\s*=", ln)),
+            None,
+        )
+        keepalive_line = next(
+            (ln for ln in lines if re.match(r"\s*const KEEPALIVE_ALARM_NAME\s*=", ln)),
+            None,
+        )
+        assert poll_line is not None, "ALARM_NAME constant not found"
+        assert keepalive_line is not None, "KEEPALIVE_ALARM_NAME constant not found"
+        poll_val = poll_line.split("=", 1)[1].strip().rstrip(";").strip("\"'")
+        keepalive_val = keepalive_line.split("=", 1)[1].strip().rstrip(";").strip("\"'")
+        assert poll_val != keepalive_val, (
+            f"KEEPALIVE_ALARM_NAME ({keepalive_val!r}) must differ from "
+            f"ALARM_NAME ({poll_val!r})"
+        )
+
+    def test_keepalive_period_minutes_constant_defined(self) -> None:
+        assert "KEEPALIVE_PERIOD_MINUTES" in _BG, (
+            "KEEPALIVE_PERIOD_MINUTES constant must be defined in background.js"
+        )
+
+    def test_keepalive_period_below_mv3_minimum(self) -> None:
+        lines = _BG.splitlines()
+        period_line = next(
+            (
+                ln for ln in lines
+                if "KEEPALIVE_PERIOD_MINUTES" in ln and "=" in ln and "const" in ln
+            ),
+            None,
+        )
+        assert period_line is not None, (
+            "KEEPALIVE_PERIOD_MINUTES constant line not found"
+        )
+        match = re.search(r"=\s*([0-9.]+)", period_line)
+        assert match is not None, f"Could not extract numeric value from: {period_line}"
+        val_minutes = float(match.group(1))
+        assert val_minutes > 0, (
+            f"KEEPALIVE_PERIOD_MINUTES ({val_minutes}) must be > 0"
+        )
+        assert val_minutes <= 0.5, (
+            f"KEEPALIVE_PERIOD_MINUTES ({val_minutes}) must be <= 0.5 min "
+            f"(Chrome MV3 minimum; fires every 30s)"
+        )
+
+    def test_loadconfig_reads_enable_sw_keepalive(self) -> None:
+        lines = _BG.splitlines()
+        start = next(
+            (i for i, ln in enumerate(lines) if "async function loadConfig()" in ln),
+            None,
+        )
+        assert start is not None, "loadConfig() not found"
+        depth = 0
+        body_lines: list[str] = []
+        for ln in lines[start:]:
+            depth += ln.count("{") - ln.count("}")
+            body_lines.append(ln)
+            if depth == 0 and body_lines:
+                break
+        func_body = "\n".join(body_lines)
+        assert "enable_sw_keepalive" in func_body, (
+            '"enable_sw_keepalive" must be read inside loadConfig()'
+        )
+
+    def test_keepalive_alarm_created_via_create_call(self) -> None:
+        lines = _BG.splitlines()
+        create_lines = [ln for ln in lines if "chrome.alarms.create" in ln]
+        assert any("KEEPALIVE_ALARM_NAME" in ln for ln in create_lines), (
+            "chrome.alarms.create must be called with KEEPALIVE_ALARM_NAME"
+        )
+
+    def test_keepalive_alarm_cleared_when_disabled(self) -> None:
+        lines = _BG.splitlines()
+        clear_lines = [ln for ln in lines if "chrome.alarms.clear" in ln]
+        assert any("KEEPALIVE_ALARM_NAME" in ln for ln in clear_lines), (
+            "chrome.alarms.clear must be called with KEEPALIVE_ALARM_NAME "
+            "to support disabling keepalive"
+        )
+
+    def test_keepalive_alarm_handler_does_not_call_poll(self) -> None:
+        listener_body = self._get_alarm_listener_body()
+        keepalive_pos = listener_body.find("KEEPALIVE_ALARM_NAME")
+        assert keepalive_pos != -1, "KEEPALIVE_ALARM_NAME not found in alarm listener"
+        fragment = listener_body[keepalive_pos:]
+        lines = fragment.splitlines()
+        depth = 0
+        branch_lines: list[str] = []
+        in_block = False
+        for ln in lines:
+            opens = ln.count("{")
+            closes = ln.count("}")
+            if not in_block and opens > 0:
+                in_block = True
+            depth += opens - closes
+            branch_lines.append(ln)
+            if in_block and depth == 0:
+                break
+        branch = "\n".join(branch_lines)
+        assert "pollNextTask" not in branch, (
+            "keepalive alarm handler must not call pollNextTask()"
+        )
+
+    def test_keepalive_alarm_handler_does_not_fetch(self) -> None:
+        listener_body = self._get_alarm_listener_body()
+        keepalive_pos = listener_body.find("KEEPALIVE_ALARM_NAME")
+        assert keepalive_pos != -1, "KEEPALIVE_ALARM_NAME not found in alarm listener"
+        fragment = listener_body[keepalive_pos:]
+        lines = fragment.splitlines()
+        depth = 0
+        branch_lines: list[str] = []
+        in_block = False
+        for ln in lines:
+            opens = ln.count("{")
+            closes = ln.count("}")
+            if not in_block and opens > 0:
+                in_block = True
+            depth += opens - closes
+            branch_lines.append(ln)
+            if in_block and depth == 0:
+                break
+        branch = "\n".join(branch_lines)
+        assert "fetch(" not in branch, (
+            "keepalive alarm handler must not call fetch()"
+        )
+
+    def test_task_polling_remains_gated_by_disable_flag(self) -> None:
+        lines = _BG.splitlines()
+        start = next(
+            (i for i, ln in enumerate(lines) if "async function pollNextTask()" in ln),
+            None,
+        )
+        assert start is not None, "pollNextTask() function not found"
+        depth = 0
+        body_lines: list[str] = []
+        for ln in lines[start:]:
+            depth += ln.count("{") - ln.count("}")
+            body_lines.append(ln)
+            if depth == 0 and body_lines:
+                break
+        func_body = "\n".join(body_lines)
+        assert "disable_task_polling" in func_body, (
+            "pollNextTask() must still check _config.disable_task_polling"
+        )

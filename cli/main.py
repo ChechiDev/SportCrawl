@@ -520,6 +520,7 @@ def smoke_clearance(
                 "profile_id": _ext_cfg.profile_id,
                 "worker_id": _ext_cfg.worker_id,
                 "disable_task_polling": _ext_cfg.disable_task_polling,
+                "enable_sw_keepalive": _ext_cfg.enable_sw_keepalive,
             },
             loop=_loop,
         )

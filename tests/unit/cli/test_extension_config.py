@@ -115,3 +115,17 @@ class TestSmokeExtensionConfigFactory:
     def test_factory_sets_disable_task_polling_true(self) -> None:
         cfg = smoke_extension_config(url=_SENTINEL_URL, token=_SENTINEL_TOKEN)
         assert cfg.disable_task_polling is True
+
+    def test_factory_sets_enable_sw_keepalive_true(self) -> None:
+        cfg = smoke_extension_config(url="http://127.0.0.1:9731", token="t")
+        assert cfg.enable_sw_keepalive is True
+
+    def test_default_enable_sw_keepalive_is_false(self) -> None:
+        cfg = ExtensionConfig(
+            work_server_url="http://127.0.0.1:9731",
+            work_server_token="t",
+            profile_id="p",
+            worker_id="w",
+            disable_task_polling=False,
+        )
+        assert cfg.enable_sw_keepalive is False
