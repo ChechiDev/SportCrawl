@@ -457,3 +457,112 @@ class TestTargetNavigatorSeam:
         assert "http" not in error_msg, (
             f"PageLoadError message must not contain URL: {error_msg!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests — extension_diagnostic_reader seam (WU9)
+# ---------------------------------------------------------------------------
+
+
+class TestExtensionDiagnosticReaderSeam:
+    def _make_blocked_observer(self) -> _FakeClearanceObserver:
+        """Observer that always returns obtained=False (timeout scenario)."""
+
+        class _BlockingObserver:
+            def observe(self, timeout_s: int) -> ClearanceResult:  # noqa: ARG002
+                return ClearanceResult(
+                    obtained=False,
+                    expires_at=None,
+                    clearance_class="FAKE_CLEARANCE_CLASS",
+                )
+
+        return _BlockingObserver()  # type: ignore[return-value]
+
+    def test_diagnostic_reader_called_on_blocked(self) -> None:
+        """When clearance_observed blocks, extension_diagnostic_reader is called with
+        the correct key."""
+        calls: list[str] = []
+
+        def _reader(key: str) -> dict | None:
+            calls.append(key)
+            return None
+
+        harness = RealClearanceHarness()
+        harness.run(
+            _make_providers(),
+            _make_seams(clearance_observer=self._make_blocked_observer()),
+            extension_diagnostic_reader=_reader,
+        )
+
+        assert calls == ["last_clearance_post_status"], (
+            f"Expected one call with key 'last_clearance_post_status', got: {calls}"
+        )
+
+    def test_diagnostic_fields_in_evidence_on_blocked(self) -> None:
+        """When reader returns a dict, evidence must contain extension_diagnostic
+        with those same sanitized fields."""
+        _diag = {"attempted": False, "drop_reason": "CLEARANCE_DOMAIN_NOT_CONFIGURED"}
+
+        def _reader(key: str) -> dict | None:  # noqa: ARG001
+            return _diag
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(clearance_observer=self._make_blocked_observer()),
+            extension_diagnostic_reader=_reader,
+        )
+
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == "clearance_observed"
+        assert "extension_diagnostic" in report.evidence, (
+            f"evidence must contain 'extension_diagnostic', got keys: "
+            f"{list(report.evidence.keys())}"
+        )
+        assert report.evidence["extension_diagnostic"] == _diag
+
+    def test_diagnostic_failure_does_not_change_blocked_result(self) -> None:
+        """When extension_diagnostic_reader raises, harness still returns BLOCKED.
+
+        No exception escapes. extension_diagnostic must be absent or None.
+        """
+
+        def _raising_reader(key: str) -> dict | None:  # noqa: ARG001
+            raise Exception("CDP read failed")  # noqa: TRY002
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(clearance_observer=self._make_blocked_observer()),
+            extension_diagnostic_reader=_raising_reader,
+        )
+
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == "clearance_observed"
+        # Must not propagate — the key is either absent or None
+        diag = report.evidence.get("extension_diagnostic")
+        assert diag is None, (
+            "extension_diagnostic must be absent or None when reader raises, "
+            f"got: {diag}"
+        )
+
+    def test_diagnostic_absent_when_reader_returns_none(self) -> None:
+        """When extension_diagnostic_reader returns None, evidence must not contain
+        the 'extension_diagnostic' key (or it must be None/absent)."""
+
+        def _reader(key: str) -> dict | None:  # noqa: ARG001
+            return None
+
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(clearance_observer=self._make_blocked_observer()),
+            extension_diagnostic_reader=_reader,
+        )
+
+        assert report.status == HarnessStatus.BLOCKED
+        assert report.error_gate == "clearance_observed"
+        assert report.evidence.get("extension_diagnostic") is None, (
+            "extension_diagnostic must be absent when reader returns None, "
+            f"got: {report.evidence.get('extension_diagnostic')}"
+        )
