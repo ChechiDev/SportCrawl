@@ -254,6 +254,26 @@ class TestScrapingSettingsNewFields:
         with pytest.raises(ValidationError):
             ScrapingSettings(request_delay_max=-0.1)
 
+    def test_clearance_timeout_s_default(self) -> None:
+        settings = ScrapingSettings()
+        assert settings.clearance_timeout_s == 120
+
+    def test_clearance_timeout_s_overridden(self) -> None:
+        settings = ScrapingSettings(clearance_timeout_s=300)
+        assert settings.clearance_timeout_s == 300
+
+    def test_clearance_timeout_s_rejects_zero(self) -> None:
+        with pytest.raises(ValidationError):
+            ScrapingSettings(clearance_timeout_s=0)
+
+    def test_clearance_timeout_s_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError):
+            ScrapingSettings(clearance_timeout_s=-1)
+
+    def test_clearance_timeout_s_accepts_minimum(self) -> None:
+        settings = ScrapingSettings(clearance_timeout_s=1)
+        assert settings.clearance_timeout_s == 1
+
     def test_allowed_hosts_overridden_by_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

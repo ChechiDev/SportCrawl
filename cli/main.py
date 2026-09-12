@@ -560,6 +560,7 @@ def smoke_clearance(
                 token=_token,
             ),
             resolved_host=_RESOLVED_HOST,
+            clearance_timeout_s=settings.scraping.clearance_timeout_s,
         )
 
         harness = RealClearanceHarness()

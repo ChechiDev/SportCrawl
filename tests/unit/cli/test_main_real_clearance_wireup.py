@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from cli.main import app
@@ -182,6 +183,29 @@ class TestRealClearanceSeamConstruction:
         resolved_host = kwargs.get("resolved_host")
         assert resolved_host == "127.0.0.1", (
             f"resolved_host must be '127.0.0.1', got {resolved_host!r}"
+        )
+
+    def test_clearance_timeout_default_wired(self) -> None:
+        """RealClearanceSeams must receive clearance_timeout_s=120 when env absent."""
+        _, mocks, _ = _invoke_patched()
+        call_kwargs = mocks["seams_cls"].call_args
+        assert call_kwargs is not None, "RealClearanceSeams was not constructed"
+        kwargs = call_kwargs.kwargs if call_kwargs.kwargs else {}
+        actual = kwargs.get("clearance_timeout_s")
+        assert actual == 120, f"clearance_timeout_s must default to 120, got {actual!r}"
+
+    def test_clearance_timeout_override_wired(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SCRAPING__CLEARANCE_TIMEOUT_S must override clearance_timeout_s."""
+        monkeypatch.setenv("SCRAPING__CLEARANCE_TIMEOUT_S", "300")
+        _, mocks, _ = _invoke_patched()
+        call_kwargs = mocks["seams_cls"].call_args
+        assert call_kwargs is not None, "RealClearanceSeams was not constructed"
+        kwargs = call_kwargs.kwargs if call_kwargs.kwargs else {}
+        assert kwargs.get("clearance_timeout_s") == 300, (
+            f"clearance_timeout_s must be 300 when env override is 300, "
+            f"got {kwargs.get('clearance_timeout_s')!r}"
         )
 
 
