@@ -46,6 +46,9 @@ _SW_TARGET_RETRIES: int = 3
 _SW_TARGET_RETRY_DELAY_S: float = 0.1
 _EXTENSION_PATH = Path(__file__).parents[2] / "extensions" / "sportcrawl-chrome"
 _CHALLENGE_TIMEOUT = 120  # seconds — Turnstile managed challenge can take 30–90s
+_DIAGNOSTIC_SAFE_FIELDS: frozenset[str] = frozenset(
+    {"attempted", "drop_reason", "error_class", "http_status_class"}
+)
 
 
 class PydollEngine(ScriptableEngine):
@@ -453,12 +456,18 @@ class PydollEngine(ScriptableEngine):
 
                 # Step 4: call function on SW global.
                 # Config is passed as a structured CDP argument — never in JS body.
-                # The function awaits the storage write and resolves true, so the CDP
-                # call confirms the write succeeded rather than dropping silently.
+                # The callback checks chrome.runtime.lastError so storage failures
+                # are not silently swallowed; reject propagates to CDP exceptionDetails.
                 _fn = (
                     "function(cfg) {"
-                    " return new Promise(function(resolve) {"
-                    " chrome.storage.local.set(cfg, function() { resolve(true); });"
+                    " return new Promise(function(resolve, reject) {"
+                    " chrome.storage.local.set(cfg, function() {"
+                    " if (chrome.runtime.lastError) {"
+                    " reject(new Error(chrome.runtime.lastError.message));"
+                    " } else {"
+                    " resolve(true);"
+                    " }"
+                    " });"
                     " });"
                     "}"
                 )
@@ -473,10 +482,66 @@ class PydollEngine(ScriptableEngine):
                     },
                     "sessionId": session_id,
                 }
-                await asyncio.wait_for(
+                call_result = await asyncio.wait_for(
                     self._tab._execute_command(call_cmd),
                     timeout=_INJECT_STORAGE_TIMEOUT_S,
                 )
+                if call_result.get("result", {}).get("exceptionDetails"):
+                    _exc_text = (
+                        call_result.get("result", {})
+                        .get("exceptionDetails", {})
+                        .get("text", "unknown")
+                    )
+                    raise PageLoadError(
+                        "inject_storage_config_to_extension:"
+                        " callFunctionOn returned exceptionDetails:"
+                        f" {_exc_text}",
+                        url="",
+                    )
+
+                # Step 5: post-injection readback — verify the write persisted.
+                # Only performed when the config includes allowed_clearance_domain.
+                injected_domain = config.get("allowed_clearance_domain")
+                if injected_domain is not None:
+                    _readback_fn = (
+                        "function() {"
+                        " return new Promise(function(resolve) {"
+                        " chrome.storage.local.get(['allowed_clearance_domain'],"
+                        " function(items) { resolve(items); });"
+                        " });"
+                        "}"
+                    )
+                    readback_cmd: dict[str, Any] = {
+                        "method": "Runtime.callFunctionOn",
+                        "params": {
+                            "functionDeclaration": _readback_fn,
+                            "objectId": object_id,
+                            "arguments": [],
+                            "awaitPromise": True,
+                            "returnByValue": True,
+                        },
+                        "sessionId": session_id,
+                    }
+                    readback_result = await asyncio.wait_for(
+                        self._tab._execute_command(readback_cmd),
+                        timeout=_INJECT_STORAGE_TIMEOUT_S,
+                    )
+                    stored = (
+                        readback_result.get("result", {})
+                        .get("result", {})
+                        .get("value", {})
+                    )
+                    stored_domain = (
+                        stored.get("allowed_clearance_domain")
+                        if isinstance(stored, dict)
+                        else None
+                    )
+                    if stored_domain != injected_domain:
+                        raise PageLoadError(
+                            "inject_storage_config_to_extension:"
+                            " readback mismatch — storage write not confirmed",
+                            url="",
+                        )
             finally:
                 try:
                     await asyncio.wait_for(
@@ -498,6 +563,135 @@ class PydollEngine(ScriptableEngine):
             raise PageLoadError(
                 "inject_storage_config_to_extension failed", url=""
             ) from exc
+
+    async def read_extension_storage_diagnostic(
+        self, key: str
+    ) -> dict[str, object] | None:
+        """Read a single key from chrome.storage.local via the extension SW context.
+
+        Best-effort: returns None on any failure instead of raising. Callers must
+        treat a None result as "unavailable", not as "key absent".
+
+        Only the safe diagnostic subset is returned:
+        ``attempted``, ``drop_reason``, ``error_class``, ``http_status_class``.
+        Raw values, cookies, tokens, URLs, and storage blobs are never returned.
+
+        Args:
+            key: The chrome.storage.local key to read.
+
+        Returns:
+            Sanitized dict with a subset of the stored value, or None.
+        """
+        try:
+            if self._tab is None:
+                return None
+
+            # Find the extension SW target (best-effort, no retries — diagnostic only)
+            get_targets_cmd: dict[str, Any] = {
+                "method": "Target.getTargets",
+                "params": {},
+            }
+            targets_result = await asyncio.wait_for(
+                self._tab._execute_command(get_targets_cmd),
+                timeout=_INJECT_STORAGE_TIMEOUT_S,
+            )
+            target_infos = targets_result.get("result", {}).get("targetInfos", [])
+            sw_target = next(
+                (
+                    t
+                    for t in target_infos
+                    if t.get("type") == "service_worker"
+                    and t.get("url", "").startswith("chrome-extension://")
+                ),
+                None,
+            )
+            if sw_target is None:
+                return None
+
+            target_id: str = sw_target["targetId"]
+            attach_cmd: dict[str, Any] = {
+                "method": "Target.attachToTarget",
+                "params": {"targetId": target_id, "flatten": True},
+            }
+            attach_result = await asyncio.wait_for(
+                self._tab._execute_command(attach_cmd),
+                timeout=_INJECT_STORAGE_TIMEOUT_S,
+            )
+            session_id: str = attach_result.get("result", {}).get("sessionId", "")
+            if not session_id:
+                return None
+
+            _detach_cmd: dict[str, Any] = {
+                "method": "Target.detachFromTarget",
+                "params": {"sessionId": session_id},
+            }
+            try:
+                eval_cmd: dict[str, Any] = {
+                    "method": "Runtime.evaluate",
+                    "params": {"expression": "this", "returnByValue": False},
+                    "sessionId": session_id,
+                }
+                eval_result = await asyncio.wait_for(
+                    self._tab._execute_command(eval_cmd),
+                    timeout=_INJECT_STORAGE_TIMEOUT_S,
+                )
+                object_id: str = (
+                    eval_result.get("result", {})
+                    .get("result", {})
+                    .get("objectId", "")
+                )
+                if not object_id:
+                    return None
+
+                _read_fn = (
+                    "function(k) {"
+                    " return new Promise(function(resolve) {"
+                    " chrome.storage.local.get([k], function(items) {"
+                    " resolve(items);"
+                    " });"
+                    " });"
+                    "}"
+                )
+                read_cmd: dict[str, Any] = {
+                    "method": "Runtime.callFunctionOn",
+                    "params": {
+                        "functionDeclaration": _read_fn,
+                        "objectId": object_id,
+                        "arguments": [{"value": key}],
+                        "awaitPromise": True,
+                        "returnByValue": True,
+                    },
+                    "sessionId": session_id,
+                }
+                read_result = await asyncio.wait_for(
+                    self._tab._execute_command(read_cmd),
+                    timeout=_INJECT_STORAGE_TIMEOUT_S,
+                )
+                stored = (
+                    read_result.get("result", {})
+                    .get("result", {})
+                    .get("value", {})
+                )
+                raw_value = stored.get(key) if isinstance(stored, dict) else None
+                if raw_value is None or not isinstance(raw_value, dict):
+                    return None
+                # Return only the sanitized safe subset
+                sanitized = {
+                    field: raw_value[field]
+                    for field in _DIAGNOSTIC_SAFE_FIELDS
+                    if field in raw_value
+                }
+                return sanitized if sanitized else None
+            finally:
+                try:
+                    await asyncio.wait_for(
+                        self._tab._execute_command(_detach_cmd),
+                        timeout=_INJECT_STORAGE_TIMEOUT_S,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception:  # noqa: BLE001
+            return None
 
     async def get_page_source(self) -> str:
         """Return the current page's outer HTML without navigating."""
