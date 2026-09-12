@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.3] — 2026-09-12
+
+### Fixed
+
+- **Harness surfaces sanitized extension diagnostic on `clearance_observed` BLOCKED**: when the real-smoke harness reaches the `clearance_observed` gate in BLOCKED state, it now calls `read_extension_storage_diagnostic` via the new `extension_diagnostic_reader` seam and stores the result in `evidence["extension_diagnostic"]`; only the fields in the safe allowlist (`attempted`, `drop_reason`, `error_class`, `http_status_class`) are retained — raw values, cookies, and storage contents are never stored
+- **Real smoke composition wires diagnostic reader**: `make_extension_diagnostic_reader` factory added to `real_clearance_composition`; wraps `engine.read_extension_storage_diagnostic` in a sync callable with a 10-second timeout and a loop-state guard; wired into `harness.run()` via `cli/main.py` on the `--real-clearance` path
+- **Diagnostic reader type annotations aligned for CI typecheck**: `extension_diagnostic_reader` parameter and `make_extension_diagnostic_reader` return type now use `dict[str, object] | None` instead of the unparameterized `dict | None`; removes mypy `type-arg` and `no-any-return` errors; duplicate `_DIAG_SAFE_KEYS` class-level definition removed
+
 ## [0.47.2] — 2026-09-12
 
 ### Fixed
@@ -541,6 +549,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core types, logging, and exception hierarchy
 
 [Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.2...HEAD
+[0.47.3]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.2...v0.47.3
 [0.47.2]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.1...v0.47.2
 [0.47.1]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.0...v0.47.1
 [0.47.0]: https://github.com/ChechiDev/sportcrawl/compare/v0.46.0...v0.47.0
