@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.4] — 2026-09-12
+
+### Fixed
+
+- **Real-smoke token source resolves through `Settings()`**: `SCRAPING__WORK_SERVER_TOKEN` is now read via `Settings()` instead of `os.environ.get`; tokens defined only in `.env` are now picked up consistently — previously the clearance getter received an empty string and every `/api/clearance/latest` poll returned 401
+- **BLOCKED evidence now rendered in CLI output**: when the real-smoke harness blocks, safe evidence fields (`clearance_getter_error_type`, `clearance_getter_error`, `auth_probe_status`, `token_source_class`, `target_validation_status`) are printed to the console so the blocking context is visible without inspecting internal state
+- **Diagnostic reader failures surfaced as evidence**: when `extension_diagnostic_reader` raises, the exception class is stored as `extension_diagnostic_error` in evidence and rendered in CLI output rather than being silently swallowed
+- **Extension storage diagnostic reader logs early-return reasons**: each early-return path in `read_extension_storage_diagnostic` now emits a WARNING-level log entry (`tab is None`, `no SW target found`, `attach returned no sessionId`, etc.) so the exact failure mode appears in stderr without requiring DEBUG logging
+
 ## [0.47.3] — 2026-09-12
 
 ### Fixed
@@ -549,6 +558,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core types, logging, and exception hierarchy
 
 [Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.2...HEAD
+[0.47.4]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.3...v0.47.4
 [0.47.3]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.2...v0.47.3
 [0.47.2]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.1...v0.47.2
 [0.47.1]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.0...v0.47.1
