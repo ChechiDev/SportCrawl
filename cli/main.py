@@ -35,6 +35,7 @@ from cli.extension_config import smoke_extension_config  # noqa: E402
 from cli.real_clearance_composition import (  # noqa: E402
     make_cleanup,
     make_extension_config_injector,
+    make_extension_diagnostic_reader,
     make_target_navigator,
 )
 from cli.smoke_clearance_real import (  # noqa: E402
@@ -523,6 +524,9 @@ def smoke_clearance(
             loop=_loop,
         )
         _target_navigator = make_target_navigator(engine=engine, loop=_loop)
+        _extension_diagnostic_reader = make_extension_diagnostic_reader(
+            engine=engine, loop=_loop
+        )
 
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
@@ -566,6 +570,7 @@ def smoke_clearance(
                 seams,
                 extension_config_injector=_extension_config_injector,
                 target_navigator=_target_navigator,
+                extension_diagnostic_reader=_extension_diagnostic_reader,
             )
         finally:
             _cleanup()

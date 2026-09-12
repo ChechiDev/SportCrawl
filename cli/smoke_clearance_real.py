@@ -244,6 +244,10 @@ class RealClearanceHarness:
     GATE_POST_CLEARANCE = "post_clearance"
     GATE_FINAL_REDACTION = "final_redaction_scan"
 
+    _DIAG_SAFE_KEYS: frozenset[str] = frozenset(
+        {"attempted", "drop_reason", "error_class", "http_status_class"}
+    )
+
     def _redact_str(self, value: str) -> str:
         """Redact sensitive patterns from a string before storing in evidence.
 
@@ -261,6 +265,9 @@ class RealClearanceHarness:
         seams: RealClearanceSeams,
         extension_config_injector: Callable[[], None] | None = None,
         target_navigator: Callable[[], None] | None = None,
+        extension_diagnostic_reader: (
+            Callable[[str], dict[str, object] | None] | None
+        ) = None,
     ) -> HarnessReport:
         gate_results: dict[str, GateStatus] = {}
         evidence: dict[str, object] = {}
@@ -514,6 +521,22 @@ class RealClearanceHarness:
             if not clearance_result.obtained:
                 gate_results[self.GATE_CLEARANCE_OBSERVED] = GateStatus.BLOCKED
                 error_gate = self.GATE_CLEARANCE_OBSERVED
+                if extension_diagnostic_reader is not None:
+                    try:
+                        _diag = extension_diagnostic_reader(
+                            "last_clearance_post_status"
+                        )
+                        if _diag is not None:
+                            evidence["extension_diagnostic"] = {
+                                k: v
+                                for k, v in _diag.items()
+                                if k in self._DIAG_SAFE_KEYS
+                            }
+                    except Exception as _exc:  # noqa: BLE001
+                        logger.debug(
+                            "extension_diagnostic_reader failed (best-effort): %s",
+                            type(_exc).__name__,
+                        )
                 return HarnessReport(
                     status=HarnessStatus.BLOCKED,
                     gate_results=gate_results,

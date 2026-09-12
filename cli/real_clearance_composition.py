@@ -25,6 +25,7 @@ _NAV_TIMEOUT_S: float = 30.0
 _INJECT_TIMEOUT_S: float = 15.0
 _CLEANUP_TIMEOUT_S: float = 5.0
 _STOP_TIMEOUT_S: float = 3.0
+_DIAGNOSTIC_READ_TIMEOUT_S: float = 10.0
 
 _logger = logging.getLogger(__name__)
 
@@ -194,3 +195,36 @@ def make_target_navigator(
         loop.run_until_complete(_navigate_with_timeout())
 
     return _target_navigator
+
+
+def make_extension_diagnostic_reader(
+    engine: Any,
+    loop: asyncio.AbstractEventLoop,
+) -> Callable[[str], dict[str, object] | None]:
+    """Return a sync callable that reads extension storage diagnostics via CDP.
+
+    The returned callable takes a ``key`` string and returns the diagnostic dict
+    (or None) from ``engine.read_extension_storage_diagnostic``. Any exception
+    propagates to the caller — the harness treats this as best-effort.
+
+    Runs on the provided event loop so all pydoll async objects remain on one
+    loop throughout the session.
+    """
+
+    def _read(key: str) -> dict[str, object] | None:
+        _is_closed = loop.is_closed()
+        _is_running = loop.is_running()
+        if _is_closed or _is_running:
+            raise RuntimeError(
+                "extension diagnostic reader loop is not usable "
+                f"(closed={_is_closed}, running={_is_running})"
+            )
+        result: dict[str, object] | None = loop.run_until_complete(
+            asyncio.wait_for(
+                engine.read_extension_storage_diagnostic(key),
+                timeout=_DIAGNOSTIC_READ_TIMEOUT_S,
+            )
+        )
+        return result
+
+    return _read
