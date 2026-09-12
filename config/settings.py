@@ -49,6 +49,7 @@ class ScrapingSettings(BaseModel):
     # Work server runtime settings
     work_server_host: str = "127.0.0.1"
     work_server_port: int = 9731
+    clearance_timeout_s: int = Field(default=120, ge=1)
     poll_interval: float = Field(default=5.0, gt=0.0)
     # Remote CDP engine — set to connect to a pre-running Chromium container.
     # Example: SCRAPING__CDP_WS_URL=ws://chromium:9222
