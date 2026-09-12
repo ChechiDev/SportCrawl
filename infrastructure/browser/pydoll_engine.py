@@ -584,6 +584,7 @@ class PydollEngine(ScriptableEngine):
         """
         try:
             if self._tab is None:
+                logger.warning("read_extension_storage_diagnostic: tab is None")
                 return None
 
             # Find the extension SW target (best-effort, no retries — diagnostic only)
@@ -596,6 +597,10 @@ class PydollEngine(ScriptableEngine):
                 timeout=_INJECT_STORAGE_TIMEOUT_S,
             )
             target_infos = targets_result.get("result", {}).get("targetInfos", [])
+            logger.warning(
+                "read_extension_storage_diagnostic: found %d targets",
+                len(target_infos),
+            )
             sw_target = next(
                 (
                     t
@@ -606,6 +611,9 @@ class PydollEngine(ScriptableEngine):
                 None,
             )
             if sw_target is None:
+                logger.warning(
+                    "read_extension_storage_diagnostic: no SW target found"
+                )
                 return None
 
             target_id: str = sw_target["targetId"]
@@ -619,6 +627,9 @@ class PydollEngine(ScriptableEngine):
             )
             session_id: str = attach_result.get("result", {}).get("sessionId", "")
             if not session_id:
+                logger.warning(
+                    "read_extension_storage_diagnostic: attach returned no sessionId"
+                )
                 return None
 
             _detach_cmd: dict[str, Any] = {
@@ -641,6 +652,10 @@ class PydollEngine(ScriptableEngine):
                     .get("objectId", "")
                 )
                 if not object_id:
+                    logger.warning(
+                        "read_extension_storage_diagnostic:"
+                        " Runtime.evaluate returned no objectId"
+                    )
                     return None
 
                 _read_fn = (
@@ -674,6 +689,12 @@ class PydollEngine(ScriptableEngine):
                 )
                 raw_value = stored.get(key) if isinstance(stored, dict) else None
                 if raw_value is None or not isinstance(raw_value, dict):
+                    logger.warning(
+                        "read_extension_storage_diagnostic:"
+                        " key %r absent or wrong type (stored type: %s)",
+                        key,
+                        type(stored).__name__,
+                    )
                     return None
                 # Return only the sanitized safe subset
                 sanitized = {
@@ -690,7 +711,11 @@ class PydollEngine(ScriptableEngine):
                     )
                 except Exception:  # noqa: BLE001
                     pass
-        except Exception:  # noqa: BLE001
+        except Exception as _diag_exc:  # noqa: BLE001
+            logger.warning(
+                "read_extension_storage_diagnostic: unhandled exception %s",
+                type(_diag_exc).__name__,
+            )
             return None
 
     async def get_page_source(self) -> str:

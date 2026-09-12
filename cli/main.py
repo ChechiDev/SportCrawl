@@ -460,24 +460,24 @@ def smoke_clearance(
     console = Console()
 
     if real_clearance:
-        import os
-
         _RESOLVED_HOST = "127.0.0.1"
         _WORK_SERVER_PORT = 9731
         _WORK_SERVER_CMD = ["uv", "run", "sportcrawl", "work-server"]
-        # Captured here for seam constructors. Gate 1 (GATE_PROVIDER_READINESS)
-        # re-reads this env var live via EnvTokenProvider.is_ready() before any
-        # resource-committing gate — empty/missing token caught there, before
-        # work_server starts.
-        _token = os.environ.get("SCRAPING__WORK_SERVER_TOKEN", "")
         _clearance_url = (
             f"http://{_RESOLVED_HOST}:{_WORK_SERVER_PORT}/api/clearance"
         )
 
         # Composition-root config for real-clearance seams — no settings object
         # exists upstream in this command scope; constructed here to resolve
-        # chrome_profile_dir before the closures are defined.
+        # chrome_profile_dir and token before the closures are defined.
+        # Settings() loads .env so tokens not exported to os.environ are resolved.
         settings = Settings()  # type: ignore[call-arg]
+        # Captured here for seam constructors. Gate 1 (GATE_PROVIDER_READINESS)
+        # re-reads this env var live via EnvTokenProvider.is_ready() before any
+        # resource-committing gate — empty/missing token caught there, before
+        # work_server starts.
+        _wst = settings.scraping.work_server_token
+        _token = _wst.get_secret_value() if _wst is not None else ""
         try:
             engine = PydollEngine(
                 profile_dir=settings.scraping.chrome_profile_dir,
@@ -581,6 +581,31 @@ def smoke_clearance(
         console.print(f"  status:    {report.status.value}")
         if report.error_gate is not None:
             console.print(f"  blocked_at: {report.error_gate}")
+        if report.status != HarnessStatus.PASS and report.evidence:
+            _SAFE_EVIDENCE_KEYS = frozenset({
+                "clearance_obtained",
+                "clearance_class",
+                "clearance_getter_error_type",
+                "clearance_getter_error",
+                "extension_diagnostic_error",
+                "token_source_class",
+                "target_validation_status",
+                "auth_probe_status",
+            })
+            for _ek in sorted(_SAFE_EVIDENCE_KEYS):
+                _ev = report.evidence.get(_ek)
+                if _ev is not None:
+                    console.print(f"  {_ek}: {_ev}")
+            _diag = report.evidence.get("extension_diagnostic")
+            _diag_err = report.evidence.get("extension_diagnostic_error")
+            if isinstance(_diag, dict) and _diag:
+                console.print("  extension_diagnostic:")
+                for _k, _v in sorted(_diag.items()):
+                    console.print(f"    {_k}: {_v}")
+            elif _diag_err is None and report.error_gate == "clearance_observed":
+                console.print(
+                    "  extension_diagnostic: unavailable (reader returned None)"
+                )
 
         if report.status != HarnessStatus.PASS:
             raise typer.Exit(code=1)

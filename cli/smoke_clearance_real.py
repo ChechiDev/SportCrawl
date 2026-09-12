@@ -533,6 +533,7 @@ class RealClearanceHarness:
                                 if k in self._DIAG_SAFE_KEYS
                             }
                     except Exception as _exc:  # noqa: BLE001
+                        evidence["extension_diagnostic_error"] = type(_exc).__name__
                         logger.debug(
                             "extension_diagnostic_reader failed (best-effort): %s",
                             type(_exc).__name__,
