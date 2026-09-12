@@ -60,10 +60,13 @@ def _invoke_patched(
         patch("cli.main.RealClearanceHarness") as m_harness_cls,
         patch("cli.main.make_target_navigator") as m_make_nav,
         patch("cli.main.make_extension_config_injector") as m_make_injector,
+        patch("cli.main.make_extension_diagnostic_reader") as m_make_diag_reader,
     ):
         mock_nav = MagicMock()
         m_make_nav.return_value = mock_nav
         m_make_injector.return_value = MagicMock()
+        mock_diag_reader = MagicMock()
+        m_make_diag_reader.return_value = mock_diag_reader
         mock_harness_inst = MagicMock()
         mock_harness_inst.run.return_value = mock_report
         m_harness_cls.return_value = mock_harness_inst
@@ -85,6 +88,8 @@ def _invoke_patched(
             "make_nav": m_make_nav,
             "nav": mock_nav,
             "make_injector": m_make_injector,
+            "make_diag_reader": m_make_diag_reader,
+            "diag_reader": mock_diag_reader,
         }
         return result, mocks, mock_harness_inst
 
@@ -227,6 +232,52 @@ class TestRealClearanceHarnessInvocation:
         assert passed_nav is mocks["nav"], (
             "target_navigator passed to harness.run must be the object "
             "returned by make_target_navigator"
+        )
+
+    def test_extension_diagnostic_reader_wired_to_harness_run(self) -> None:
+        """Diagnostic reader from make_extension_diagnostic_reader must be passed
+        as extension_diagnostic_reader to harness.run — must not be None."""
+        mock_report = HarnessReport(status=HarnessStatus.PASS)
+        mock_diag_reader = MagicMock()
+
+        with (
+            patch("cli.main.Settings"),
+            patch("cli.main.PydollEngine"),
+            patch("cli.main.EnvTargetProvider"),
+            patch("cli.main.EnvBrowserParameterProvider"),
+            patch("cli.main.EnvTokenProvider"),
+            patch("cli.main.GhCICheckProvider"),
+            patch("cli.main.RealWorkServerLifecycle"),
+            patch("cli.main.LabelTargetValidator"),
+            patch("cli.main.RealBrowserLauncher"),
+            patch("cli.main.RealClearanceObserver"),
+            patch("cli.main.RealClearancePostClient"),
+            patch("cli.main.RealClearanceProviders"),
+            patch("cli.main.RealClearanceSeams"),
+            patch("cli.main.RealClearanceHarness") as m_harness_cls,
+            patch("cli.main.make_target_navigator", return_value=MagicMock()),
+            patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
+            patch(
+                "cli.main.make_extension_diagnostic_reader",
+                return_value=mock_diag_reader,
+            ),
+            patch("cli.main.make_cleanup", return_value=MagicMock()),
+        ):
+            mock_harness_inst = MagicMock()
+            mock_harness_inst.run.return_value = mock_report
+            m_harness_cls.return_value = mock_harness_inst
+
+            runner.invoke(app, ["smoke-clearance", "--real-clearance"])
+
+        call_kwargs = mock_harness_inst.run.call_args
+        assert call_kwargs is not None, "harness.run was not called"
+        passed_reader = call_kwargs.kwargs.get("extension_diagnostic_reader")
+        assert passed_reader is not None, (
+            "extension_diagnostic_reader must be passed (non-None) to harness.run"
+        )
+        assert passed_reader is mock_diag_reader, (
+            "extension_diagnostic_reader passed to harness.run must be the object "
+            "returned by make_extension_diagnostic_reader"
         )
 
 

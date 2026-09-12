@@ -259,6 +259,10 @@ class RealClearanceHarness:
             return "[REDACTED]"
         return truncated
 
+    _DIAG_SAFE_KEYS: frozenset[str] = frozenset(
+        {"attempted", "drop_reason", "error_class", "http_status_class"}
+    )
+
     def run(
         self,
         providers: RealClearanceProviders,

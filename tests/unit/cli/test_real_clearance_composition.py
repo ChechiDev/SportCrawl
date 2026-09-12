@@ -642,6 +642,103 @@ def test_injector_includes_allowed_clearance_domain() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# WU10: make_extension_diagnostic_reader
+# ---------------------------------------------------------------------------
+
+
+def test_make_diagnostic_reader_returns_result_from_engine() -> None:
+    """Sync callable must invoke engine.read_extension_storage_diagnostic(key)
+    and return its result."""
+    from cli.real_clearance_composition import make_extension_diagnostic_reader
+
+    loop = asyncio.new_event_loop()
+    engine = MagicMock()
+    expected = {"key": "value", "timestamp": 123}
+    engine.read_extension_storage_diagnostic = AsyncMock(return_value=expected)
+
+    try:
+        reader = make_extension_diagnostic_reader(engine=engine, loop=loop)
+        result = reader("some_key")
+    finally:
+        loop.close()
+
+    engine.read_extension_storage_diagnostic.assert_called_once_with("some_key")
+    assert result == expected
+
+
+def test_make_diagnostic_reader_returns_none_when_engine_returns_none() -> None:
+    """When the engine's method returns None, the callable must return None."""
+    from cli.real_clearance_composition import make_extension_diagnostic_reader
+
+    loop = asyncio.new_event_loop()
+    engine = MagicMock()
+    engine.read_extension_storage_diagnostic = AsyncMock(return_value=None)
+
+    try:
+        reader = make_extension_diagnostic_reader(engine=engine, loop=loop)
+        result = reader("absent_key")
+    finally:
+        loop.close()
+
+    assert result is None
+
+
+def test_make_diagnostic_reader_raises_when_loop_closed() -> None:
+    """Factory callable must raise RuntimeError when the loop is closed."""
+    from cli.real_clearance_composition import make_extension_diagnostic_reader
+
+    loop = asyncio.new_event_loop()
+    loop.close()
+    engine = MagicMock()
+
+    reader = make_extension_diagnostic_reader(engine=engine, loop=loop)
+
+    with pytest.raises(RuntimeError, match="not usable"):
+        reader("any_key")
+
+
+def test_make_diagnostic_reader_raises_when_loop_running() -> None:
+    """Factory callable must raise RuntimeError when the loop is already running."""
+    from cli.real_clearance_composition import make_extension_diagnostic_reader
+
+    async def _inner() -> None:
+        loop = asyncio.get_event_loop()
+        engine = MagicMock()
+        reader = make_extension_diagnostic_reader(engine=engine, loop=loop)
+        with pytest.raises(RuntimeError, match="not usable"):
+            reader("any_key")
+
+    asyncio.run(_inner())
+
+
+def test_make_diagnostic_reader_uses_timeout_constant() -> None:
+    """make_extension_diagnostic_reader must respect a bounded timeout constant."""
+    import cli.real_clearance_composition as _mod
+
+    assert hasattr(_mod, "_DIAGNOSTIC_READ_TIMEOUT_S"), (
+        "_DIAGNOSTIC_READ_TIMEOUT_S must be defined in cli.real_clearance_composition"
+    )
+
+    async def _hang(_key: str) -> dict | None:
+        await asyncio.sleep(9999)
+
+    from cli.real_clearance_composition import make_extension_diagnostic_reader
+
+    engine = MagicMock()
+    engine.read_extension_storage_diagnostic = _hang
+
+    loop = asyncio.new_event_loop()
+    try:
+        with patch.object(_comp_module, "_DIAGNOSTIC_READ_TIMEOUT_S", 0.05):
+            reader = make_extension_diagnostic_reader(engine=engine, loop=loop)
+            with pytest.raises(Exception):
+                reader("any_key")
+    finally:
+        if not loop.is_closed():
+            loop.close()
+
+
 def test_injection_domain_consistent_with_navigation_url() -> None:
     """allowed_clearance_domain must equal the hostname of the navigation target URL.
 
