@@ -259,17 +259,15 @@ class RealClearanceHarness:
             return "[REDACTED]"
         return truncated
 
-    _DIAG_SAFE_KEYS: frozenset[str] = frozenset(
-        {"attempted", "drop_reason", "error_class", "http_status_class"}
-    )
-
     def run(
         self,
         providers: RealClearanceProviders,
         seams: RealClearanceSeams,
         extension_config_injector: Callable[[], None] | None = None,
         target_navigator: Callable[[], None] | None = None,
-        extension_diagnostic_reader: Callable[[str], dict | None] | None = None,
+        extension_diagnostic_reader: (
+            Callable[[str], dict[str, object] | None] | None
+        ) = None,
     ) -> HarnessReport:
         gate_results: dict[str, GateStatus] = {}
         evidence: dict[str, object] = {}

@@ -200,7 +200,7 @@ def make_target_navigator(
 def make_extension_diagnostic_reader(
     engine: Any,
     loop: asyncio.AbstractEventLoop,
-) -> Callable[[str], dict | None]:
+) -> Callable[[str], dict[str, object] | None]:
     """Return a sync callable that reads extension storage diagnostics via CDP.
 
     The returned callable takes a ``key`` string and returns the diagnostic dict
@@ -211,7 +211,7 @@ def make_extension_diagnostic_reader(
     loop throughout the session.
     """
 
-    def _read(key: str) -> dict | None:
+    def _read(key: str) -> dict[str, object] | None:
         _is_closed = loop.is_closed()
         _is_running = loop.is_running()
         if _is_closed or _is_running:
@@ -219,11 +219,12 @@ def make_extension_diagnostic_reader(
                 "extension diagnostic reader loop is not usable "
                 f"(closed={_is_closed}, running={_is_running})"
             )
-        return loop.run_until_complete(
+        result: dict[str, object] | None = loop.run_until_complete(
             asyncio.wait_for(
                 engine.read_extension_storage_diagnostic(key),
                 timeout=_DIAGNOSTIC_READ_TIMEOUT_S,
             )
         )
+        return result
 
     return _read
