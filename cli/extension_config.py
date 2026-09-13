@@ -35,6 +35,7 @@ class ExtensionConfig:
     profile_id: str
     worker_id: str
     disable_task_polling: bool
+    enable_sw_keepalive: bool = False
 
     def __post_init__(self) -> None:
         if not _ID_RE.match(self.profile_id):
@@ -53,7 +54,8 @@ class ExtensionConfig:
             f"work_server_token=<redacted>, "
             f"profile_id={self.profile_id!r}, "
             f"worker_id={self.worker_id!r}, "
-            f"disable_task_polling={self.disable_task_polling!r}"
+            f"disable_task_polling={self.disable_task_polling!r}, "
+            f"enable_sw_keepalive={self.enable_sw_keepalive!r}"
             f")"
         )
 
@@ -73,4 +75,5 @@ def smoke_extension_config(url: str, token: str) -> ExtensionConfig:
         profile_id="smoke",
         worker_id="smoke",
         disable_task_polling=True,
+        enable_sw_keepalive=True,
     )

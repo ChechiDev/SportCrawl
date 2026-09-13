@@ -11,10 +11,12 @@
 
 const ALARM_NAME = "fetchTaskPoll";
 const ALARM_PERIOD_MINUTES = 1;
+const KEEPALIVE_ALARM_NAME = "swKeepalive";
+const KEEPALIVE_PERIOD_MINUTES = 0.5; // Chrome MV3 minimum; fires every 30s to prevent idle SW termination
 const BACKOFF_BASE_MS = 2000;
 const BACKOFF_CAP_MS = 60000;
 
-let _config = { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false };
+let _config = { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false, enable_sw_keepalive: false };
 let _allowedClearanceDomain = ""; // kept separate from _config to allow independent reset during service worker restart
 let _backoffMs = BACKOFF_BASE_MS;
 let _fatalStop = false;
@@ -33,7 +35,7 @@ async function loadConfig() {
 
   return new Promise((resolve) => {
     chrome.storage.local.get(
-      { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false, allowed_clearance_domain: "" },
+      { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false, enable_sw_keepalive: false, allowed_clearance_domain: "" },
       (data) => {
         _config = {
           work_server_url: data.work_server_url.trim(),
@@ -41,6 +43,7 @@ async function loadConfig() {
           profile_id: data.profile_id.trim(),
           worker_id: data.worker_id.trim(),
           disable_task_polling: !!data.disable_task_polling,
+          enable_sw_keepalive: !!data.enable_sw_keepalive,
         };
         _allowedClearanceDomain = (data.allowed_clearance_domain || "").trim().replace(/^\./, "");
         resolve(_config.work_server_url !== "" && _config.work_server_token !== "");
@@ -56,6 +59,7 @@ async function loadConfig() {
 async function setFatalStop() {
   _fatalStop = true;
   await chrome.storage.local.set({ fatalStop: true });
+  await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
   persistStatus("fatal");
 }
 
@@ -383,12 +387,21 @@ async function postTaskResult(taskId, payload) {
 async function startAlarmIfNeeded() {
   if (_config.disable_task_polling) {
     await chrome.alarms.clear(ALARM_NAME);
-    return;
+  } else {
+    const existing = await chrome.alarms.get(ALARM_NAME);
+    if (!existing) {
+      chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MINUTES });
+      console.log(`[SportCrawl] Alarm "${ALARM_NAME}" created (period: ${ALARM_PERIOD_MINUTES} min).`);
+    }
   }
-  const existing = await chrome.alarms.get(ALARM_NAME);
-  if (!existing) {
-    chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MINUTES });
-    console.log(`[SportCrawl] Alarm "${ALARM_NAME}" created (period: ${ALARM_PERIOD_MINUTES} min).`);
+  if (_config.enable_sw_keepalive) {
+    const existing = await chrome.alarms.get(KEEPALIVE_ALARM_NAME);
+    if (!existing) {
+      chrome.alarms.create(KEEPALIVE_ALARM_NAME, { periodInMinutes: KEEPALIVE_PERIOD_MINUTES });
+      console.log(`[SportCrawl] Keepalive alarm "${KEEPALIVE_ALARM_NAME}" created.`);
+    }
+  } else {
+    await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
   }
 }
 
@@ -398,6 +411,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       console.error("[SportCrawl] Unhandled error in pollNextTask:", err);
       persistStatus("error");
     });
+  }
+  if (alarm.name === KEEPALIVE_ALARM_NAME) {
+    // No-op: alarm fire is sufficient to keep the service worker alive.
   }
 });
 
