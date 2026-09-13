@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.7] — 2026-09-13
+
+### Fixed
+
+- **Extension keepalive alarm confirmed before clearance observation**: new `sw_keepalive_confirmed` gate added immediately after extension config injection, before target navigation begins; the harness reads `swKeepalive` from the extension service-worker CDP context via `chrome.alarms.get()` and verifies the alarm exists; if the SW is unreachable or the alarm is absent, the run blocks at this gate with sanitized evidence (`sw_keepalive_alarm_present`, `sw_keepalive_alarm_error_type`) instead of silently waiting through the full observation timeout; CDP alarm reads use per-step timeouts with a bounded outer wrapper to prevent hangs
+
 ## [0.47.6] — 2026-09-13
 
 ### Fixed
