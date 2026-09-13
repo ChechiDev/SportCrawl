@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.6] — 2026-09-13
+
+### Fixed
+
+- **Extension service worker kept alive during clearance observation**: new `enable_sw_keepalive` field added to `ExtensionConfig` (default `False`); smoke config sets it `True`; the extension creates a no-op `swKeepalive` chrome.alarm (period 0.5 min — Chrome MV3 minimum) when the field is enabled, preventing Chrome from terminating the idle service worker before a `cf_clearance` cookie is captured; the keepalive alarm is cleared on fatal stop and when the field is `False`; task polling remains independently controlled by `disable_task_polling` and is unaffected by this change
+
 ## [0.47.5] — 2026-09-12
 
 ### Fixed
