@@ -42,6 +42,11 @@ _CHALLENGE_MARKERS = ("just a moment", "checking your browser")
 # Chosen to exceed realistic CDP round-trip latency (< 1 s) while keeping the
 # browser-start gate bounded when the pipe is unresponsive.
 _INJECT_STORAGE_TIMEOUT_S: float = 15.0
+# Per-step timeout for read_extension_alarm CDP commands.
+# Must be small enough that 4 steps (getTargets, attach, evaluate, callFunctionOn)
+# each complete before the outer _DIAGNOSTIC_READ_TIMEOUT_S (10 s) in the
+# composition factory fires, leaving headroom for the detach finally-block.
+_ALARM_CHECK_STEP_TIMEOUT_S: float = 2.0
 _SW_TARGET_RETRIES: int = 3
 _SW_TARGET_RETRY_DELAY_S: float = 0.1
 _EXTENSION_PATH = Path(__file__).parents[2] / "extensions" / "sportcrawl-chrome"
@@ -715,6 +720,143 @@ class PydollEngine(ScriptableEngine):
             logger.warning(
                 "read_extension_storage_diagnostic: unhandled exception %s",
                 type(_diag_exc).__name__,
+            )
+            return None
+
+    async def read_extension_alarm(self, alarm_name: str) -> bool | None:
+        """Read a chrome.alarms alarm by name via the extension SW context.
+
+        Best-effort: returns None on any failure instead of raising. Returns
+        True if the alarm exists, False if it does not, None on error or if
+        the SW target is not reachable.
+
+        Args:
+            alarm_name: The alarm name to query via chrome.alarms.get().
+
+        Returns:
+            True if alarm exists, False if absent, None on any error.
+        """
+        try:
+            if self._tab is None:
+                logger.debug("read_extension_alarm: tab is None")
+                return None
+
+            get_targets_cmd: dict[str, Any] = {
+                "method": "Target.getTargets",
+                "params": {},
+            }
+            targets_result = await asyncio.wait_for(
+                self._tab._execute_command(get_targets_cmd),
+                timeout=_ALARM_CHECK_STEP_TIMEOUT_S,
+            )
+            target_infos = targets_result.get("result", {}).get("targetInfos", [])
+            sw_target = next(
+                (
+                    t
+                    for t in target_infos
+                    if t.get("type") == "service_worker"
+                    and t.get("url", "").startswith("chrome-extension://")
+                ),
+                None,
+            )
+            if sw_target is None:
+                logger.debug("read_extension_alarm: no SW target found")
+                return None
+
+            target_id: str = sw_target["targetId"]
+            attach_cmd: dict[str, Any] = {
+                "method": "Target.attachToTarget",
+                "params": {"targetId": target_id, "flatten": True},
+            }
+            attach_result = await asyncio.wait_for(
+                self._tab._execute_command(attach_cmd),
+                timeout=_ALARM_CHECK_STEP_TIMEOUT_S,
+            )
+            session_id: str = attach_result.get("result", {}).get("sessionId", "")
+            if not session_id:
+                logger.debug("read_extension_alarm: attach returned no sessionId")
+                return None
+
+            _detach_cmd: dict[str, Any] = {
+                "method": "Target.detachFromTarget",
+                "params": {"sessionId": session_id},
+            }
+            try:
+                eval_cmd: dict[str, Any] = {
+                    "method": "Runtime.evaluate",
+                    "params": {"expression": "this", "returnByValue": False},
+                    "sessionId": session_id,
+                }
+                eval_result = await asyncio.wait_for(
+                    self._tab._execute_command(eval_cmd),
+                    timeout=_ALARM_CHECK_STEP_TIMEOUT_S,
+                )
+                object_id: str = (
+                    eval_result.get("result", {})
+                    .get("result", {})
+                    .get("objectId", "")
+                )
+                if not object_id:
+                    logger.debug(
+                        "read_extension_alarm: Runtime.evaluate returned no objectId"
+                        " — SW may be idle/terminated"
+                    )
+                    return None
+
+                _alarm_fn = (
+                    "async function() {"
+                    " return await new Promise(resolve =>"
+                    " chrome.alarms.get(arguments[0],"
+                    " a => resolve(a !== undefined && a !== null)));"
+                    "}"
+                )
+                call_cmd: dict[str, Any] = {
+                    "method": "Runtime.callFunctionOn",
+                    "params": {
+                        "functionDeclaration": _alarm_fn,
+                        "objectId": object_id,
+                        "arguments": [{"value": alarm_name}],
+                        "awaitPromise": True,
+                        "returnByValue": True,
+                    },
+                    "sessionId": session_id,
+                }
+                call_result = await asyncio.wait_for(
+                    self._tab._execute_command(call_cmd),
+                    timeout=_ALARM_CHECK_STEP_TIMEOUT_S,
+                )
+                result_value = (
+                    call_result.get("result", {})
+                    .get("result", {})
+                    .get("value")
+                )
+                if result_value is True:
+                    logger.debug(
+                        "read_extension_alarm: alarm %r present", alarm_name
+                    )
+                    return True
+                if result_value is False:
+                    logger.debug(
+                        "read_extension_alarm: alarm %r absent", alarm_name
+                    )
+                    return False
+                logger.debug(
+                    "read_extension_alarm: unexpected result value type %s",
+                    type(result_value).__name__,
+                )
+                return None
+            finally:
+                try:
+                    await asyncio.wait_for(
+                        self._tab._execute_command(_detach_cmd),
+                        timeout=_ALARM_CHECK_STEP_TIMEOUT_S,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as _alarm_exc:  # noqa: BLE001
+            logger.debug(
+                "read_extension_alarm: unhandled exception %s",
+                type(_alarm_exc).__name__,
             )
             return None
 
