@@ -603,3 +603,145 @@ class TestSWKeepalive:
         assert "disable_task_polling" in func_body, (
             "pollNextTask() must still check _config.disable_task_polling"
         )
+
+
+class TestStorageOnChanged:
+    """background.js must react to chrome.storage.onChanged for config injection."""
+
+    def _get_storage_onchanged_body(self) -> str:
+        lines = _BG.splitlines()
+        start = next(
+            (
+                i for i, ln in enumerate(lines)
+                if "chrome.storage.onChanged.addListener" in ln
+            ),
+            None,
+        )
+        assert start is not None, (
+            "chrome.storage.onChanged.addListener not found in background.js"
+        )
+        depth = 0
+        body_lines: list[str] = []
+        in_body = False
+        for ln in lines[start:]:
+            opens = ln.count("{")
+            closes = ln.count("}")
+            if not in_body and opens > 0:
+                in_body = True
+            depth += opens - closes
+            body_lines.append(ln)
+            if in_body and depth == 0:
+                break
+        return "\n".join(body_lines)
+
+    def test_storage_onchanged_listener_registered(self) -> None:
+        assert "chrome.storage.onChanged.addListener" in _BG, (
+            "chrome.storage.onChanged.addListener must be registered in background.js"
+        )
+
+    def test_storage_onchanged_listener_is_async(self) -> None:
+        idx = _BG.index("chrome.storage.onChanged.addListener")
+        fragment = _BG[idx : idx + 120]
+        assert "async" in fragment, (
+            "chrome.storage.onChanged listener callback must be async"
+        )
+
+    def test_storage_onchanged_filters_local_area(self) -> None:
+        body = self._get_storage_onchanged_body()
+        assert '"local"' in body or "'local'" in body, (
+            'storage.onChanged listener must guard on area === "local"'
+        )
+
+    def test_storage_onchanged_calls_loadconfig(self) -> None:
+        body = self._get_storage_onchanged_body()
+        assert "loadConfig()" in body, (
+            "storage.onChanged listener must call loadConfig()"
+        )
+
+    def test_storage_onchanged_calls_start_alarm_if_needed(self) -> None:
+        body = self._get_storage_onchanged_body()
+        assert "startAlarmIfNeeded()" in body, (
+            "storage.onChanged listener must call startAlarmIfNeeded()"
+        )
+
+    def test_storage_onchanged_does_not_call_poll_next_task(self) -> None:
+        body = self._get_storage_onchanged_body()
+        assert "pollNextTask" not in body, (
+            "storage.onChanged listener must not call pollNextTask()"
+        )
+
+    def test_storage_onchanged_does_not_call_fetch(self) -> None:
+        body = self._get_storage_onchanged_body()
+        assert "fetch(" not in body, (
+            "storage.onChanged listener must not call fetch()"
+        )
+
+    def test_storage_onchanged_checks_relevant_key(self) -> None:
+        # Key must appear in the module-level CONFIG_CHANGE_KEYS constant
+        assert "enable_sw_keepalive" in _BG, (
+            '"enable_sw_keepalive" must appear in CONFIG_CHANGE_KEYS'
+        )
+        assert "CONFIG_CHANGE_KEYS" in _BG, (
+            "Module-level CONFIG_CHANGE_KEYS set must be defined in background.js"
+        )
+
+    def _get_config_change_keys_block(self) -> str:
+        """Extract the CONFIG_CHANGE_KEYS constant definition block."""
+        lines = _BG.splitlines()
+        start = next(
+            (
+                i for i, ln in enumerate(lines)
+                if "CONFIG_CHANGE_KEYS" in ln and "new Set" in ln
+            ),
+            None,
+        )
+        assert start is not None, "CONFIG_CHANGE_KEYS Set definition not found"
+        depth = 0
+        body_lines: list[str] = []
+        for ln in lines[start:]:
+            depth += ln.count("(") - ln.count(")")
+            body_lines.append(ln)
+            if depth == 0 and body_lines:
+                break
+        return "\n".join(body_lines)
+
+    def test_storage_onchanged_includes_token_key(self) -> None:
+        block = self._get_config_change_keys_block()
+        assert "work_server_token" in block, (
+            '"work_server_token" must appear inside CONFIG_CHANGE_KEYS Set definition'
+        )
+
+    def test_storage_onchanged_includes_clearance_domain_key(self) -> None:
+        block = self._get_config_change_keys_block()
+        assert "allowed_clearance_domain" in block, (
+            '"allowed_clearance_domain" must appear inside CONFIG_CHANGE_KEYS'
+        )
+
+    def test_storage_onchanged_does_not_log_raw_values(self) -> None:
+        body = self._get_storage_onchanged_body()
+        assert "changes[" not in body and "newValue" not in body, (
+            "storage.onChanged listener must not access changes[key].newValue "
+            "(raw value exposure)"
+        )
+
+    def test_storage_onchanged_loadconfig_before_start_alarm(self) -> None:
+        body = self._get_storage_onchanged_body()
+        load_pos = body.find("loadConfig()")
+        alarm_pos = body.find("startAlarmIfNeeded()")
+        assert load_pos != -1, "loadConfig() not found in storage.onChanged listener"
+        assert alarm_pos != -1, (
+            "startAlarmIfNeeded() not found in storage.onChanged listener"
+        )
+        assert load_pos < alarm_pos, (
+            f"loadConfig() (pos {load_pos}) must appear before "
+            f"startAlarmIfNeeded() (pos {alarm_pos}) in storage.onChanged listener"
+        )
+
+    def test_storage_onchanged_has_error_handling(self) -> None:
+        body = self._get_storage_onchanged_body()
+        assert "try {" in body or "try{" in body, (
+            "storage.onChanged listener must have a try block for error handling"
+        )
+        assert "catch" in body, (
+            "storage.onChanged listener must have a catch block"
+        )

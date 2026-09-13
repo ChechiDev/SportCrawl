@@ -16,10 +16,20 @@ const KEEPALIVE_PERIOD_MINUTES = 0.5; // Chrome MV3 minimum; fires every 30s to 
 const BACKOFF_BASE_MS = 2000;
 const BACKOFF_CAP_MS = 60000;
 
+const CONFIG_CHANGE_KEYS = new Set([
+  "enable_sw_keepalive",
+  "work_server_url",
+  "work_server_token",
+  "allowed_clearance_domain",
+  "disable_task_polling",
+  "fatalStop",
+]);
+
 let _config = { work_server_url: "", work_server_token: "", profile_id: "", worker_id: "", disable_task_polling: false, enable_sw_keepalive: false };
 let _allowedClearanceDomain = ""; // kept separate from _config to allow independent reset during service worker restart
 let _backoffMs = BACKOFF_BASE_MS;
 let _fatalStop = false;
+let _configReactionInFlight = false;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -431,4 +441,25 @@ chrome.runtime.onStartup.addListener(async () => {
   console.log("[SportCrawl] Browser startup — ensuring alarm is active.");
   await loadConfig();
   await startAlarmIfNeeded();
+});
+
+// ---------------------------------------------------------------------------
+// Config change reactions — re-evaluate alarms when harness injects config
+// Config reload only; poll and clearance POST are handled by their own events.
+// ---------------------------------------------------------------------------
+
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== "local") return;
+  if (!Array.from(CONFIG_CHANGE_KEYS).some((k) => k in changes)) return;
+  if (_configReactionInFlight) return;
+  _configReactionInFlight = true;
+  try {
+    await loadConfig();
+    await startAlarmIfNeeded();
+  } catch (err) {
+    console.error("[SportCrawl] config-change reaction failed:", err);
+    persistStatus("err");
+  } finally {
+    _configReactionInFlight = false;
+  }
 });
