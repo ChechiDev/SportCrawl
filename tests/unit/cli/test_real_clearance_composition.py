@@ -739,6 +739,76 @@ def test_make_diagnostic_reader_uses_timeout_constant() -> None:
             loop.close()
 
 
+# ---------------------------------------------------------------------------
+# TestMakeSwKeepaliveChecker — make_sw_keepalive_checker factory
+# ---------------------------------------------------------------------------
+
+
+class TestMakeSwKeepaliveChecker:
+    """Tests for make_sw_keepalive_checker factory."""
+
+    def test_factory_returns_callable(self) -> None:
+        """make_sw_keepalive_checker must return a plain callable, not a coroutine."""
+        from cli.real_clearance_composition import make_sw_keepalive_checker
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(return_value=True)
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+        finally:
+            loop.close()
+
+        import inspect
+        assert callable(checker), "make_sw_keepalive_checker must return a callable"
+        assert not inspect.iscoroutine(checker), "result must not be a coroutine"
+
+    def test_callable_delegates_to_engine_true(self) -> None:
+        """When engine.read_extension_alarm returns True, checker returns True."""
+        from cli.real_clearance_composition import make_sw_keepalive_checker
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(return_value=True)
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+            result = checker()
+        finally:
+            loop.close()
+
+        assert result is True
+
+    def test_callable_returns_none_on_engine_none(self) -> None:
+        """When engine.read_extension_alarm returns None, checker returns None."""
+        from cli.real_clearance_composition import make_sw_keepalive_checker
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(return_value=None)
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+            result = checker()
+        finally:
+            loop.close()
+
+        assert result is None
+
+    def test_callable_delegates_to_engine_false(self) -> None:
+        """When engine.read_extension_alarm returns False, checker returns False."""
+        from cli.real_clearance_composition import make_sw_keepalive_checker
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(return_value=False)
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+            result = checker()
+        finally:
+            loop.close()
+
+        assert result is False
+
+
 def test_injection_domain_consistent_with_navigation_url() -> None:
     """allowed_clearance_domain must equal the hostname of the navigation target URL.
 

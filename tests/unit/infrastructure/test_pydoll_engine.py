@@ -1757,3 +1757,103 @@ class TestPydollEngineReadExtensionStorageDiagnostic:
             "last_clearance_post_status"
         )
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# read_extension_alarm() — SW alarm presence check
+# ---------------------------------------------------------------------------
+
+
+class TestReadExtensionAlarm:
+    """Tests for PydollEngine.read_extension_alarm."""
+
+    @staticmethod
+    def _make_alarm_fake(alarm_present: bool) -> object:
+        """Return async side_effect faking SW CDP round-trips for alarm reads."""
+
+        async def _fake(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-alarm-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc123/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-alarm"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-alarm"}}}
+            if method == "Runtime.callFunctionOn":
+                return {"result": {"result": {"value": alarm_present}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        return _fake
+
+    async def test_returns_true_when_alarm_exists(self) -> None:
+        """read_extension_alarm returns True when the alarm is registered in SW."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_alarm_fake(alarm_present=True)
+        )
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_alarm("swKeepalive")
+
+        assert result is True
+
+    async def test_returns_false_when_alarm_missing(self) -> None:
+        """read_extension_alarm returns False when the alarm is not registered."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(
+            side_effect=self._make_alarm_fake(alarm_present=False)
+        )
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_alarm("swKeepalive")
+
+        assert result is False
+
+    async def test_returns_none_when_sw_unreachable(self) -> None:
+        """read_extension_alarm returns None when no SW target is found."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        async def _no_sw(cmd: dict) -> dict:
+            if cmd.get("method") == "Target.getTargets":
+                return {"result": {"targetInfos": []}}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_no_sw)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_alarm("swKeepalive")
+
+        assert result is None
+
+    async def test_returns_none_on_cdp_exception(self) -> None:
+        """read_extension_alarm returns None when CDP raises any exception."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=Exception("cdp error"))
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        result = await engine.read_extension_alarm("swKeepalive")
+
+        assert result is None

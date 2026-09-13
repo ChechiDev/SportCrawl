@@ -238,6 +238,7 @@ class RealClearanceHarness:
     GATE_BROWSER_START = "browser_start"
     GATE_CDP_READY = "cdp_ready"
     GATE_EXTENSION_CONFIG_INJECT = "extension_config_inject"
+    GATE_SW_KEEPALIVE_CONFIRMED = "sw_keepalive_confirmed"
     GATE_TARGET_NAVIGATION = "target_navigation"
     GATE_CLEARANCE_OBSERVED = "clearance_observed"
     GATE_EXPIRES_AT = "expires_at_guard"
@@ -268,6 +269,7 @@ class RealClearanceHarness:
         extension_diagnostic_reader: (
             Callable[[str], dict[str, object] | None] | None
         ) = None,
+        sw_keepalive_checker: Callable[[], bool | None] | None = None,
     ) -> HarnessReport:
         gate_results: dict[str, GateStatus] = {}
         evidence: dict[str, object] = {}
@@ -462,6 +464,48 @@ class RealClearanceHarness:
                         error_gate=error_gate,
                     )
                 gate_results[self.GATE_EXTENSION_CONFIG_INJECT] = GateStatus.PASS
+
+            # Gate 11d: SW keepalive alarm check (optional seam)
+            if sw_keepalive_checker is not None:
+                try:
+                    sw_result = sw_keepalive_checker()
+                except Exception as exc:
+                    logger.error(
+                        "sw_keepalive_checker raised unexpectedly: %s",
+                        type(exc).__name__,
+                    )
+                    sw_result = None
+                if sw_result is True:
+                    gate_results[self.GATE_SW_KEEPALIVE_CONFIRMED] = GateStatus.PASS
+                    evidence["sw_keepalive_alarm_present"] = True
+                elif sw_result is False:
+                    gate_results[self.GATE_SW_KEEPALIVE_CONFIRMED] = GateStatus.BLOCKED
+                    error_gate = self.GATE_SW_KEEPALIVE_CONFIRMED
+                    return HarnessReport(
+                        status=HarnessStatus.BLOCKED,
+                        gate_results=gate_results,
+                        evidence={
+                            **evidence,
+                            "sw_keepalive_alarm_present": False,
+                        },
+                        error_gate=error_gate,
+                    )
+                else:  # None — SW unreachable or checker error
+                    logger.warning(
+                        "sw_keepalive_checker: SW unreachable or check failed"
+                    )
+                    gate_results[self.GATE_SW_KEEPALIVE_CONFIRMED] = GateStatus.BLOCKED
+                    error_gate = self.GATE_SW_KEEPALIVE_CONFIRMED
+                    return HarnessReport(
+                        status=HarnessStatus.BLOCKED,
+                        gate_results=gate_results,
+                        evidence={
+                            **evidence,
+                            "sw_keepalive_alarm_present": None,
+                            "sw_keepalive_alarm_error_type": "sw_unreachable",
+                        },
+                        error_gate=error_gate,
+                    )
 
             # Gate 11c: Target navigation (optional seam)
             if target_navigator is not None:

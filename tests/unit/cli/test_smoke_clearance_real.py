@@ -566,3 +566,83 @@ class TestExtensionDiagnosticReaderSeam:
             "extension_diagnostic must be absent when reader returns None, "
             f"got: {report.evidence.get('extension_diagnostic')}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests — sw_keepalive_confirmed gate
+# ---------------------------------------------------------------------------
+
+
+class TestSwKeepaliveConfirmedGate:
+    """Tests for the sw_keepalive_confirmed harness gate."""
+
+    def test_gate_passes_when_alarm_exists(self) -> None:
+        """Gate PASS when sw_keepalive_checker returns True."""
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            sw_keepalive_checker=lambda: True,
+        )
+
+        assert report.gate_results.get("sw_keepalive_confirmed") == GateStatus.PASS
+        assert report.evidence.get("sw_keepalive_alarm_present") is True
+
+    def test_gate_blocked_when_alarm_missing(self) -> None:
+        """Gate BLOCKED when sw_keepalive_checker returns False."""
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            sw_keepalive_checker=lambda: False,
+        )
+
+        assert report.gate_results.get("sw_keepalive_confirmed") == GateStatus.BLOCKED
+        assert report.evidence.get("sw_keepalive_alarm_present") is False
+
+    def test_gate_blocked_when_sw_unreachable(self) -> None:
+        """Gate BLOCKED when sw_keepalive_checker returns None (SW unreachable)."""
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            sw_keepalive_checker=lambda: None,
+        )
+
+        assert report.gate_results.get("sw_keepalive_confirmed") == GateStatus.BLOCKED
+        assert report.evidence.get("sw_keepalive_alarm_error_type") == "sw_unreachable"
+
+    def test_gate_skipped_when_checker_not_provided(self) -> None:
+        """Gate is absent from gate_results when sw_keepalive_checker is None."""
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            sw_keepalive_checker=None,
+        )
+
+        assert "sw_keepalive_confirmed" not in report.gate_results
+
+    def test_gate_evidence_contains_no_sensitive_fields(self) -> None:
+        """SW keepalive gate evidence keys must not leak sensitive identifiers.
+
+        Only checks the SW-specific keys added by this gate, not prior gates'
+        evidence that may use technical class names containing 'token'.
+        """
+        harness = RealClearanceHarness()
+        report = harness.run(
+            _make_providers(),
+            _make_seams(),
+            sw_keepalive_checker=lambda: None,
+        )
+
+        sw_keys = {"sw_keepalive_alarm_present", "sw_keepalive_alarm_error_type"}
+        sensitive = ("session", "chrome-extension", "cookie", "cdp", "http://", "https://")
+        for key in sw_keys:
+            value = report.evidence.get(key)
+            if isinstance(value, str):
+                for term in sensitive:
+                    assert term not in value.lower(), (
+                        f"SW evidence field {key!r} value {value!r}"
+                        f" contains sensitive term {term!r}"
+                    )

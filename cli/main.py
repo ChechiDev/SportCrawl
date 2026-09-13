@@ -36,6 +36,7 @@ from cli.real_clearance_composition import (  # noqa: E402
     make_cleanup,
     make_extension_config_injector,
     make_extension_diagnostic_reader,
+    make_sw_keepalive_checker,
     make_target_navigator,
 )
 from cli.smoke_clearance_real import (  # noqa: E402
@@ -528,6 +529,7 @@ def smoke_clearance(
         _extension_diagnostic_reader = make_extension_diagnostic_reader(
             engine=engine, loop=_loop
         )
+        _sw_keepalive_checker = make_sw_keepalive_checker(engine=engine, loop=_loop)
 
         providers = RealClearanceProviders(
             target=EnvTargetProvider(),
@@ -573,6 +575,7 @@ def smoke_clearance(
                 extension_config_injector=_extension_config_injector,
                 target_navigator=_target_navigator,
                 extension_diagnostic_reader=_extension_diagnostic_reader,
+                sw_keepalive_checker=_sw_keepalive_checker,
             )
         finally:
             _cleanup()

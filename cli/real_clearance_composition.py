@@ -228,3 +228,39 @@ def make_extension_diagnostic_reader(
         return result
 
     return _read
+
+
+def make_sw_keepalive_checker(
+    engine: Any,
+    loop: asyncio.AbstractEventLoop,
+) -> Callable[[], bool | None]:
+    """Return a sync callable that checks whether the swKeepalive alarm is present.
+
+    Returns True if the alarm exists, False if absent, None on timeout.
+    Any other exception (e.g. loop guard RuntimeError, pydoll errors) propagates
+    to the caller — the harness wraps the call in try/except.
+
+    Runs on the provided event loop so all pydoll async objects remain on one
+    loop throughout the session.
+    """
+
+    def _check() -> bool | None:
+        _is_closed = loop.is_closed()
+        _is_running = loop.is_running()
+        if _is_closed or _is_running:
+            raise RuntimeError(
+                "sw keepalive checker loop is not usable "
+                f"(closed={_is_closed}, running={_is_running})"
+            )
+        try:
+            result: bool | None = loop.run_until_complete(
+                asyncio.wait_for(
+                    engine.read_extension_alarm("swKeepalive"),
+                    timeout=_DIAGNOSTIC_READ_TIMEOUT_S,
+                )
+            )
+        except TimeoutError:
+            return None
+        return result
+
+    return _check
