@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.8] — 2026-09-13
+
+### Fixed
+
+- **Extension reacts to config injection via `chrome.storage.onChanged`**: `startAlarmIfNeeded()` previously only ran at `onInstalled`/`onStartup` — before the harness injects config — so `enable_sw_keepalive` was always `false` at those lifecycle moments and `swKeepalive` was never created; the extension now registers a `chrome.storage.onChanged` listener scoped to `local` storage that reloads config and reconciles the keepalive alarm whenever relevant keys change (`enable_sw_keepalive`, `work_server_url`, `work_server_token`, `allowed_clearance_domain`, `disable_task_polling`, `fatalStop`); the listener does not trigger task polling or clearance POST; an in-flight guard prevents concurrent reactions from multi-key writes; errors are caught and reported via `persistStatus`
+
 ## [0.47.7] — 2026-09-13
 
 ### Fixed
