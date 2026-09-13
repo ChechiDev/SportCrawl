@@ -637,7 +637,9 @@ class TestSwKeepaliveConfirmedGate:
         )
 
         sw_keys = {"sw_keepalive_alarm_present", "sw_keepalive_alarm_error_type"}
-        sensitive = ("session", "chrome-extension", "cookie", "cdp", "http://", "https://")
+        sensitive = (
+            "session", "chrome-extension", "cookie", "cdp", "http://", "https://"
+        )
         for key in sw_keys:
             value = report.evidence.get(key)
             if isinstance(value, str):
