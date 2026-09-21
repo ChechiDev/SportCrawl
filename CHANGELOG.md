@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.9] — 2026-09-22
+
+### Fixed
+
+- **Security: upgrade `soupsieve` lockfile dependency from `2.8.4` to `2.9.2`**: resolves `CVE-2026-85999` and `CVE-2026-86000` reported by `pip-audit`; transitive dependency via `beautifulsoup4`; no source behavior change
+
 ## [0.47.8] — 2026-09-13
 
 ### Fixed
