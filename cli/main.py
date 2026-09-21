@@ -596,6 +596,8 @@ def smoke_clearance(
                 "token_source_class",
                 "target_validation_status",
                 "auth_probe_status",
+                "sw_keepalive_alarm_present",
+                "sw_keepalive_alarm_error_type",
             })
             for _ek in sorted(_SAFE_EVIDENCE_KEYS):
                 _ev = report.evidence.get(_ek)

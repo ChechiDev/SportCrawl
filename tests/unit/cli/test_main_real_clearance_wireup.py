@@ -971,3 +971,81 @@ class TestBrowserEngineInitFailure:
             f"Expected typer.echo with 'browser engine init failed' and err=True, "
             f"got calls: {echo_mock.call_args_list!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests — safe evidence rendering of sw_keepalive diagnostic fields
+# ---------------------------------------------------------------------------
+
+
+def _invoke_patched_with_evidence(
+    evidence: dict,
+    error_gate: str | None = "sw_keepalive_confirmed",
+) -> object:  # typer Result; .output and .exit_code accessed via type: ignore
+    """Invoke --real-clearance with a BLOCKED HarnessReport carrying given evidence."""
+    mock_report = HarnessReport(
+        status=HarnessStatus.BLOCKED,
+        error_gate=error_gate,
+        evidence=evidence,
+    )
+    with (
+        patch("cli.main.EnvTargetProvider"),
+        patch("cli.main.EnvBrowserParameterProvider"),
+        patch("cli.main.EnvTokenProvider"),
+        patch("cli.main.GhCICheckProvider"),
+        patch("cli.main.RealWorkServerLifecycle"),
+        patch("cli.main.LabelTargetValidator"),
+        patch("cli.main.RealBrowserLauncher"),
+        patch("cli.main.RealClearanceObserver"),
+        patch("cli.main.RealClearancePostClient"),
+        patch("cli.main.RealClearanceProviders"),
+        patch("cli.main.RealClearanceSeams"),
+        patch("cli.main.RealClearanceHarness") as m_harness_cls,
+        patch("cli.main.make_target_navigator", return_value=MagicMock()),
+        patch("cli.main.make_extension_config_injector", return_value=MagicMock()),
+        patch("cli.main.make_extension_diagnostic_reader", return_value=MagicMock()),
+        patch("cli.main.make_cleanup", return_value=MagicMock()),
+        patch("cli.main.make_sw_keepalive_checker", return_value=MagicMock()),
+    ):
+        mock_harness_inst = MagicMock()
+        mock_harness_inst.run.return_value = mock_report
+        m_harness_cls.return_value = mock_harness_inst
+        result = runner.invoke(app, ["smoke-clearance", "--real-clearance"])
+    return result
+
+
+class TestSwKeepaliveEvidenceRendering:
+    """sw_keepalive diagnostic evidence fields must appear in CLI output."""
+
+    def test_sw_keepalive_alarm_present_false_rendered(self) -> None:
+        """sw_keepalive_alarm_present=False must appear in CLI output."""
+        result = _invoke_patched_with_evidence(  # type: ignore[assignment]
+            {"sw_keepalive_alarm_present": False}
+        )
+        output = result.output  # type: ignore[union-attr]
+        assert "sw_keepalive_alarm_present" in output, (
+            "sw_keepalive_alarm_present must be rendered in CLI output when False"
+        )
+
+    def test_sw_keepalive_alarm_error_type_rendered_alone(self) -> None:
+        """sw_keepalive_alarm_error_type must render even without other fields."""
+        result = _invoke_patched_with_evidence(  # type: ignore[assignment]
+            {"sw_keepalive_alarm_error_type": "sw_unreachable"}
+        )
+        output = result.output  # type: ignore[union-attr]
+        assert "sw_keepalive_alarm_error_type" in output, (
+            "sw_keepalive_alarm_error_type must render in CLI output"
+        )
+
+    def test_sw_keepalive_alarm_error_type_rendered(self) -> None:
+        """sw_keepalive_alarm_error_type must appear in CLI output when present."""
+        result = _invoke_patched_with_evidence(  # type: ignore[assignment]
+            {
+                "sw_keepalive_alarm_present": None,
+                "sw_keepalive_alarm_error_type": "sw_unreachable",
+            }
+        )
+        output = result.output  # type: ignore[union-attr]
+        assert "sw_keepalive_alarm_error_type" in output, (
+            "sw_keepalive_alarm_error_type must be rendered in CLI output"
+        )
