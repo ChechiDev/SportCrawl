@@ -1596,6 +1596,220 @@ class TestPydollEngineInjectStorageConfigToExtension:
                 {"allowed_clearance_domain": "example.com"}
             )
 
+    # -----------------------------------------------------------------------
+    # Alarm reconciliation — explicit swKeepalive creation after storage write
+    # -----------------------------------------------------------------------
+
+    async def test_alarm_reconciliation_called_when_enable_sw_keepalive_true(
+        self,
+    ) -> None:
+        """When enable_sw_keepalive is True, a second callFunctionOn must execute
+        after the storage write to reconcile the swKeepalive alarm directly."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_fn_bodies: list[str] = []
+
+        async def _fake(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-rec"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                fn = cmd.get("params", {}).get("functionDeclaration", "")
+                call_fn_bodies.append(fn)
+                return {"result": {"result": {"value": True}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension({"enable_sw_keepalive": True})
+
+        assert len(call_fn_bodies) == 2, (
+            f"Expected 2 callFunctionOn calls (write + reconciliation), "
+            f"got {len(call_fn_bodies)}"
+        )
+        reconcile_fn = call_fn_bodies[1]
+        assert "swKeepalive" in reconcile_fn, (
+            "Reconciliation function must reference 'swKeepalive'; "
+            f"got: {reconcile_fn!r}"
+        )
+
+    async def test_alarm_reconciliation_skipped_when_enable_sw_keepalive_false(
+        self,
+    ) -> None:
+        """When enable_sw_keepalive is False or absent, no reconciliation step runs."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_fn_count = 0
+
+        async def _fake(cmd: dict) -> dict:
+            nonlocal call_fn_count
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-skip"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                call_fn_count += 1
+                return {"result": {"result": {"value": True}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension(
+            {"enable_sw_keepalive": False}
+        )
+        count_false = call_fn_count
+
+        call_fn_count = 0
+        await engine.inject_storage_config_to_extension({})
+        count_absent = call_fn_count
+
+        assert count_false == 1, (
+            "enable_sw_keepalive=False must produce 1 callFunctionOn, "
+            f"got {count_false}"
+        )
+        assert count_absent == 1, (
+            "enable_sw_keepalive absent must produce 1 callFunctionOn, "
+            f"got {count_absent}"
+        )
+
+    async def test_alarm_reconciliation_failure_raises_page_load_error(
+        self,
+    ) -> None:
+        """If the alarm reconciliation callFunctionOn returns exceptionDetails,
+        PageLoadError is raised before detach."""
+        from core.exceptions.scraper import PageLoadError
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        call_fn_count = 0
+
+        async def _fake(cmd: dict) -> dict:
+            nonlocal call_fn_count
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-fail-rec"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                call_fn_count += 1
+                if call_fn_count == 1:
+                    return {"result": {"result": {"value": True}}}
+                # Reconciliation step fails
+                return {
+                    "result": {
+                        "exceptionDetails": {"text": "chrome.alarms not available"}
+                    }
+                }
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        with pytest.raises(PageLoadError, match="reconcil"):
+            await engine.inject_storage_config_to_extension(
+                {"enable_sw_keepalive": True}
+            )
+
+    async def test_alarm_reconciliation_does_not_expose_secrets(self) -> None:
+        """The alarm reconciliation JS function body must not contain the token."""
+        from infrastructure.browser.pydoll_engine import PydollEngine
+
+        sentinel = "SENTINEL_RECONCILE_TOKEN_XYZ"
+        call_fn_bodies: list[str] = []
+
+        async def _fake(cmd: dict) -> dict:
+            method = cmd.get("method", "")
+            if method == "Target.getTargets":
+                return {
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "sw-1",
+                                "type": "service_worker",
+                                "url": "chrome-extension://abc/background.js",
+                            }
+                        ]
+                    }
+                }
+            if method == "Target.attachToTarget":
+                return {"result": {"sessionId": "session-sec"}}
+            if method == "Runtime.evaluate":
+                return {"result": {"result": {"objectId": "obj-1"}}}
+            if method == "Runtime.callFunctionOn":
+                fn = cmd.get("params", {}).get("functionDeclaration", "")
+                call_fn_bodies.append(fn)
+                return {"result": {"result": {"value": True}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        mock_tab = AsyncMock()
+        mock_tab._execute_command = AsyncMock(side_effect=_fake)
+        engine = PydollEngine()
+        engine._tab = mock_tab
+
+        await engine.inject_storage_config_to_extension(
+            {"enable_sw_keepalive": True, "work_server_token": sentinel}
+        )
+
+        for fn in call_fn_bodies:
+            assert sentinel not in fn, (
+                f"Token sentinel must not appear in any callFunctionOn body; "
+                f"found in: {fn!r}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # read_extension_storage_diagnostic() — sanitized diagnostic reads
