@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.11] — 2026-09-24
+
+### Fixed
+
+- **SW keepalive alarm confirmation uses bounded polling**: `make_sw_keepalive_checker` now retries up to 6 times at 0.5 s intervals when `read_extension_alarm("swKeepalive")` returns `False` (alarm not yet created); stops early on `True`; `None` (SW CDP unreachable) is not retried and is returned immediately; worst-case polling is 3.0 s inside the existing 10 s diagnostic timeout envelope; no extension behavior changed
+
 ## [0.47.10] — 2026-09-24
 
 ### Fixed
@@ -593,7 +599,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Core types, logging, and exception hierarchy
 
-[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.2...HEAD
+[Unreleased]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.11...HEAD
+[0.47.11]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.10...v0.47.11
+[0.47.10]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.9...v0.47.10
+[0.47.9]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.8...v0.47.9
+[0.47.8]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.7...v0.47.8
+[0.47.7]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.6...v0.47.7
+[0.47.6]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.5...v0.47.6
+[0.47.5]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.4...v0.47.5
 [0.47.4]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.3...v0.47.4
 [0.47.3]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.2...v0.47.3
 [0.47.2]: https://github.com/ChechiDev/sportcrawl/compare/v0.47.1...v0.47.2
