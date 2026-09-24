@@ -808,6 +808,72 @@ class TestMakeSwKeepaliveChecker:
 
         assert result is False
 
+    def test_false_is_retried_and_resolves_true(self) -> None:
+        """False on first read is retried; True on subsequent read returns True."""
+        from cli.real_clearance_composition import make_sw_keepalive_checker
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(side_effect=[False, True])
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+            result = checker()
+        finally:
+            loop.close()
+
+        assert result is True
+        assert engine.read_extension_alarm.call_count == 2
+
+    def test_false_repeatedly_returns_false_after_max_attempts(self) -> None:
+        """Persistent False across all attempts returns False (not indefinite loop)."""
+        from cli.real_clearance_composition import (
+            _SW_KEEPALIVE_MAX_RETRIES,
+            make_sw_keepalive_checker,
+        )
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(return_value=False)
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+            result = checker()
+        finally:
+            loop.close()
+
+        assert result is False
+        assert engine.read_extension_alarm.call_count == _SW_KEEPALIVE_MAX_RETRIES + 1
+
+    def test_none_not_retried_returns_none(self) -> None:
+        """None (SW unreachable) is not retried — returned immediately."""
+        from cli.real_clearance_composition import make_sw_keepalive_checker
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(return_value=None)
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+            result = checker()
+        finally:
+            loop.close()
+
+        assert result is None
+        assert engine.read_extension_alarm.call_count == 1
+
+    def test_false_then_none_returns_none(self) -> None:
+        """If alarm disappears mid-retry (False then None), returns None."""
+        from cli.real_clearance_composition import make_sw_keepalive_checker
+
+        engine = MagicMock()
+        engine.read_extension_alarm = AsyncMock(side_effect=[False, None])
+        loop = asyncio.new_event_loop()
+        try:
+            checker = make_sw_keepalive_checker(engine=engine, loop=loop)
+            result = checker()
+        finally:
+            loop.close()
+
+        assert result is None
+
 
 def test_injection_domain_consistent_with_navigation_url() -> None:
     """allowed_clearance_domain must equal the hostname of the navigation target URL.
