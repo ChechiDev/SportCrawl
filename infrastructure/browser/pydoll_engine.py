@@ -547,6 +547,52 @@ class PydollEngine(ScriptableEngine):
                             " readback mismatch — storage write not confirmed",
                             url="",
                         )
+
+                # Step 6: explicit keepalive alarm reconciliation.
+                # chrome.storage.onChanged may not fire for CDP-injected writes;
+                # calling chrome.alarms.create directly guarantees the alarm exists
+                # before the SW CDP session is released.
+                if config.get("enable_sw_keepalive") is True:
+                    _reconcile_fn = (
+                        "async function() {"
+                        " return await new Promise(function(resolve) {"
+                        " chrome.alarms.get(\"swKeepalive\", function(existing) {"
+                        " if (!existing) {"
+                        " chrome.alarms.create(\"swKeepalive\","
+                        " { periodInMinutes: 0.5 });"
+                        " }"
+                        " resolve(true);"
+                        " });"
+                        " });"
+                        "}"
+                    )
+                    reconcile_cmd: dict[str, Any] = {
+                        "method": "Runtime.callFunctionOn",
+                        "params": {
+                            "functionDeclaration": _reconcile_fn,
+                            "objectId": object_id,
+                            "arguments": [],
+                            "awaitPromise": True,
+                            "returnByValue": True,
+                        },
+                        "sessionId": session_id,
+                    }
+                    reconcile_result = await asyncio.wait_for(
+                        self._tab._execute_command(reconcile_cmd),
+                        timeout=_INJECT_STORAGE_TIMEOUT_S,
+                    )
+                    if reconcile_result.get("result", {}).get("exceptionDetails"):
+                        _exc_text = (
+                            reconcile_result.get("result", {})
+                            .get("exceptionDetails", {})
+                            .get("text", "unknown")
+                        )
+                        raise PageLoadError(
+                            "inject_storage_config_to_extension:"
+                            " alarm reconciliation failed:"
+                            f" {_exc_text}",
+                            url="",
+                        )
             finally:
                 try:
                     await asyncio.wait_for(
