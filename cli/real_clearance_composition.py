@@ -26,6 +26,8 @@ _INJECT_TIMEOUT_S: float = 15.0
 _CLEANUP_TIMEOUT_S: float = 5.0
 _STOP_TIMEOUT_S: float = 3.0
 _DIAGNOSTIC_READ_TIMEOUT_S: float = 10.0
+_SW_KEEPALIVE_POLL_INTERVAL_S: float = 0.5
+_SW_KEEPALIVE_MAX_RETRIES: int = 6
 
 _logger = logging.getLogger(__name__)
 
@@ -244,6 +246,16 @@ def make_sw_keepalive_checker(
     loop throughout the session.
     """
 
+    async def _poll() -> bool | None:
+        attempts = _SW_KEEPALIVE_MAX_RETRIES + 1
+        for i in range(attempts):
+            result: bool | None = await engine.read_extension_alarm("swKeepalive")
+            if result is True or result is None:
+                return result
+            if i < attempts - 1:
+                await asyncio.sleep(_SW_KEEPALIVE_POLL_INTERVAL_S)
+        return False
+
     def _check() -> bool | None:
         _is_closed = loop.is_closed()
         _is_running = loop.is_running()
@@ -255,7 +267,7 @@ def make_sw_keepalive_checker(
         try:
             result: bool | None = loop.run_until_complete(
                 asyncio.wait_for(
-                    engine.read_extension_alarm("swKeepalive"),
+                    _poll(),
                     timeout=_DIAGNOSTIC_READ_TIMEOUT_S,
                 )
             )
