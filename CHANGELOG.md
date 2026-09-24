@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.10] — 2026-09-24
+
+### Fixed
+
+- **SW keepalive diagnostic evidence rendered in CLI output**: `sw_keepalive_alarm_present` and `sw_keepalive_alarm_error_type` added to `_SAFE_EVIDENCE_KEYS` in `cli/main.py`; when the `sw_keepalive_confirmed` gate blocks, the CLI now renders whether the alarm was absent (`sw_keepalive_alarm_present: False`) or the SW was unreachable via CDP (`sw_keepalive_alarm_error_type: sw_unreachable`); display-only diagnostic uplift — no smoke gate behavior changed, no browser or CDP logic touched
+
 ## [0.47.9] — 2026-09-22
 
 ### Fixed
